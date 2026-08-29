@@ -171,31 +171,64 @@ function PromptTab({ prompts }: { prompts: PromptRow[] }) {
   )
 }
 
+function partText(part: { text?: unknown }): string {
+  const t = part.text
+  if (typeof t === 'string') return t
+  if (t && typeof t === 'object' && 'value' in t) return String((t as { value?: unknown }).value ?? '')
+  return ''
+}
+
 function ChatTab({ messages }: { messages: ChatMessage[] }) {
   if (messages.length === 0) {
     return <p className="text-sm text-text-muted">No transcript stored yet.</p>
   }
   return (
     <div className="space-y-3">
-      {messages.map((m) => (
-        <div key={m.id} className="rounded border border-border bg-bg px-3 py-2">
+      {messages.map((m, mi) => (
+        <div key={m.id || `msg_${mi}`} className="rounded border border-border bg-bg px-3 py-2">
           <div className="mb-1 text-[11px] font-semibold uppercase text-text-muted">{m.role}</div>
-          {m.parts.map((part, i) => {
-            if (part.type === 'text' && part.text) {
-              return <MarkdownBody key={i} text={part.text} />
-            }
-            if (part.tool) {
-              return (
-                <details key={i} className="mt-1">
-                  <summary className="font-mono text-[11px]">
-                    {part.tool} {part.status}
-                  </summary>
-                  {part.output && <pre className="vd-pre mt-1">{part.output}</pre>}
-                </details>
-              )
-            }
-            return null
-          })}
+          <div className="space-y-2">
+            {m.parts.map((part, i) => {
+              const key = part.id || `${m.id}-${part.type}-${i}`
+              const kind = (part.type || '').toLowerCase()
+              const text = partText(part)
+              if (kind === 'step-start' || kind === 'step-finish') return null
+              if (kind === 'reasoning' || kind === 'thinking') {
+                if (!text.trim()) return null
+                return (
+                  <details key={key}>
+                    <summary className="cursor-pointer text-[11px] text-text-muted">Thinking</summary>
+                    <MarkdownBody text={text} />
+                  </details>
+                )
+              }
+              if (kind === 'compaction' || kind === 'compact') {
+                return (
+                  <p key={key} className="text-xs italic text-text-muted">
+                    {text.trim() || 'Session compacted'}
+                  </p>
+                )
+              }
+              if (kind === 'tool' || part.tool) {
+                const input = part.input ? JSON.stringify(part.input, null, 2) : ''
+                return (
+                  <details key={key} className="mt-1">
+                    <summary className="cursor-pointer font-mono text-[11px]">
+                      {part.tool || 'tool'} {part.status || ''}
+                    </summary>
+                    {input ? <pre className="vd-pre mt-1">{input}</pre> : null}
+                    {part.output ? <pre className="vd-pre mt-1">{part.output}</pre> : (
+                      <p className="mt-1 text-[11px] text-text-muted">No tool output stored.</p>
+                    )}
+                  </details>
+                )
+              }
+              if (text.trim()) {
+                return <MarkdownBody key={key} text={text} />
+              }
+              return null
+            })}
+          </div>
         </div>
       ))}
     </div>

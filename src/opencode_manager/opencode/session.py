@@ -354,6 +354,52 @@ class OpenCodeClient:
             pass
 
 
+def _part_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        inner = value.get("text") or value.get("value") or value.get("content")
+        if isinstance(inner, str):
+            return inner
+        try:
+            return str(inner) if inner is not None else ""
+        except Exception:
+            return ""
+    return str(value)
+
+
+def _snapshot_part(part: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten an OpenCode part. Tool results live under ``state``."""
+    kind = str(part.get("type") or "text").lower()
+    if kind in {"thinking"}:
+        kind = "reasoning"
+    if kind in {"compact"}:
+        kind = "compaction"
+    state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    text = _part_text(part.get("text") or part.get("content") or state.get("text"))
+    output = _part_text(state.get("output") or part.get("output") or state.get("error"))
+    status = str(state.get("status") or part.get("status") or "")
+    tool = str(part.get("tool") or part.get("name") or state.get("title") or "")
+    inp = state.get("input") if state.get("input") is not None else part.get("input")
+    item: Dict[str, Any] = {
+        "id": str(part.get("id") or ""),
+        "type": kind,
+        "text": text,
+        "tool": tool,
+        "status": status,
+        "output": output,
+    }
+    if isinstance(inp, dict):
+        item["input"] = inp
+    elif inp is not None and str(inp):
+        item["input"] = {"value": str(inp)}
+    if kind == "compaction" and not text:
+        item["text"] = "Session compacted"
+    return item
+
+
 def snapshot_chat(messages: List[Dict[str, Any]], session_id: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for index, message in enumerate(messages):
@@ -364,20 +410,8 @@ def snapshot_chat(messages: List[Dict[str, Any]], session_id: str) -> List[Dict[
         parts: List[Dict[str, Any]] = []
         if isinstance(parts_in, list):
             for part in parts_in:
-                if not isinstance(part, dict):
-                    continue
-                kind = str(part.get("type") or "text")
-                item: Dict[str, Any] = {
-                    "id": str(part.get("id") or ""),
-                    "type": kind,
-                    "text": part.get("text") or "",
-                    "tool": part.get("tool") or part.get("name") or "",
-                    "status": part.get("status") or "",
-                    "output": part.get("output") or "",
-                }
-                if isinstance(part.get("input"), dict):
-                    item["input"] = part["input"]
-                parts.append(item)
+                if isinstance(part, dict):
+                    parts.append(_snapshot_part(part))
         out.append(
             {
                 "id": mid,

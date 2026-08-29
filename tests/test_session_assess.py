@@ -1,8 +1,11 @@
+import json
+
 from opencode_manager.opencode.session import (
     assess_idle,
     last_assistant_id,
     looks_like_question,
     session_is_busy,
+    snapshot_chat,
     turn_has_new_assistant,
 )
 
@@ -52,3 +55,102 @@ def test_resume_old_stop_is_not_a_new_turn() -> None:
         },
     ]
     assert turn_has_new_assistant(after, "a1")
+
+
+def test_snapshot_chat_pulls_tool_state_and_reasoning() -> None:
+    raw = [
+        {
+            "info": {"id": "u1", "role": "user"},
+            "parts": [{"id": "p0", "type": "text", "text": "do it"}],
+        },
+        {
+            "info": {"id": "a1", "role": "assistant", "finish": "tool-calls"},
+            "parts": [
+                {"id": "p1", "type": "step-start"},
+                {"id": "p2", "type": "reasoning", "text": "I will run bash"},
+                {
+                    "id": "p3",
+                    "type": "tool",
+                    "tool": "bash",
+                    "state": {
+                        "status": "completed",
+                        "title": "bash",
+                        "input": {"command": "echo 6"},
+                        "output": "6\n",
+                    },
+                },
+                {"id": "p4", "type": "text", "text": "done"},
+            ],
+        },
+    ]
+    snap = snapshot_chat(raw, "ses_1")
+    assert [m["role"] for m in snap] == ["user", "assistant"]
+    tools = [p for p in snap[1]["parts"] if p["type"] == "tool"]
+    assert len(tools) == 1
+    assert tools[0]["tool"] == "bash"
+    assert tools[0]["status"] == "completed"
+    assert tools[0]["output"] == "6\n"
+    assert tools[0]["input"] == {"command": "echo 6"}
+    think = [p for p in snap[1]["parts"] if p["type"] == "reasoning"]
+    assert think[0]["text"] == "I will run bash"
+
+
+def test_job_chat_refills_tool_output_from_opencode_db(tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    from opencode_manager.dashboard.chat import job_chat_payload
+    from opencode_manager.models import JobRecord
+
+    db = tmp_path / "opencode.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
+        CREATE TABLE part (id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
+        """
+    )
+    conn.execute(
+        "INSERT INTO message VALUES (?,?,?,?,?)",
+        ("a1", "ses_db", 1, 1, json.dumps({"role": "assistant", "id": "a1"})),
+    )
+    conn.execute(
+        "INSERT INTO part VALUES (?,?,?,?,?,?)",
+        (
+            "p1",
+            "a1",
+            "ses_db",
+            1,
+            1,
+            json.dumps(
+                {
+                    "type": "tool",
+                    "tool": "bash",
+                    "state": {"status": "completed", "output": "6\n", "input": {"command": "echo 6"}},
+                }
+            ),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(
+        "opencode_manager.dashboard.chat._opencode_db_candidates",
+        lambda: [db],
+    )
+    job = JobRecord(
+        job_id="job_c",
+        jira_id="T-1",
+        session_id="ses_db",
+        live=False,
+        chat_snapshot=[
+            {
+                "id": "a1",
+                "role": "assistant",
+                "parts": [{"type": "tool", "tool": "bash", "text": "", "status": "", "output": ""}],
+            }
+        ],
+    )
+    payload = job_chat_payload(job)
+    tool = payload["messages"][0]["parts"][0]
+    assert tool["output"] == "6\n"
+    assert tool["status"] == "completed"
+    assert tool["input"]["command"] == "echo 6"

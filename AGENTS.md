@@ -34,14 +34,43 @@ These look like bugs. They are not.
 
 - Inbound HTTP is only an ack (`202` / `409` / `400`). Never hold the
   socket for clone or OpenCode.
-- Lifecycle POSTs go to that job’s `callback_url`.
-  - Over capacity: queued → in_progress → terminal (3).
-  - Under capacity: in_progress → terminal (2).
+- Exactly one POST goes to that job’s `callback_url`, and only when
+  the job is terminal (`200` / `404` / `500` / `504`).
+  - Accepted job (inbound `202`, queued or started): 1 terminal callback.
   - `409` / inbound `400`: no callback.
+  - Never POST `queued` or `in_progress`. n8n wait-node URLs fire once;
+    the HTTP ack already says queued vs started.
 - Dedup key is **`jira_id`**. Running or queued → `409`. Do not
   enqueue a second job for the same ticket.
 - Capacity full + **other** tickets → queue. Persist the queue
-  (including `callback_url`) so a process restart does not drop work.
+  (including `callback_url`) so a **running** process can dequeue
+  after a slot frees. A process restart does **not** auto-run
+  leftover work — see Boot and shutdown.
+
+### Boot and shutdown
+
+These are process-lifecycle rules. Do not mix them with hang retry.
+
+- **While booting: do not start any job.** Do not dequeue. Do not
+  clone. Do not start `opencode serve`. Do not resume a leftover
+  running or queued job. Do not send callbacks for leftovers. Do
+  not accept `POST /jobs` until boot is finished.
+- **Boot cleanup is process hygiene only.** Reap orphan processes
+  whose cwd/argv is `work_dir` (leftover serves, git, tools). Drop
+  leftover running/queued records so those `jira_id`s are not
+  `409`. Do **not** “handle” those jobs (no OpenCode, no terminal
+  callback, no re-enqueue).
+- **While shutting down:** stop accepting `POST /jobs`. Force-kill
+  every job’s process tree (git, **that** job’s serve, tool
+  children). Mark every running **and** queued job **ERROR**. Send
+  each its one terminal callback `500`. Then the normal job-end
+  delete for each clone. Never kill the manager until that is done.
+- **If a request comes again:** after those jobs are ERROR (or
+  leftover records were dropped on boot), a new `POST /jobs` for
+  the same `jira_id` is a **new** job. That worker hard-deletes the
+  leftover clone path first, then clones. Resume `session_id` only if
+  the caller sent one and it is still valid. Do not recover the
+  interrupted work on the next boot.
 
 ### Git
 
@@ -59,6 +88,9 @@ These look like bugs. They are not.
   Linux `/var/lib/osm/.temp`. Folder name identity is **`jira_id` +
   repo + source branch**. Two tickets ⇒ two folders. Same ticket +
   same repo + same branch later ⇒ same folder.
+- **New job** (including after boot-dropped leftovers): if that
+  stable path already exists, sequential hard-delete it first, then
+  clone. Boot does **not** delete leftover trees (no job handling).
 - Mid-job retries: **do not delete** the clone. Delete only when the
   job is finished.
 
@@ -75,23 +107,24 @@ These look like bugs. They are not.
 
 | Moment | Unusable / rejected `ses_*` |
 |---|---|
-| **New job** (first serve of this request) | Create a **new** session. Log INFO. Do not fail the job. Return the id actually used. |
+| **No live `ses_*` yet** (including first serve died before create) | Create a **new** session. Log INFO. Do not fail the job. Return the id actually used. |
 | **Mid-job hang retry** (we already had a live id, clone still on disk) | **Fail this attempt.** Do not open a blank session and continue. Counts against `retry_count`. |
 
-Empty / non-`ses_*` / Codex UUID on a new job = create new, not an error.
+Empty / non-`ses_*` / Codex UUID when we have no live id = create new, not an error.
 
 ### Prompts
 
-The incoming `prompt` (`ORIGINAL`) is sent **once**, first turn of the
-first attempt. Never send it again.
+The incoming `prompt` (`ORIGINAL`) is sent **once**, the first time a
+serve can accept a user message. Key off **whether it was POSTed**,
+not attempt number. Never send it again after that one POST.
 
 | When | Send |
 |---|---|
-| First turn | `ORIGINAL` |
+| First user message of this job (`ORIGINAL` not yet POSTed) | `ORIGINAL` |
 | Model asked a live question | `UNATTENDED_NUDGE` (at most once per job) |
 | Compact loop aborted, session idle | `COMPACT_LOOP_NUDGE` |
-| Outer retry: hang / serve dead / HTTP | `HANG_RESUME` |
-| Outer retry: incomplete, not compact | `INCOMPLETE_RESUME` |
+| Outer retry **after** `ORIGINAL` was POSTed: hang / serve dead / HTTP | `HANG_RESUME` |
+| Outer retry: incomplete, not compact (**same serve**, do not kill) | `INCOMPLETE_RESUME` |
 
 Exact strings: PLAN.md §5.3. Do not invent a fifth resume prompt.
 
@@ -106,9 +139,18 @@ Never POST a user message while the session is `busy` / compacting.
   with no new markers).
 - Hang watchdog: `busy` **and not compacting** **and** no new
   message / compact marker for `hang_timeout_seconds` → **outer
-  retry**: abort → kill **this** serve → new serve, same path, same
-  `session_id` → `HANG_RESUME`. Same if serve is dead.
-- `retry_count` counts those restarts, not compact-wait.
+  retry**: abort → kill **this** serve → new serve, same path.
+  If `ORIGINAL` was already POSTed: same `session_id` → `HANG_RESUME`.
+  If `ORIGINAL` was never POSTed: create if we have no live id, then
+  send `ORIGINAL`. Same if serve is dead.
+- Incomplete (session **idle**, last finish unfinished, not compact,
+  not still-asking): **same serve**, POST `INCOMPLETE_RESUME`. Do
+  **not** abort or kill serve. Counts against `retry_count`.
+- Still asking after the one nudge, or compact-related leftover after
+  inner handling: fail the job. No `INCOMPLETE_RESUME`.
+- Clean `stop` + only leftover OpenCode todos: success (text product).
+- `retry_count` counts serve restarts **and** same-serve incomplete
+  resumes, not compact-wait.
 - `timeout_in_seconds` is **one OpenCode attempt** (serve boot +
   session loop). Clone / cleanup / callbacks are outside it.
 - Each outer retry **resets** that clock. `retry_count = 3` and
@@ -117,8 +159,12 @@ Never POST a user message while the session is `busy` / compacting.
 - Drive the turn with a **poll loop**. Do not block `/message` for
   the whole attempt budget.
 - Attempt clock hits zero, or hang watchdog fires → abort, kill this
-  serve, next attempt if any remain (`HANG_RESUME`). None left →
-  delete clone, callback `504`.
+  serve, next attempt if any remain. Prompt is `HANG_RESUME` only if
+  `ORIGINAL` was already POSTed; otherwise `ORIGINAL`.
+- None left after **`timeout_in_seconds`**: delete clone, callback
+  **`504`**.
+- None left after hang / serve death / incomplete / other: delete
+  clone, callback **`500`**. `504` is only the attempt clock.
 
 ### Kill and cleanup
 
@@ -133,8 +179,9 @@ Order, always, on the **job-end** path:
    reserved names; Linux chmod + rmtree).
 
 Never kill the manager. Never kill another job’s serve.
-On outer retry, stop after step 2 and start a new serve — do not
-delete the clone.
+On a **serve-restart** outer retry (hang / timeout / serve dead),
+stop after step 2 and start a new serve — do not delete the clone.
+On an **incomplete** outer retry, do not enter this kill path at all.
 
 ### Logs
 

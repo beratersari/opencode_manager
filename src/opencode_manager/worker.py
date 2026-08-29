@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from opencode_manager.callback import post_callback
@@ -33,30 +34,40 @@ class JobRunner(Protocol):
     def run(self, job: JobRecord, *, should_stop: Callable[[], bool]) -> Terminal: ...
 
 
+def _remove_clone(dest: Path, *, reason: str) -> bool:
+    """Hard-delete dest. True only when the path is gone."""
+    logger.info("remove clone reason=%s clone_path=%s exists=%s", reason, dest, dest.exists())
+    ok = hard_delete(dest)
+    still = dest.exists()
+    if still:
+        logger.error("clone still present after %s delete clone_path=%s", reason, dest)
+    else:
+        logger.info("clone gone after %s delete clone_path=%s ok=%s", reason, dest, ok)
+    return not still
+
+
 class OpenCodeRunner:
     def __init__(self, settings: Settings, store: JobStore) -> None:
         self.settings = settings
         self.store = store
 
     def run(self, job: JobRecord, *, should_stop: Callable[[], bool]) -> Terminal:
-        dest = clone_path_for(
-            self.settings.work_dir, job.jira_id, job.repo_url, job.source_branch
-        )
+        dest = clone_path_for(self.settings.work_dir, job.jira_id)
         job.clone_path = str(dest)
         self.store.save(job)
         kind = classify_host(job.repo_url)
         logger.info(
-            "pipeline git start host_kind=%s dest=%s branch=%s timeout=%ss",
+            "pipeline git start host_kind=%s clone_path=%s branch=%s timeout=%ss",
             kind,
             dest,
             job.source_branch,
             self.settings.git_clone_timeout_seconds,
         )
-        if dest.exists():
-            logger.info("leftover clone dest exists; sequential hard-delete first")
-            ok = hard_delete(dest)
-            logger.info("leftover dest delete ok=%s still_exists=%s", ok, dest.exists())
         try:
+            if dest.exists():
+                logger.info("leftover clone exists; hard-delete before clone clone_path=%s", dest)
+                if not _remove_clone(dest, reason="before-clone"):
+                    return Terminal(500, f"could not remove leftover clone at {dest}")
             logger.info("ls-remote check for source_branch=%s", job.source_branch)
             if not ls_remote_has_branch(
                 job.repo_url,
@@ -75,12 +86,6 @@ class OpenCodeRunner:
                 timeout=self.settings.git_clone_timeout_seconds,
             )
             logger.info("clone ready at %s", dest)
-        except GitError as exc:
-            logger.error("git failed missing_branch=%s err=%s", exc.missing_branch, exc)
-            if exc.missing_branch:
-                return Terminal(404, str(exc))
-            return Terminal(500, f"git failed: {exc}")
-        try:
             logger.info("OpenCode phase start retry_count=%s timeout=%ss", job.retry_count, job.timeout_in_seconds)
             result = run_opencode_job(
                 job,
@@ -91,6 +96,11 @@ class OpenCodeRunner:
             )
             logger.info("OpenCode phase done status=%s text_len=%s", result.status_code, len(result.text or ""))
             return Terminal(result.status_code, result.text)
+        except GitError as exc:
+            logger.error("git failed missing_branch=%s err=%s", exc.missing_branch, exc)
+            if exc.missing_branch:
+                return Terminal(404, str(exc))
+            return Terminal(500, f"git failed: {exc}")
         except JobFailed as exc:
             logger.error("OpenCode job failed status=%s %s", exc.status_code, exc.message)
             return Terminal(exc.status_code, exc.message)
@@ -98,13 +108,13 @@ class OpenCodeRunner:
             logger.exception("worker crashed")
             return Terminal(500, f"worker crashed: {exc}")
         finally:
-            logger.info("job-end cleanup: kill tree pids=%s then hard-delete clone", [job.serve_pid, *job.extra_pids])
+            logger.info(
+                "job-end cleanup: kill tree pids=%s then hard-delete clone_path=%s",
+                [job.serve_pid, *job.extra_pids],
+                dest,
+            )
             kill_job_tree([job.serve_pid, *job.extra_pids])
-            if dest.exists():
-                ok = hard_delete(dest)
-                logger.info("clone delete ok=%s still_exists=%s", ok, dest.exists())
-            else:
-                logger.info("clone path already gone")
+            _remove_clone(dest, reason="job-end")
 
 
 def finish_job(

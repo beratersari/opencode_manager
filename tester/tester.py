@@ -132,8 +132,31 @@ class Handler(BaseHTTPRequestHandler):
             _send(self, 200, {"http_status": status, "body": ack})
             return
         if path == "/callback" or path.startswith("/callback/"):
-            body = _json(self)
-            _add({"kind": "callback", "http_status": 200, "body": body})
+            length = int(self.headers.get("Content-Length") or "0")
+            raw = self.rfile.read(length) if length else b""
+            text = raw.decode("utf-8", errors="replace")
+            try:
+                parsed: Any = json.loads(text) if text.strip() else {}
+            except json.JSONDecodeError:
+                parsed = {"_raw": text}
+            result = 0
+            if isinstance(parsed, dict):
+                try:
+                    result = int(parsed.get("status_code") or 0)
+                except (TypeError, ValueError):
+                    result = 0
+            _add(
+                {
+                    "kind": "callback",
+                    "method": "POST",
+                    "path": path,
+                    "http_status": result,
+                    "received_http": 200,
+                    "content_type": self.headers.get("Content-Type") or "",
+                    "body": parsed,
+                    "raw": text,
+                }
+            )
             _send(self, 200, {"ok": True})
             return
         if path == "/clear":

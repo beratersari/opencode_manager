@@ -9,7 +9,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -40,6 +40,7 @@ def start_serve(
     cwd: Path,
     log_path: Path,
     timeout: float,
+    on_spawn: Optional[Callable[[ServeHandle], None]] = None,
 ) -> ServeHandle:
     binary = shutil.which(bin_name) or bin_name
     port = free_port()
@@ -68,9 +69,17 @@ def start_serve(
     )
     proc._om_log_f = log_f  # type: ignore[attr-defined]
     base = f"http://127.0.0.1:{port}"
-    health = wait_health(base, str(cwd), timeout=timeout)
+    handle = ServeHandle(pid=int(proc.pid), port=port, base_url=base, proc=proc, log_path=log_path)
+    if on_spawn is not None:
+        on_spawn(handle)
+    try:
+        health = wait_health(base, str(cwd), timeout=timeout)
+    except Exception:
+        logger.error("serve health failed; killing pid=%s port=%s", proc.pid, port)
+        stop_serve(handle)
+        raise
     logger.info("opencode serve up pid=%s port=%s health=%s", proc.pid, port, health)
-    return ServeHandle(pid=int(proc.pid), port=port, base_url=base, proc=proc, log_path=log_path)
+    return handle
 
 
 def wait_health(base_url: str, directory: str, *, timeout: float) -> dict:

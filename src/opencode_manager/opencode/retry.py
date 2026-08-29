@@ -11,6 +11,7 @@ from opencode_manager.dashboard.store import JobStore
 from opencode_manager.log import get_logger
 from opencode_manager.models import AttemptRow, JobRecord, PromptRow, utc_now
 from opencode_manager.opencode import prompts
+from opencode_manager.cleanup.kill import kill_pid
 from opencode_manager.opencode.serve import ServeHandle, start_serve, stop_serve
 from opencode_manager.opencode.session import (
     OpenCodeClient,
@@ -76,9 +77,15 @@ def run_opencode_job(
     handle: Optional[ServeHandle] = None
     client: Optional[OpenCodeClient] = None
 
+    def record_spawn(spawned: ServeHandle) -> None:
+        job.serve_pid = spawned.pid
+        job.serve_port = spawned.port
+        job.serve_base_url = spawned.base_url
+        _save(store, job)
+
     def close_serve() -> None:
         nonlocal handle, client
-        logger.info("close serve session=%s pid=%s", job.session_id or "", handle.pid if handle else None)
+        logger.info("close serve session=%s pid=%s", job.session_id or "", handle.pid if handle else job.serve_pid)
         if client is not None:
             if job.session_id:
                 logger.info("abort session %s", job.session_id)
@@ -86,6 +93,8 @@ def run_opencode_job(
             client.close()
             client = None
         stop_serve(handle)
+        if handle is None and job.serve_pid:
+            kill_pid(job.serve_pid)
         handle = None
         job.serve_pid = None
         job.serve_port = None
@@ -113,16 +122,16 @@ def run_opencode_job(
             try:
                 if handle is None:
                     remain = max(5.0, deadline - time.time())
-                    handle = start_serve(
-                        bin_name=settings.opencode_bin,
-                        cwd=clone,
-                        log_path=settings.work_dir / ".serve" / f"{job.job_id}.log",
-                        timeout=min(remain, 90.0),
-                    )
-                    job.serve_pid = handle.pid
-                    job.serve_port = handle.port
-                    job.serve_base_url = handle.base_url
-                    _save(store, job)
+                    try:
+                        handle = start_serve(
+                            bin_name=settings.opencode_bin,
+                            cwd=clone,
+                            log_path=settings.work_dir / ".serve" / f"{job.job_id}.log",
+                            timeout=min(remain, 90.0),
+                            on_spawn=record_spawn,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        raise AttemptFailed("serve-dead", f"serve boot failed: {exc}") from exc
                     client = OpenCodeClient(handle.base_url, str(clone))
                 assert client is not None
                 if not client.health():

@@ -32,12 +32,22 @@
       background: var(--accent); color: #1a0d08; font-weight: 700; cursor: pointer;
     }
     button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); margin-left: .4rem; }
+    .block-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .55rem; }
+    .block-head .block-label { margin: 0; }
+    button.copy {
+      margin: 0; padding: .15rem .55rem; font-size: .7rem; font-weight: 600;
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    button.copy:hover { color: var(--text); }
     .pill { display: inline-block; border-radius: 999px; padding: .1rem .55rem; font-size: .75rem; font-weight: 700; }
     .pill.ack { background: #5b9dff22; color: #b3d0ff; }
     .pill.callback { background: #3ecf8e22; color: var(--ok); }
+    .pill.fail { background: #f25c5422; color: var(--bad); }
     .event { border-top: 1px solid var(--border); padding: .7rem 0; }
     .event:first-child { border-top: 0; }
-    pre { white-space: pre-wrap; word-break: break-word; font-size: .78rem; color: #b4bfd9; margin: .4rem 0 0; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: .78rem; color: #b4bfd9; margin: .4rem 0 0; max-height: 22rem; overflow: auto; }
+    .block-label { font-size: .7rem; color: var(--muted); margin: .55rem 0 0; text-transform: uppercase; letter-spacing: .04em; }
     .meta { font-size: .75rem; color: var(--muted); }
     .head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
     .err { color: var(--bad); }
@@ -109,27 +119,74 @@
     const list = document.getElementById('list')
     const meta = document.getElementById('meta')
     const form = document.getElementById('form')
+    let lastEvents = []
+
+    function httpCode(ev) {
+      if (ev.kind === 'callback') return ev.received_http ?? 200
+      return ev.http_status ?? ''
+    }
+
+    function resultCode(ev) {
+      const body = ev.body
+      if (ev.kind === 'callback') return (body && body.status_code) ?? ev.http_status
+      return ev.http_status ?? (body && body.status_code)
+    }
+
+    function payloadText(ev) {
+      const body = ev.body
+      const incoming = ev.raw && !isObject(body) ? ev.raw : pretty(body)
+      const where = ev.method && ev.path ? `${ev.method} ${ev.path}` : (ev.kind === 'callback' ? 'POST /callback' : 'POST /jobs')
+      const lines = [
+        `HTTP ${httpCode(ev)}`,
+        where,
+        ev.kind === 'callback' ? `status_code ${resultCode(ev)}` : `ack ${resultCode(ev)}`,
+        '',
+        incoming,
+      ]
+      return lines.join('\n')
+    }
 
     function render(data) {
       meta.textContent = data.callback_url || ''
-      const events = data.events || []
-      if (!events.length) {
+      lastEvents = data.events || []
+      if (!lastEvents.length) {
         list.innerHTML = '<p class="meta">Waiting for acks and callbacks…</p>'
         return
       }
-      list.innerHTML = events.map((ev) => {
-        const body = ev.body || {}
-        const code = ev.http_status ?? body.status_code
+      list.innerHTML = lastEvents.map((ev, i) => {
         const kind = ev.kind || '?'
-        const text = body.text || ''
-        const ids = [body.job_id, body.jira_id, body.session_id].filter(Boolean).join(' · ')
+        const http = httpCode(ev)
+        const code = resultCode(ev)
+        const fail = kind === 'callback' && Number(code) !== 200
+        const where = ev.method && ev.path ? `${ev.method} ${ev.path}` : ''
+        const label = kind === 'callback'
+          ? `HTTP ${http} · status_code ${code}${where ? ' · ' + where : ''}`
+          : `ack HTTP ${code}`
+        const incoming = ev.raw && !isObject(ev.body) ? ev.raw : pretty(ev.body)
+        const extra = kind === 'ack' && ev.request
+          ? `<div class="block-label">Outbound POST /jobs (PAT stripped)</div><pre>${escapeHtml(pretty(ev.request))}</pre>`
+          : ''
         return `<article class="event">
-          <div><span class="pill ${kind}">${kind}</span>
-            <span class="meta"> HTTP ${code} · ${ev.received_at || ''}</span></div>
-          <div class="meta">${ids}</div>
-          <pre>${escapeHtml(text)}</pre>
+          <div><span class="pill ${fail ? 'fail' : kind}">${kind}</span>
+            <span class="meta${fail ? ' err' : ''}"> ${label} · ${ev.received_at || ''}</span></div>
+          <div class="block-head">
+            <span class="block-label">${kind === 'callback' ? 'Incoming body' : 'OSM ack body'}</span>
+            <button type="button" class="copy" data-i="${i}">Copy</button>
+          </div>
+          <pre>${escapeHtml(incoming)}</pre>
+          ${extra}
         </article>`
       }).join('')
+    }
+
+    function isObject(v) {
+      return v !== null && typeof v === 'object'
+    }
+
+    function pretty(v) {
+      if (v === undefined) return ''
+      if (typeof v === 'string') return v
+      try { return JSON.stringify(v, null, 2) } catch { return String(v) }
     }
 
     function escapeHtml(s) {
@@ -164,6 +221,20 @@
     document.getElementById('clear').addEventListener('click', async () => {
       await fetch('/clear', { method: 'POST' })
       await refresh()
+    })
+
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button.copy')
+      if (!btn) return
+      const ev = lastEvents[Number(btn.dataset.i)]
+      if (!ev) return
+      try {
+        await navigator.clipboard.writeText(payloadText(ev))
+        btn.textContent = 'Copied'
+      } catch {
+        btn.textContent = 'Copy failed'
+      }
+      window.setTimeout(() => { btn.textContent = 'Copy' }, 1200)
     })
 
     refresh()

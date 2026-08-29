@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -21,16 +20,14 @@ class GitError(RuntimeError):
         self.missing_branch = missing_branch
 
 
-def clone_identity(jira_id: str, repo_url: str, source_branch: str) -> str:
-    digest = hashlib.sha256(
-        f"{jira_id}\n{repo_url.strip()}\n{source_branch.strip()}".encode("utf-8")
-    ).hexdigest()[:12]
-    ticket = re.sub(r"[^A-Za-z0-9._-]+", "_", jira_id)[:40] or "ticket"
-    return f"{ticket}_{digest}"
+def clone_identity(jira_id: str) -> str:
+    """One live job per ticket, so the folder is the ticket id only."""
+    ticket = re.sub(r"[^A-Za-z0-9._-]+", "_", (jira_id or "").strip())[:40]
+    return ticket or "ticket"
 
 
-def clone_path_for(work_dir: Path, jira_id: str, repo_url: str, source_branch: str) -> Path:
-    return work_dir / clone_identity(jira_id, repo_url, source_branch)
+def clone_path_for(work_dir: Path, jira_id: str) -> Path:
+    return work_dir / clone_identity(jira_id)
 
 
 def _run_git(
@@ -42,15 +39,19 @@ def _run_git(
 ) -> subprocess.CompletedProcess:
     cmd = ["git", *argv_helper_off(), *args]
     logger.info("git run timeout=%ss cwd=%s -- %s", timeout, cwd or ".", redact(" ".join(args)))
-    result = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        logger.error("git timeout after %ss -- %s", timeout, redact(" ".join(args)))
+        raise GitError(f"git timed out after {timeout}s") from exc
     if result.returncode != 0:
         err = redact((result.stderr or result.stdout or "").strip())
         logger.error("git exit=%s stderr=%s", result.returncode, err[-800:])
@@ -66,14 +67,18 @@ def _run_git(
 def ls_remote_has_branch(repo_url: str, branch: str, *, pat: str, timeout: float) -> bool:
     logger.info("ls-remote --heads %s %s", redact(repo_url), branch)
     env = isolated_git_env(repo_url, pat)
-    result = subprocess.run(
-        ["git", *argv_helper_off(), "ls-remote", "--heads", repo_url, branch],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", *argv_helper_off(), "ls-remote", "--heads", repo_url, branch],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        logger.error("ls-remote timeout after %ss", timeout)
+        raise GitError(f"ls-remote timed out after {timeout}s") from exc
     if result.returncode != 0:
         err = redact((result.stderr or "").strip())
         logger.error("ls-remote exit=%s stderr=%s", result.returncode, err[-800:])

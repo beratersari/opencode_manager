@@ -90,19 +90,29 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   on the remote → inbound **202**, worker checks, callback **404**.
   Never return a sync 404 for a missing remote ref.
 - Clones live under `work_dir`. Defaults: Windows `C:\osm\.temp`,
-  Linux `/var/lib/osm/.temp`. Folder name identity is **`jira_id` +
-  repo + source branch**. Two tickets ⇒ two folders. Same ticket +
-  same repo + same branch later ⇒ same folder.
+  Linux `/var/lib/osm/.temp`. Folder name is the **ticket id**
+  (`jira_id`, Windows-safe). Dedup is one live job per ticket, so
+  repo and branch are not part of the path. Two tickets ⇒ two
+  folders. Same ticket later ⇒ same folder (hard-delete, then clone).
 - **New job** (including after boot leftover ERROR): if that
   stable path already exists, sequential hard-delete it first, then
-  clone. Boot does **not** delete leftover trees (no job handling).
+  clone. Do not `git clone` until that path is gone. If the leftover
+  cannot be deleted, fail the job `500` (no OpenCode). Boot does
+  **not** delete leftover trees (no job handling).
 - Mid-job retries: **do not delete** the clone. Delete only when the
   job is finished.
+- Job-end delete also runs when git fails before OpenCode starts
+  (missing remote branch, clone error, git timeout). After kill,
+  hard-delete the clone path again and log whether it is gone.
 
 ### OpenCode
 
 - Start `opencode serve --hostname 127.0.0.1 --port <free>`. Never
-  hardcode `4096`. Record `{pid, port, base_url, cwd}` on the job.
+  hardcode `4096`. Record `{pid, port, base_url, cwd}` on the job
+  **immediately after Popen**, before the health wait.
+- If `GET /global/health` is not 200 in time: kill **this** child,
+  fail **this** attempt (`serve-dead`). Outer `retry_count` applies.
+  Do not leave the process up.
 - Do not run `opencode --auto` as a one-shot CLI. Do not enable
   permission auto-approve.
 - Scope requests with `x-opencode-directory: <clone>`.
@@ -225,6 +235,50 @@ kill serve”, keeping a dirty clone for reuse.
 Do copy: PAT env isolation, process-tree kill, Windows hard delete,
 compact-wait / one-nudge control loop, outer retry **shape**,
 per-job log context, jobs-tab SPA look (GET-only).
+
+## Fixed regressions
+
+Closed defects live in [agents/fixed-conditions.md](agents/fixed-conditions.md)
+and `tests/test_fixed_conditions.py`. Do not re-report those as open
+bugs. If you change one of those paths, update the tests in the same
+change.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for
+every commit on **this** repo:
+
+```text
+<type>(<optional-scope>): <short explanation>
+```
+
+| Type | Use for |
+|---|---|
+| `feat` | New capability (API, worker, dashboard) |
+| `fix` | Bug fix |
+| `test` | Tests only |
+| `docs` | Documentation only (`AGENTS.md`, `PLAN.md`, `agents/`) |
+| `refactor` | Internal restructure, no behaviour change |
+| `perf` | Performance |
+| `chore` | Tooling, deps, non-user-facing maintenance |
+
+Scopes are optional. Prefer: `api`, `worker`, `git`, `serve`,
+`session`, `queue`, `cleanup`, `dashboard`, `web`, `settings`.
+
+Subject: imperative, ~72 characters, no trailing period. Body is
+optional; use it when the why is not obvious.
+
+```text
+fix(git): delete clone after GitError
+test(serve): retry health timeout as serve-dead
+docs(agents): add commit message convention
+```
+
+Do not use: `WIP`, `update stuff`, `bug fix`, `final`, or default
+merge titles (`Merge branch …`, `Merged from …`).
+
+This repo does not open product MRs. Do not use the target-clone
+form `[PROJ-123] type: …` here.
 
 ## Before you change behaviour
 

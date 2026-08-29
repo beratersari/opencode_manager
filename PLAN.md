@@ -47,7 +47,7 @@ are wrong.
 |---|---|---|
 | 1 | Product of a job | **Text only.** Last assistant output (or error). No git push, no MR. Clone is disposable. |
 | 2 | How OpenCode runs | **One `opencode serve` process per job**, unique localhost port. **Not** `opencode --auto` (one-shot CLI). **Not** one shared serve. No permission auto-approve. Kill that serve when the job ends. See §3.2. |
-| 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is **`jira_id` + repo + source branch** (Windows-safe short name / digest). Ticket makes two jobs unique; repo+branch is part of the key. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same identity ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
+| 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is the **ticket id** (`jira_id`, Windows-safe folder). Dedup is one live job per ticket, so repo and branch are not in the path. Same ticket later ⇒ same folder. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same path ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
 | 6 | Git auth | **Request PAT only.** No OS credential store, no settings PAT, no SSH. GitLab and TFS/Azure DevOps use different header schemes. |
@@ -133,9 +133,12 @@ cannot steal each other’s port.
 1. Clone is on disk at the stable path.
 2. Allocate a free port. Start
    `opencode serve --hostname 127.0.0.1 --port <free>`
-   with cwd = clone. No permission auto-approve.
-3. Wait until `GET /global/health` is 200, or fail this attempt
-   (outer `retry_count` may apply).
+   with cwd = clone. No permission auto-approve. Record
+   `{serve_pid, serve_port, serve_base_url}` **immediately after
+   Popen**, before the health wait.
+3. Wait until `GET /global/health` is 200. If boot fails, kill
+   **this** child (do not leak it) and fail this attempt (outer
+   `retry_count` may apply).
 4. Create or resume `session_id`. Send `x-opencode-directory: <clone>`.
 5. Drive the session until done / timeout / retries exhausted.
 6. Abort session. Force-kill **this** pid tree. Do not touch the
@@ -207,11 +210,11 @@ path**, OpenCode should accept the old `session_id` and keep history.
 So:
 
 - Always hard-delete the workspace when the job ends (success or fail).
-- Name clones with a **stable** identity of **`jira_id` + repo +
-  source branch** (short Windows-safe folder / digest of those three).
-  Not a timestamp. `jira_id` is what makes two tickets different
-  folders even when repo and branch match. Same three fields later ⇒
-  the same path so OpenCode can find the session.
+- Name clones with a **stable** identity of the **ticket id** only
+  (`{work_dir}/{jira_id}`, Windows-safe). Not a timestamp, not repo
+  or branch. Dedup is one live job per ticket, so one folder per
+  ticket is enough. Same ticket later ⇒ the same path so OpenCode
+  can find the session.
 - Persist `session_id`. Next job for that ticket: re-clone to that path,
   start a new per-job serve, try the inbound id.
 - **No live `ses_*` yet** (inbound empty / not `ses_*` / rejected, or
@@ -697,23 +700,25 @@ or `/tfs/`.
    not: cleanup anything already created, callback **404**, stop. Do
    not invent a branch from `main`.
 3. Clone under `work_dir` into a short **stable** Windows-safe path
-   whose identity is **`jira_id` + repo + source branch** (e.g.
-   `{work_dir}/{ticket}_{digest12}` of those three).
+   whose identity is the **ticket id** only (e.g.
+   `{work_dir}/{jira_id}`).
 
    | OS | Default `work_dir` |
    |---|---|
    | Windows | `C:\osm\.temp` |
    | Linux | `/var/lib/osm/.temp` |
 
-   No timestamp. Same three fields ⇒ same folder. Different `jira_id`
-   ⇒ different folder even when repo and branch are identical. Same
-   ticket with a different repo or branch ⇒ a different folder.
+   No timestamp. Same `jira_id` ⇒ same folder. Different `jira_id`
+   ⇒ different folder. Repo or branch may change on a later job for
+   the same ticket; that still uses this folder (delete, then clone).
 
    **New job only:** if that path already exists (crash leftover,
    failed prior delete, same identity later), sequential hard-delete
-   it first, then clone. Do **not** `git clone` into a non-empty dest.
-   Mid-job outer retry: leave the existing tree. Boot does not delete
-   leftover trees.
+   it first, then clone. Do **not** `git clone` until that dest is
+   gone. If the leftover cannot be deleted, fail the job `500` (no
+   OpenCode). Mid-job outer retry: leave the existing tree. Boot does
+   not delete leftover trees. Job-end always hard-deletes the same
+   path again (success, fail, or git-phase error).
 4. Checkout `source_branch` exactly. No “create from main”.
 5. Submodules: only if present; same PAT env. Fail the job if they fail
    (do not let OpenCode run on a half tree).
@@ -1114,11 +1119,12 @@ build them).
 - [ ] Wrong PAT fails closed (no OS credential-store fallback).
 - [ ] Worker `ls-remote` (or equivalent) after HTTP 202 to prove `source_branch` exists.
 - [ ] Missing remote branch: cleanup anything created, callback 404, stop.
+- [ ] Clone error or git timeout: same job-end delete, then callback 500. Git-phase failures must not skip the delete `finally`.
 - [ ] Do not create a branch from `main` / `master` / target.
-- [ ] Clone under `work_dir` to a stable path of **`jira_id` + repo + source branch** (short digest, no timestamp).
+- [ ] Clone under `work_dir` to a stable path of the **ticket id** only (`{work_dir}/{jira_id}`, Windows-safe, no timestamp).
 - [ ] New job: if that stable path exists, sequential hard-delete it first, then clone. Not on boot. Not on mid-job retry.
-- [ ] Same three fields ⇒ same folder; different `jira_id` ⇒ different folder.
-- [ ] Same ticket with a different repo or branch ⇒ a different folder.
+- [ ] Same `jira_id` ⇒ same folder; different `jira_id` ⇒ different folder.
+- [ ] Same ticket with a different repo or branch still uses that folder (delete, then clone).
 - [ ] Checkout `source_branch` exactly.
 - [ ] If `.gitmodules` exists, update submodules with the same PAT env; fail the job on submodule error.
 - [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote` / submodules.
@@ -1132,10 +1138,10 @@ build them).
 - [ ] Do not enable permission auto-approve on the serve.
 - [ ] Allocate a free localhost port (`bind(127.0.0.1, 0)`). Never hardcode 4096.
 - [ ] Start `opencode serve --hostname 127.0.0.1 --port <free>` with cwd = clone.
-- [ ] Record `{serve_pid, serve_port, serve_base_url, clone_path, session_id}` immediately.
+- [ ] Record `{serve_pid, serve_port, serve_base_url, clone_path, session_id}` immediately after Popen, before the health wait.
 - [ ] Job HTTP to OpenCode uses only that job’s `serve_base_url`.
 - [ ] Do not publish job-serve ports off localhost.
-- [ ] Wait for `GET /global/health` 200; fail this attempt if boot fails.
+- [ ] Wait for `GET /global/health` 200; if boot fails, kill this child and fail this attempt (`serve-dead`). Do not leave the process up.
 - [ ] Serve boot time counts toward **this attempt’s** `timeout_in_seconds`.
 - [ ] Send `x-opencode-directory: <clone>` on OpenCode requests.
 - [ ] Every user-message POST sends this job’s `model` as `{ providerID, modelID }` (split on first `/`). Same model for the whole job. No settings default.

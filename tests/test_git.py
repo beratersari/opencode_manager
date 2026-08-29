@@ -15,12 +15,12 @@ def test_classify_tfs_path():
     assert classify_host("https://tfs.corp.local/tfs/DefaultCollection/proj/_git/repo") == "tfs"
 
 
-def test_identity_stable_and_unique():
-    a = clone_identity("A-1", "https://h/r.git", "dev")
-    b = clone_identity("A-1", "https://h/r.git", "dev")
-    c = clone_identity("A-2", "https://h/r.git", "dev")
-    assert a == b
-    assert a != c
+def test_identity_is_ticket_only():
+    assert clone_identity("A-1") == "A-1"
+    assert clone_identity("A-1") == clone_identity("A-1")
+    assert clone_identity("A-2") == "A-2"
+    assert clone_identity("A-1") != clone_identity("A-2")
+    assert clone_identity("PROJ/99") == "PROJ_99"
 
 
 def test_pat_not_on_argv_helper():

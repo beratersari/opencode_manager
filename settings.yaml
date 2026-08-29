@@ -1,0 +1,17 @@
+listen_host: 127.0.0.1
+listen_port: 8080
+max_concurrent_jobs: 2
+callback_timeout_seconds: 15
+callback_retry_count: 3
+callback_allowed_hosts: []
+# Override in production. Tests pass explicit dirs.
+work_dir: .temp
+job_log_dir: logs/jobs
+job_store_dir: .temp/jobs
+queue_path: .temp/queue.json
+log_level: INFO
+opencode_bin: opencode
+hang_timeout_seconds: 180
+git_clone_timeout_seconds: 300
+retry_backoff_seconds: 2
+retry_backoff_cap_seconds: 30

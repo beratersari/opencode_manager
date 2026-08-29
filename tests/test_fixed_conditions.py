@@ -304,6 +304,38 @@ def test_serve_pid_recorded_on_spawn_before_health_fails(
     assert job.serve_pid is None
 
 
+def test_start_serve_logs_command_and_timeouts(tmp_path: Path, monkeypatch, caplog) -> None:
+    class FakeProc:
+        pid = 88
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr("opencode_manager.opencode.serve.shutil.which", lambda _n: "/opt/opencode")
+    monkeypatch.setattr("opencode_manager.opencode.serve.free_port", lambda: 58888)
+    monkeypatch.setattr(
+        "opencode_manager.opencode.serve.subprocess.Popen", lambda *_a, **_k: FakeProc()
+    )
+    monkeypatch.setattr("opencode_manager.opencode.serve.wait_health", lambda *_a, **_k: {"ok": True})
+    import logging
+
+    caplog.set_level(logging.INFO)
+    start_serve(
+        bin_name="opencode",
+        cwd=tmp_path,
+        log_path=tmp_path / "s.log",
+        timeout=12,
+        attempt_timeout=3600,
+        hang_timeout=180,
+    )
+    joined = " ".join(r.message for r in caplog.records)
+    assert "opencode command:" in joined
+    assert "/opt/opencode serve --hostname 127.0.0.1 --port 58888" in joined
+    assert "attempt_timeout=3600s" in joined
+    assert "health_timeout=12s" in joined
+    assert "hang_timeout=180s" in joined
+
+
 def test_start_serve_on_spawn_runs_before_wait_health(tmp_path: Path, monkeypatch) -> None:
     order: list[str] = []
 

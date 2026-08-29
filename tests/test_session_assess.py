@@ -1,5 +1,6 @@
 import json
 
+from opencode_manager.opencode.retry import _log_every
 from opencode_manager.opencode.session import (
     assess_idle,
     last_assistant_id,
@@ -8,6 +9,10 @@ from opencode_manager.opencode.session import (
     snapshot_chat,
     turn_has_new_assistant,
 )
+
+
+def test_repeat_inner_logs_every_50() -> None:
+    assert [n for n in range(0, 151) if _log_every(n)] == [1, 50, 100, 150]
 
 
 def test_busy_status_shapes() -> None:

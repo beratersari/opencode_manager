@@ -27,6 +27,12 @@ from opencode_manager.opencode.session import (
 from opencode_manager.settings import Settings
 
 logger = get_logger()
+_REPEAT_LOG_EVERY = 50
+
+
+def _log_every(n: int, every: int = _REPEAT_LOG_EVERY) -> bool:
+    """True on the first event and every `every` repeats after that."""
+    return n == 1 or (n > 0 and n % every == 0)
 
 
 class AttemptFailed(Exception):
@@ -130,6 +136,8 @@ def run_opencode_job(
                             timeout=min(remain, 90.0),
                             on_spawn=record_spawn,
                             should_stop=should_stop,
+                            attempt_timeout=float(job.timeout_in_seconds),
+                            hang_timeout=float(settings.hang_timeout_seconds),
                         )
                     except Exception as exc:  # noqa: BLE001
                         raise AttemptFailed("serve-dead", f"serve boot failed: {exc}") from exc
@@ -283,6 +291,8 @@ def _inner_loop(
     hang_started: Optional[float] = None
     awaiting_turn = True
     last_phase = ""
+    new_assistant_logs = 0
+    hang_clock_logs = 0
     logger.info("inner loop enter hang_timeout=%ss", settings.hang_timeout_seconds)
 
     while True:
@@ -321,7 +331,13 @@ def _inner_loop(
             hang_started = None
         if new_assistant:
             awaiting_turn = False
-            logger.info("new assistant after this turn id=%s", last_assistant_id(messages))
+            new_assistant_logs += 1
+            if _log_every(new_assistant_logs):
+                logger.info(
+                    "new assistant after this turn id=%s poll=%s",
+                    last_assistant_id(messages),
+                    new_assistant_logs,
+                )
 
         phase = (
             "compacting"
@@ -350,7 +366,12 @@ def _inner_loop(
             awaiting_turn = False
             if hang_started is None:
                 hang_started = time.time()
-                logger.info("hang clock started (busy, not compacting)")
+                hang_clock_logs += 1
+                if _log_every(hang_clock_logs):
+                    logger.info(
+                        "hang clock started (busy, not compacting) poll=%s",
+                        hang_clock_logs,
+                    )
             if time.time() - last_progress >= settings.hang_timeout_seconds:
                 logger.warning("hang watchdog fired after %ss with no new markers", settings.hang_timeout_seconds)
                 client.abort(job.session_id)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -42,28 +43,39 @@ def start_serve(
     timeout: float,
     on_spawn: Optional[Callable[[ServeHandle], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    attempt_timeout: Optional[float] = None,
+    hang_timeout: Optional[float] = None,
 ) -> ServeHandle:
     if should_stop and should_stop():
         raise RuntimeError("manager shutting down")
     binary = shutil.which(bin_name) or bin_name
     port = free_port()
-    logger.info("start serve bin=%s cwd=%s port=%s health_timeout=%ss log=%s", binary, cwd, port, timeout, log_path)
+    cmd = [
+        binary,
+        "serve",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--print-logs",
+        "--log-level",
+        "INFO",
+    ]
+    logger.info(
+        "opencode command: %s cwd=%s attempt_timeout=%ss health_timeout=%ss hang_timeout=%ss log=%s",
+        shlex.join(cmd),
+        cwd,
+        attempt_timeout if attempt_timeout is not None else "-",
+        timeout,
+        hang_timeout if hang_timeout is not None else "-",
+        log_path,
+    )
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_f = open(log_path, "w", encoding="utf-8")
     env = os.environ.copy()
     env["OPENCODE_SERVER_PASSWORD"] = ""
     proc = subprocess.Popen(
-        [
-            binary,
-            "serve",
-            "--hostname",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--print-logs",
-            "--log-level",
-            "INFO",
-        ],
+        cmd,
         cwd=str(cwd),
         stdout=log_f,
         stderr=subprocess.STDOUT,

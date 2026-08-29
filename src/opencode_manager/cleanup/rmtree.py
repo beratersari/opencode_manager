@@ -13,12 +13,65 @@ from opencode_manager.log import get_logger
 
 logger = get_logger()
 
+_WIN_RESERVED = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
 
 def _chmod_writable(path: Path) -> None:
     try:
         os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
     except OSError:
         pass
+
+
+def win_extended_path(path: Path | str) -> str:
+    """Windows long-path prefix. `rd /s /q \\\\?\\…`."""
+    text = str(path)
+    if text.startswith("\\\\?\\"):
+        return text
+    if text.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + text.lstrip("\\")
+    return "\\\\?\\" + text
+
+
+def win_reserved_stem(name: str) -> bool:
+    stem = name.split(".")[0].upper()
+    return stem in _WIN_RESERVED
+
+
+def _windows_del_reserved(root: Path) -> None:
+    if not root.exists():
+        return
+    for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        for name in list(filenames) + list(dirnames):
+            if not win_reserved_stem(name):
+                continue
+            target = Path(dirpath) / name
+            extended = win_extended_path(target)
+            logger.info("delete reserved Windows name %s", extended)
+            subprocess.run(
+                ["cmd", "/c", "del", "/f", "/q", extended],
+                capture_output=True,
+                check=False,
+            )
+            if target.exists():
+                subprocess.run(
+                    ["cmd", "/c", "rd", "/s", "/q", extended],
+                    capture_output=True,
+                    check=False,
+                )
+
+
+def windows_rd_cmd(path: Path) -> list[str]:
+    return ["cmd", "/c", "rd", "/s", "/q", win_extended_path(path)]
 
 
 def hard_delete(path: Path, *, attempts: int = 6) -> bool:
@@ -29,8 +82,9 @@ def hard_delete(path: Path, *, attempts: int = 6) -> bool:
     delay = 0.2
     for n in range(attempts):
         if os.name == "nt":
+            _windows_del_reserved(path)
             subprocess.run(
-                ["cmd", "/c", "rd", "/s", "/q", str(path)],
+                windows_rd_cmd(path),
                 capture_output=True,
                 check=False,
             )

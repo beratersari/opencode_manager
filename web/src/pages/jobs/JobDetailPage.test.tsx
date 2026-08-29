@@ -1,0 +1,98 @@
+import React from 'react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { JobDetailPage } from './JobDetailPage'
+
+const fetchJob = vi.fn()
+const fetchPrompts = vi.fn()
+const fetchChat = vi.fn()
+const fetchLogs = vi.fn()
+
+vi.mock('../../api/client', () => ({
+  fetchJob: (...args: unknown[]) => fetchJob(...args),
+  fetchPrompts: (...args: unknown[]) => fetchPrompts(...args),
+  fetchChat: (...args: unknown[]) => fetchChat(...args),
+  fetchLogs: (...args: unknown[]) => fetchLogs(...args),
+}))
+
+vi.mock('../../app/live', () => ({
+  useLive: () => ({ connected: true, generation: 0, running: 0, queueQueued: 0 }),
+}))
+
+function renderAt(jobId: string) {
+  const router = createMemoryRouter(
+    [{ path: '/jobs/:jobId', element: <JobDetailPage /> }],
+    { initialEntries: [`/jobs/${jobId}`] },
+  )
+  return { router, ...render(<RouterProvider router={router} />) }
+}
+
+const jobA = {
+  job_id: 'job_aaa',
+  jira_id: 'AAA-1',
+  status: 'success',
+  live: false,
+  agent_mode: 'build',
+  model: 'opencode/x',
+  attempt: 1,
+  retry_count: 1,
+}
+
+const jobB = {
+  ...jobA,
+  job_id: 'job_bbb',
+  jira_id: 'BBB-1',
+}
+
+describe('JobDetailPage', () => {
+  afterEach(() => {
+    cleanup()
+    fetchJob.mockReset()
+    fetchPrompts.mockReset()
+    fetchChat.mockReset()
+    fetchLogs.mockReset()
+  })
+
+  it('clears the previous job when the next id 404s', async () => {
+    fetchJob.mockImplementation(async (id: string) => {
+      if (id === 'job_aaa') return { job: jobA, system_logs: [] }
+      const err = new Error('No job job_missing')
+      ;(err as Error & { status: number }).status = 404
+      throw err
+    })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+
+    const { router } = renderAt('job_aaa')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'job_aaa' })).toBeTruthy()
+    })
+
+    await router.navigate('/jobs/job_missing')
+
+    await waitFor(() => {
+      expect(screen.getByText(/No job job_missing|Failed to load job/)).toBeTruthy()
+    })
+    expect(screen.queryByRole('heading', { name: 'job_aaa' })).toBeNull()
+    expect(screen.queryByText('AAA-1')).toBeNull()
+  })
+
+  it('shows the job that matches the route', async () => {
+    fetchJob.mockImplementation(async (id: string) => ({
+      job: id === 'job_bbb' ? jobB : jobA,
+      system_logs: [],
+    }))
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+
+    renderAt('job_bbb')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'job_bbb' })).toBeTruthy()
+    })
+    expect(screen.getAllByText('BBB-1').length).toBeGreaterThan(0)
+  })
+})

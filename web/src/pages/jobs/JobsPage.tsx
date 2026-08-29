@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchJobs, fetchQueue } from '../../api/client'
 import type { JobItem, JobsPayload } from '../../api/types'
@@ -6,31 +6,12 @@ import { useLive } from '../../app/live'
 import { LiveDot } from '../../ui/LiveDot'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge, statusToneClass } from '../../ui/StatusBadge'
-
-const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'active', label: 'In flight' },
-  { id: 'queue', label: 'Queue' },
-  { id: 'error', label: 'Error' },
-  { id: 'completed', label: 'Completed' },
-] as const
-
-type Filter = (typeof FILTERS)[number]['id']
-
-function matches(job: JobItem, filter: Filter): boolean {
-  const s = (job.status || '').toLowerCase()
-  if (filter === 'all') return true
-  if (filter === 'active') return s === 'running' || Boolean(job.live && s !== 'queued')
-  if (filter === 'queue') return s === 'queued'
-  if (filter === 'error') return s === 'error' || s === 'timeout' || s === 'not_found'
-  if (filter === 'completed') return s === 'success'
-  return true
-}
+import { JOB_FILTERS, type JobListFilter } from './filters'
 
 export function JobsPage() {
   const navigate = useNavigate()
   const live = useLive()
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filter, setFilter] = useState<JobListFilter>('all')
   const [jira, setJira] = useState('')
   const [debounced, setDebounced] = useState('')
   const [page, setPage] = useState(1)
@@ -48,13 +29,20 @@ export function JobsPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await fetchJobs({ jiraId: debounced || undefined, page, pageSize: 25 })
+      if (filter === 'queue') {
+        const q = await fetchQueue({ jiraId: debounced || undefined })
+        setQueue(q.items || [])
+        setError(null)
+        return
+      }
+      const data = await fetchJobs({
+        jiraId: debounced || undefined,
+        page,
+        pageSize: 25,
+        filter,
+      })
       setPayload(data)
       setError(null)
-      if (filter === 'queue') {
-        const q = await fetchQueue()
-        setQueue(q.items || [])
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load jobs')
     }
@@ -64,12 +52,7 @@ export function JobsPage() {
     void load()
   }, [load, live.generation])
 
-  const jobs = useMemo(
-    () => (payload?.jobs || []).filter((j) => matches(j, filter)),
-    [payload, filter],
-  )
-
-  const rows = filter === 'queue' ? queue : jobs
+  const rows = filter === 'queue' ? queue : payload?.jobs || []
 
   return (
     <section className="space-y-5">
@@ -98,11 +81,14 @@ export function JobsPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-full border border-border bg-bg-elevated p-1">
-          {FILTERS.map((f) => (
+          {JOB_FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
-              onClick={() => setFilter(f.id)}
+              onClick={() => {
+                setFilter(f.id)
+                setPage(1)
+              }}
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
                 filter === f.id ? 'bg-accent text-[#1a0d08]' : 'text-text-muted hover:text-text'
               }`}
@@ -143,7 +129,10 @@ export function JobsPage() {
               tabIndex={0}
               onClick={() => navigate(`/jobs/${encodeURIComponent(j.job_id)}`)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(`/jobs/${encodeURIComponent(j.job_id)}`)
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  navigate(`/jobs/${encodeURIComponent(j.job_id)}`)
+                }
               }}
             >
               <div className={`vd-job-bar ${statusToneClass(j.status)}`} />

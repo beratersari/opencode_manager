@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchChat, fetchJob, fetchLogs, fetchPrompts } from '../../api/client'
 import type { ChatMessage, JobItem, LogLine, PromptRow } from '../../api/types'
@@ -21,29 +21,45 @@ export function JobDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
 
-  const load = useCallback(async () => {
-    const id = jobId.trim()
+  const seqRef = useRef(0)
+
+  const load = useCallback(async (id: string, mine: number, opts: { clearOnError: boolean }) => {
     if (!id) return
     try {
       const body = await fetchJob(id)
+      if (seqRef.current !== mine) return
       setJob(body.job)
       setError(null)
       const [p, c, l] = await Promise.all([fetchPrompts(id), fetchChat(id), fetchLogs(id)])
+      if (seqRef.current !== mine) return
       setPrompts(p.prompts || [])
       setMessages(c.messages || [])
       setLogs(l.lines || [])
     } catch (e) {
+      if (seqRef.current !== mine) return
+      if (opts.clearOnError) {
+        setJob(null)
+        setPrompts([])
+        setMessages([])
+        setLogs([])
+      }
       setError(e instanceof Error ? e.message : 'Failed to load job')
     }
-  }, [jobId])
+  }, [])
 
   useEffect(() => {
+    const mine = ++seqRef.current
     setTab('overview')
-    void load()
+    setJob(null)
+    setPrompts([])
+    setMessages([])
+    setLogs([])
+    setError(null)
+    void load(jobId.trim(), mine, { clearOnError: true })
   }, [jobId, load])
 
   useEffect(() => {
-    if (job?.live) void load()
+    if (job?.live) void load(jobId.trim(), seqRef.current, { clearOnError: false })
   }, [live.generation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -64,7 +80,11 @@ export function JobDetailPage() {
       </div>
 
       <div className="flex justify-end">
-        <button type="button" className="vd-btn vd-btn-secondary" onClick={() => void load()}>
+        <button
+          type="button"
+          className="vd-btn vd-btn-secondary"
+          onClick={() => void load(jobId.trim(), seqRef.current, { clearOnError: true })}
+        >
           Refresh
         </button>
       </div>

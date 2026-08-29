@@ -165,7 +165,7 @@ def test_no_clone_if_leftover_cannot_be_removed(tmp_settings: Settings, monkeypa
         dest.mkdir(parents=True, exist_ok=True)
         return False
 
-    monkeypatch.setattr("opencode_manager.worker.hard_delete", stay)
+    monkeypatch.setattr("opencode_manager.cleanup.end.hard_delete", stay)
     monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr(
         "opencode_manager.worker.clone_repo", lambda *_a, **_k: cloned.__setitem__("n", cloned["n"] + 1)
@@ -196,7 +196,7 @@ def test_subprocess_timeout_on_git_becomes_giterror(monkeypatch) -> None:
     def boom(*_a, **_k):
         raise subprocess.TimeoutExpired(cmd="git", timeout=1)
 
-    monkeypatch.setattr("opencode_manager.git.clone.subprocess.run", boom)
+    monkeypatch.setattr("opencode_manager.git.clone.subprocess.Popen", boom)
     with pytest.raises(GitError, match="timed out"):
         _run_git(["status"], env=os.environ.copy(), timeout=1.0)
 
@@ -205,7 +205,7 @@ def test_subprocess_timeout_on_ls_remote_becomes_giterror(monkeypatch) -> None:
     def boom(*_a, **_k):
         raise subprocess.TimeoutExpired(cmd="git ls-remote", timeout=1)
 
-    monkeypatch.setattr("opencode_manager.git.clone.subprocess.run", boom)
+    monkeypatch.setattr("opencode_manager.git.clone.subprocess.Popen", boom)
     with pytest.raises(GitError, match="timed out"):
         ls_remote_has_branch("https://example/r.git", "develop", pat="x", timeout=1.0)
 

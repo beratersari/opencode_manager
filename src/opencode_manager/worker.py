@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from opencode_manager.callback import post_callback
-from opencode_manager.cleanup.kill import kill_job_tree
-from opencode_manager.cleanup.rmtree import hard_delete
+from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.dashboard.store import JobStore
 from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
 from opencode_manager.git.detect import classify_host
@@ -36,14 +35,7 @@ class JobRunner(Protocol):
 
 def _remove_clone(dest: Path, *, reason: str) -> bool:
     """Hard-delete dest. True only when the path is gone."""
-    logger.info("remove clone reason=%s clone_path=%s exists=%s", reason, dest, dest.exists())
-    ok = hard_delete(dest)
-    still = dest.exists()
-    if still:
-        logger.error("clone still present after %s delete clone_path=%s", reason, dest)
-    else:
-        logger.info("clone gone after %s delete clone_path=%s ok=%s", reason, dest, ok)
-    return not still
+    return delete_clone_path(dest, reason=reason)
 
 
 class OpenCodeRunner:
@@ -64,6 +56,8 @@ class OpenCodeRunner:
             self.settings.git_clone_timeout_seconds,
         )
         try:
+            if should_stop():
+                return Terminal(500, "manager shutting down")
             if dest.exists():
                 logger.info("leftover clone exists; hard-delete before clone clone_path=%s", dest)
                 if not _remove_clone(dest, reason="before-clone"):
@@ -74,9 +68,14 @@ class OpenCodeRunner:
                 job.source_branch,
                 pat=job._pat,  # type: ignore[attr-defined]
                 timeout=self.settings.git_clone_timeout_seconds,
+                job=job,
+                store=self.store,
+                should_stop=should_stop,
             ):
                 logger.warning("source_branch missing on remote: %s", job.source_branch)
                 return Terminal(404, f"source_branch {job.source_branch!r} does not exist on the remote")
+            if should_stop():
+                return Terminal(500, "manager shutting down")
             logger.info("source_branch exists; cloning")
             clone_repo(
                 job.repo_url,
@@ -84,6 +83,9 @@ class OpenCodeRunner:
                 job.source_branch,
                 pat=job._pat,  # type: ignore[attr-defined]
                 timeout=self.settings.git_clone_timeout_seconds,
+                job=job,
+                store=self.store,
+                should_stop=should_stop,
             )
             logger.info("clone ready at %s", dest)
             logger.info("OpenCode phase start retry_count=%s timeout=%ss", job.retry_count, job.timeout_in_seconds)
@@ -113,7 +115,7 @@ class OpenCodeRunner:
                 [job.serve_pid, *job.extra_pids],
                 dest,
             )
-            kill_job_tree([job.serve_pid, *job.extra_pids])
+            stop_job_holders(job, dest)
             _remove_clone(dest, reason="job-end")
 
 

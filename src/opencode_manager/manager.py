@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from opencode_manager.callback import post_callback
+from opencode_manager.cleanup.end import delete_clone_path, protect_pids, stop_job_holders
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
-from opencode_manager.cleanup.rmtree import hard_delete
 from opencode_manager.dashboard.store import JobStore
 from opencode_manager.log import get_logger, job_log_filename
 from opencode_manager.log_context import bind, clear
@@ -49,7 +52,14 @@ class Manager:
             self.settings.job_store_dir,
             self.settings.max_concurrent_jobs,
         )
-        killed = reap_work_dir(self.settings.work_dir)
+        leftover_pids: list[Optional[int]] = []
+        for job in self.store.list_all():
+            if job.status in {"queued", "running"}:
+                leftover_pids.extend([job.serve_pid, *job.extra_pids])
+        if leftover_pids:
+            logger.info("boot kill recorded leftover pids=%s", leftover_pids)
+            kill_job_tree(leftover_pids)
+        killed = reap_work_dir(self.settings.work_dir, protect={os.getpid()})
         logger.info("boot reap orphans under %s killed=%s", self.settings.work_dir, killed)
         for job in self.store.list_all():
             if job.status in {"queued", "running"}:
@@ -93,10 +103,12 @@ class Manager:
                 if job:
                     live.append(job)
         logger.info("shutdown live jobs=%s", [j.job_id for j in live])
+        protect = protect_pids()
         for job in live:
             bind(job.job_id, job.jira_id, log_file=job.log_file)
-            logger.info("shutdown fail job serve_pid=%s clone=%s", job.serve_pid, job.clone_path)
-            kill_job_tree([job.serve_pid, *job.extra_pids])
+            logger.info("shutdown fail job serve_pid=%s extra_pids=%s clone=%s", job.serve_pid, job.extra_pids, job.clone_path)
+            clone = Path(job.clone_path) if job.clone_path else None
+            stop_job_holders(job, clone, protect=protect)
             finish_job(
                 job,
                 Terminal(500, "manager shutting down"),
@@ -104,13 +116,14 @@ class Manager:
                 store=self.store,
                 send_callback=True,
             )
-            if job.clone_path:
-                from pathlib import Path
-
-                hard_delete(Path(job.clone_path))
+            delete_clone_path(clone, reason="shutdown")
             clear()
+        deadline = time.monotonic() + max(60.0, float(self.settings.git_clone_timeout_seconds))
         for thread in list(self._threads):
-            thread.join(timeout=2)
+            remaining = max(0.1, deadline - time.monotonic())
+            thread.join(timeout=remaining)
+            if thread.is_alive():
+                logger.error("shutdown: worker thread still alive name=%s", thread.name)
         logger.info("shutdown complete")
 
     def submit(self, body: Dict[str, Any]) -> tuple[int, Envelope]:
@@ -239,7 +252,7 @@ class Manager:
             finally:
                 self._on_done()
 
-        thread = threading.Thread(target=_target, name=f"osm-{job.job_id}", daemon=True)
+        thread = threading.Thread(target=_target, name=f"osm-{job.job_id}", daemon=False)
         self._threads.append(thread)
         thread.start()
 
@@ -250,17 +263,19 @@ class Manager:
                 return
             if self._running >= self.settings.max_concurrent_jobs:
                 return
-            nxt = self.queue.dequeue()
-            if not nxt:
-                logger.info("slot free; queue empty running=%s", self._running)
+            while True:
+                nxt = self.queue.dequeue()
+                if not nxt:
+                    logger.info("slot free; queue empty running=%s", self._running)
+                    return
+                job = self.store.get(str(nxt.get("job_id") or ""))
+                if not job:
+                    logger.warning("dequeued missing job record %s; trying next", nxt.get("job_id"))
+                    continue
+                self._running += 1
+                logger.info("dequeue %s jira_id=%s running=%s", job.job_id, job.jira_id, self._running)
+                self._start_thread(job, str(nxt.get("PAT") or ""))
                 return
-            job = self.store.get(str(nxt.get("job_id") or ""))
-            if not job:
-                logger.warning("dequeued missing job record %s", nxt.get("job_id"))
-                return
-            self._running += 1
-            logger.info("dequeue %s jira_id=%s running=%s", job.job_id, job.jira_id, self._running)
-            self._start_thread(job, str(nxt.get("PAT") or ""))
 
     def job_public(self, job_id: str) -> Optional[Dict[str, Any]]:
         job = self.store.get(job_id)

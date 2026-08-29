@@ -293,6 +293,7 @@ Always fast. Never wait for OpenCode.
 | Capacity full | **202** | Queued. `job_id`, `session_id` (incoming or empty). One terminal callback later. |
 | Capacity free, accepted | **202** | Started. One terminal callback later. |
 | Missing/invalid fields, SSH URL, unknown agent, bad `model` | **400** | Error text. No callback. |
+| Process is booting or shutting down | **503** | Not accepting jobs. No callback. |
 | `source_branch` missing on remote | **202** then callback **404** | Check in the worker after accept (§6.3). Not a sync 400. |
 
 Every HTTP body (and every callback) uses the same shape so n8n has one parser:
@@ -345,6 +346,7 @@ re-run OpenCode because n8n missed a webhook.
 | 404 | `source_branch` does not exist on the remote |
 | 409 | This `jira_id` already has a live job |
 | 500 | Failed after retries (serve crash, incomplete, unexpected) |
+| 503 | Inbound only: manager is booting or shutting down. No callback. |
 | 504 | An OpenCode attempt hit `timeout_in_seconds` and no attempts remain |
 
 ---
@@ -903,7 +905,7 @@ Clone the repo for reference only. Do not import it as a dependency.
 - “if source is main, create `feature/KEY` from target”
 - shared long-lived `opencode serve` + “never kill serve”
 - keeping a dirty clone for reuse (we delete every time; next job
-  re-clones to the same `jira_id` + repo + branch path)
+  re-clones to the same `{work_dir}/{jira_id}` path)
 
 ---
 
@@ -1223,6 +1225,12 @@ build them).
 - [ ] Missing / empty / not `provider/id` `model` → inbound **400**, no callback.
 - [ ] Missing remote branch → inbound 202 + callback 404.
 - [ ] Kill-then-hard-delete even when files are locked (retry).
+- [ ] `ls-remote` matches `refs/heads/{branch}` exactly (`dev` ≠ `develop`).
+- [ ] Origin scrub keeps `host:port` and fails if userinfo remains.
+- [ ] Git child PIDs are recorded on the job and killed on shutdown / job-end.
+- [ ] Boot kills leftover recorded `serve_pid` / `extra_pids` and reaps cwd/argv under `work_dir` on Windows and Linux.
+- [ ] Shutdown joins workers after kill + callback 500 + clone delete; later `POST /jobs` is 503.
+- [ ] Dashboard `filter` paginates the filtered set; `/api/queue` honors `jira_id`.
 - [ ] New job after leftover dest exists: hard-delete that path first, then clone (not `git clone` into non-empty).
 - [ ] Inbound invalid `session_id` creates a new session (job succeeds path).
 - [ ] Hang-retry resume failure fails the attempt (no blank session).
@@ -1313,12 +1321,12 @@ under `/api`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/meta` | app name, version, server_time |
-| GET | `/api/jobs` | page, page_size, `jira_id` filter. `{ jobs, total, page, page_size, server_time }` |
+| GET | `/api/jobs` | page, page_size, `jira_id`, `filter` (`all` / `active` / `error` / `completed`). Pagination is over the filtered set. `{ jobs, total, page, page_size, filter, server_time }` |
 | GET | `/api/jobs/{job_id}` | one job + `system_logs` (this `job_id` only) |
 | GET | `/api/jobs/{job_id}/prompts` | prompt artifacts |
 | GET | `/api/jobs/{job_id}/chat` | transcript (live serve or snapshot) |
 | GET | `/api/jobs/{job_id}/logs` | job-log lines for this id |
-| GET | `/api/queue` | queued rows, no PAT, no `callback_url` secrets required on the card |
+| GET | `/api/queue` | queued rows, optional `jira_id`. No PAT, no `callback_url` secrets required on the card |
 | WS | `/ws` | live snapshot: running count, queue count, generation. No settings/poll payload. |
 
 404 if the id is unknown. Never put PAT in a response.
@@ -1346,7 +1354,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Nav is Jobs only. No Poll / Scheduled / Sessions / Storage / Settings / issue pages.
 - [ ] Prod: manager serves `web/dist` on the same `listen_port`. Dev: Vite proxies `/api` and `/ws`.
 - [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, started_at, error preview.
-- [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25.
+- [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25. List filters paginate on the server; Queue search uses `/api/queue?jira_id=`.
 - [ ] No Delete, no bulk-select, no Stop, no queue Cancel, no Report.
 - [ ] Job detail tabs: Details, Prompt, Transcript, Logs.
 - [ ] Details shows the §17.3 meta fields, last assistant text, and the attempts table.

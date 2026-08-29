@@ -53,9 +53,12 @@ class JobQueue:
             self._save([])
             return rows
 
-    def public_items(self) -> List[Dict[str, Any]]:
+    def public_items(self, jira_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        key = (jira_id or "").strip()
         out = []
         for row in self.peek_all():
+            if key and str(row.get("jira_id") or "") != key:
+                continue
             out.append(
                 {
                     "job_id": row.get("job_id"),

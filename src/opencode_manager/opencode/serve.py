@@ -41,7 +41,10 @@ def start_serve(
     log_path: Path,
     timeout: float,
     on_spawn: Optional[Callable[[ServeHandle], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> ServeHandle:
+    if should_stop and should_stop():
+        raise RuntimeError("manager shutting down")
     binary = shutil.which(bin_name) or bin_name
     port = free_port()
     logger.info("start serve bin=%s cwd=%s port=%s health_timeout=%ss log=%s", binary, cwd, port, timeout, log_path)
@@ -73,7 +76,7 @@ def start_serve(
     if on_spawn is not None:
         on_spawn(handle)
     try:
-        health = wait_health(base, str(cwd), timeout=timeout)
+        health = wait_health(base, str(cwd), timeout=timeout, should_stop=should_stop)
     except Exception:
         logger.error("serve health failed; killing pid=%s port=%s", proc.pid, port)
         stop_serve(handle)
@@ -82,18 +85,28 @@ def start_serve(
     return handle
 
 
-def wait_health(base_url: str, directory: str, *, timeout: float) -> dict:
+def wait_health(
+    base_url: str,
+    directory: str,
+    *,
+    timeout: float,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> dict:
     deadline = time.time() + timeout
     last: Optional[Exception] = None
     headers = {"x-opencode-directory": directory}
     with httpx.Client(verify=False, timeout=5.0) as client:
         while time.time() < deadline:
+            if should_stop and should_stop():
+                raise RuntimeError("manager shutting down")
             try:
                 response = client.get(base_url.rstrip("/") + "/global/health", headers=headers)
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, dict):
                         return data
+            except RuntimeError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 last = exc
             time.sleep(0.3)

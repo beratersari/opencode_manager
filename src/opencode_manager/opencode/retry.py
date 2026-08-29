@@ -129,6 +129,7 @@ def run_opencode_job(
                             log_path=settings.work_dir / ".serve" / f"{job.job_id}.log",
                             timeout=min(remain, 90.0),
                             on_spawn=record_spawn,
+                            should_stop=should_stop,
                         )
                     except Exception as exc:  # noqa: BLE001
                         raise AttemptFailed("serve-dead", f"serve boot failed: {exc}") from exc

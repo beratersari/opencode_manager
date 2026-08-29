@@ -150,7 +150,7 @@ def test_refuse_clone_if_leftover_cannot_be_deleted(tmp_settings: Settings, monk
     def clone_must_not(*_a, **_k) -> None:
         cloned["n"] += 1
 
-    monkeypatch.setattr("opencode_manager.worker.hard_delete", stay)
+    monkeypatch.setattr("opencode_manager.cleanup.end.hard_delete", stay)
     monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_must_not)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)

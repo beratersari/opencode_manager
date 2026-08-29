@@ -14,7 +14,7 @@ from opencode_manager import __version__
 from opencode_manager.dashboard.chat import job_chat_payload
 from opencode_manager.log import get_logger, read_job_log_lines
 from opencode_manager.manager import Manager
-from opencode_manager.models import Envelope, utc_now
+from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
 
 router = APIRouter()
 
@@ -64,6 +64,7 @@ def api_meta() -> Dict[str, Any]:
 def api_jobs(
     request: Request,
     jira_id: Optional[str] = None,
+    filter: str = Query(default="all"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ) -> Dict[str, Any]:
@@ -71,6 +72,11 @@ def api_jobs(
     if jira_id:
         key = jira_id.strip()
         jobs = [j for j in jobs if j.jira_id == key]
+    filt = (filter or "all").strip().lower()
+    if filt not in LIST_FILTERS:
+        filt = "all"
+    if filt != "all":
+        jobs = [j for j in jobs if job_matches_list_filter(j, filt)]
     total = len(jobs)
     start = (page - 1) * page_size
     slice_ = jobs[start : start + page_size]
@@ -79,6 +85,7 @@ def api_jobs(
         "total": total,
         "page": page,
         "page_size": page_size,
+        "filter": filt,
         "server_time": utc_now(),
     }
 
@@ -130,8 +137,8 @@ def api_logs(job_id: str, request: Request) -> Dict[str, Any]:
 
 
 @router.get("/api/queue")
-def api_queue(request: Request) -> Dict[str, Any]:
-    items = _mgr(request).queue.public_items()
+def api_queue(request: Request, jira_id: Optional[str] = None) -> Dict[str, Any]:
+    items = _mgr(request).queue.public_items(jira_id=jira_id)
     return {
         "items": items,
         "queued_count": len(items),

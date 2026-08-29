@@ -44,6 +44,7 @@ export type JobsPayload = {
   total: number
   page: number
   page_size: number
+  filter?: string
   server_time: string
 }
 

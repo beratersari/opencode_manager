@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import List
 
+import pytest
 from fastapi.testclient import TestClient
 
 from opencode_manager.app import create_app
@@ -74,6 +75,42 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
     with _client(tmp_settings) as client:
         res = client.post("/jobs", json=_body(model="onlyname"))
         assert res.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda b: b.pop("PAT"),
+        lambda b: b.pop("source_branch"),
+        lambda b: b.pop("jira_id"),
+        lambda b: b.pop("callback_url"),
+        lambda b: b.pop("timeout_in_seconds"),
+        lambda b: b.__setitem__("source_branch", "  "),
+        lambda b: b.__setitem__("timeout_in_seconds", 0),
+        lambda b: b.__setitem__("timeout_in_seconds", "nope"),
+        lambda b: b.__setitem__("repo_url", "git@host:g/r.git"),
+        lambda b: b.__setitem__("callback_url", "not-a-url"),
+        lambda b: b.__setitem__("agent_mode", "codex"),
+    ],
+)
+def test_inbound_error_matrix_is_400_no_job(tmp_settings: Settings, mutate) -> None:
+    body = _body()
+    mutate(body)
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=body)
+        assert res.status_code == 400
+        assert res.json()["status_code"] == 400
+        assert res.json()["job_id"] == ""
+
+
+def test_not_accepting_is_503(tmp_settings: Settings) -> None:
+    from opencode_manager.manager import Manager
+
+    manager = Manager(tmp_settings, runner=FakeRunner())
+    status, env = manager.submit(_body())
+    assert status == 503
+    assert env.status_code == 503
+    assert env.job_id == ""
 
 
 def test_accept_and_409(tmp_settings: Settings) -> None:

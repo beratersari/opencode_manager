@@ -14,6 +14,7 @@ KNOWN_AGENTS = frozenset({"build", "plan", "general", "explore"})
 _MODEL_RE = re.compile(r"^[^/\s]+/[^/\s].*$")
 LIVE_STATUSES = frozenset({"queued", "running"})
 ERROR_STATUSES = frozenset({"error", "timeout", "not_found"})
+LIST_FILTERS = frozenset({"all", "active", "error", "completed"})
 
 
 def utc_now() -> str:
@@ -180,6 +181,21 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
 def parse_model(model: str) -> tuple[str, str]:
     provider, _, name = model.strip().partition("/")
     return provider, name
+
+
+def job_matches_list_filter(job: "JobRecord", filt: str) -> bool:
+    """Dashboard list filter. `queue` is GET /api/queue, not this helper."""
+    key = (filt or "all").strip().lower()
+    status = (job.status or "").lower()
+    if key in {"", "all"}:
+        return True
+    if key == "active":
+        return status == "running" or bool(job.live and status != "queued")
+    if key == "error":
+        return status in ERROR_STATUSES
+    if key == "completed":
+        return status == "success"
+    return True
 
 
 def callback_host_allowed(callback_url: str, allowed: List[str]) -> bool:

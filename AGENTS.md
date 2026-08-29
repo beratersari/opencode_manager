@@ -35,8 +35,9 @@ These look like bugs. They are not.
 
 ### API and jobs
 
-- Inbound HTTP is only an ack (`202` / `409` / `400`). Never hold the
-  socket for clone or OpenCode.
+- Inbound HTTP is only an ack (`202` / `409` / `400` / `503`). Never hold
+  the socket for clone or OpenCode. `503` means the process is not
+  accepting (`boot` not finished, or shutting down). No callback.
 - Exactly one POST goes to that job’s `callback_url`, and only when
   the job is terminal (`200` / `404` / `500` / `504`).
   - Accepted job (inbound `202`, queued or started): 1 terminal callback.
@@ -58,12 +59,14 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   clone. Do not start `opencode serve`. Do not resume a leftover
   running or queued job. Do not send callbacks for leftovers. Do
   not accept `POST /jobs` until boot is finished.
-- **Boot cleanup is process hygiene only.** Reap orphan processes
-  whose cwd/argv is `work_dir` (leftover serves, git, tools). Mark
-  leftover running/queued rows **ERROR** in the job-history store
-  so the dashboard can show them. They are not live, so those
-  `jira_id`s are not `409`. Do **not** “handle” those jobs (no
-  OpenCode, no terminal callback, no re-enqueue).
+- **Boot cleanup is process hygiene only.** Kill leftover
+  `serve_pid` / `extra_pids` recorded on running or queued rows.
+  Then reap orphans whose cwd/argv is `work_dir` (leftover serves,
+  git, tools) on Windows and Linux. Mark leftover running/queued
+  rows **ERROR** in the job-history store so the dashboard can show
+  them. They are not live, so those `jira_id`s are not `409`. Do
+  **not** “handle” those jobs (no OpenCode, no terminal callback,
+  no re-enqueue).
 - **While shutting down:** stop accepting `POST /jobs`. Force-kill
   every job’s process tree (git, **that** job’s serve, tool
   children). Mark every running **and** queued job **ERROR**. Send
@@ -104,6 +107,9 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Job-end delete also runs when git fails before OpenCode starts
   (missing remote branch, clone error, git timeout). After kill,
   hard-delete the clone path again and log whether it is gone.
+- Track every git child PID on `job.extra_pids` while it is live.
+  `ls-remote` matches `refs/heads/{branch}` exactly. After clone,
+  origin has no userinfo and keeps `host:port`.
 
 ### OpenCode
 
@@ -223,7 +229,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   queued.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
   (live serve or snapshot), per-job log lines for that
-  `job_id`. Chat must work after the clone is gone.
+  `job_id`. Chat must work after the clone is gone. Navigating to an
+  unknown id must not keep the previous job on screen.
+- Jobs list filters (All / In flight / Error / Completed) run on
+  the server (`GET /api/jobs?filter=` + `jira_id` + page) so page
+  25 is the filtered set. Queue is `GET /api/queue?jira_id=`.
 
 ## Do not copy from virtual_developer
 

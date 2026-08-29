@@ -17,11 +17,12 @@ async function request<T>(path: string): Promise<T> {
   return body as T
 }
 
-export function fetchJobs(opts?: { jiraId?: string; page?: number; pageSize?: number }) {
+export function fetchJobs(opts?: { jiraId?: string; page?: number; pageSize?: number; filter?: string }) {
   const params = new URLSearchParams()
   if (opts?.jiraId) params.set('jira_id', opts.jiraId)
   if (opts?.page) params.set('page', String(opts.page))
   if (opts?.pageSize) params.set('page_size', String(opts.pageSize))
+  if (opts?.filter && opts.filter !== 'all') params.set('filter', opts.filter)
   const q = params.toString() ? `?${params.toString()}` : ''
   return request<JobsPayload>(`/api/jobs${q}`)
 }
@@ -42,8 +43,11 @@ export function fetchLogs(jobId: string) {
   return request<{ lines: LogLine[] }>(`/api/jobs/${encodeURIComponent(jobId)}/logs`)
 }
 
-export function fetchQueue() {
-  return request<{ items: JobItem[]; queued_count: number }>('/api/queue')
+export function fetchQueue(opts?: { jiraId?: string }) {
+  const params = new URLSearchParams()
+  if (opts?.jiraId) params.set('jira_id', opts.jiraId)
+  const q = params.toString() ? `?${params.toString()}` : ''
+  return request<{ items: JobItem[]; queued_count: number }>(`/api/queue${q}`)
 }
 
 export function fetchMeta() {

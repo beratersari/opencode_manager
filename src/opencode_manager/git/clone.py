@@ -5,11 +5,16 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
+from opencode_manager.cleanup.kill import kill_pid
 from opencode_manager.git.auth import argv_helper_off, isolated_git_env
 from opencode_manager.log import get_logger, redact
+
+if TYPE_CHECKING:
+    from opencode_manager.dashboard.store import JobStore
+    from opencode_manager.models import JobRecord
 
 logger = get_logger()
 
@@ -30,28 +35,102 @@ def clone_path_for(work_dir: Path, jira_id: str) -> Path:
     return work_dir / clone_identity(jira_id)
 
 
+def public_git_url(url: str) -> str:
+    """Strip userinfo, keep host:port."""
+    parsed = urlparse(url)
+    if not parsed.username and not parsed.password:
+        return url
+    host = parsed.hostname or ""
+    if not host:
+        raise GitError("URL has userinfo but no host")
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
+def origin_has_userinfo(url: str) -> bool:
+    parsed = urlparse(url)
+    return bool(parsed.username or parsed.password)
+
+
+def ls_remote_ref_is_branch(line: str, branch: str) -> bool:
+    """Exact `refs/heads/{branch}` — `dev` must not match `develop`."""
+    text = (line or "").strip()
+    if not text or text.startswith("#"):
+        return False
+    if "\t" in text:
+        ref = text.split("\t", 1)[1].strip()
+    else:
+        parts = text.split()
+        if len(parts) < 2:
+            return False
+        ref = parts[-1]
+    return ref == f"refs/heads/{branch}"
+
+
+def _track_pid(job: Optional["JobRecord"], pid: Optional[int], store: Optional["JobStore"]) -> None:
+    if job is None or not pid:
+        return
+    if int(pid) not in job.extra_pids:
+        job.extra_pids.append(int(pid))
+        if store is not None:
+            store.save(job)
+
+
+def _untrack_pid(job: Optional["JobRecord"], pid: Optional[int], store: Optional["JobStore"]) -> None:
+    if job is None or not pid:
+        return
+    job.extra_pids = [p for p in job.extra_pids if p != int(pid)]
+    if store is not None:
+        store.save(job)
+
+
 def _run_git(
     args: List[str],
     *,
     env: dict,
     cwd: Optional[Path] = None,
     timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> subprocess.CompletedProcess:
     cmd = ["git", *argv_helper_off(), *args]
     logger.info("git run timeout=%ss cwd=%s -- %s", timeout, cwd or ".", redact(" ".join(args)))
+    if should_stop and should_stop():
+        raise GitError("manager shutting down")
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(cwd) if cwd else None,
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
-            check=False,
+            start_new_session=True,
         )
     except subprocess.TimeoutExpired as exc:
         logger.error("git timeout after %ss -- %s", timeout, redact(" ".join(args)))
         raise GitError(f"git timed out after {timeout}s") from exc
+    except OSError as exc:
+        raise GitError(f"git failed to start: {exc}") from exc
+    _track_pid(job, proc.pid, store)
+    try:
+        if should_stop and should_stop():
+            kill_pid(proc.pid)
+            raise GitError("manager shutting down")
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            logger.error("git timeout after %ss -- %s", timeout, redact(" ".join(args)))
+            kill_pid(proc.pid)
+            try:
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+            raise GitError(f"git timed out after {timeout}s") from exc
+    finally:
+        _untrack_pid(job, proc.pid, store)
+    result = subprocess.CompletedProcess(cmd, proc.returncode or 0, stdout or "", stderr or "")
     if result.returncode != 0:
         err = redact((result.stderr or result.stdout or "").strip())
         logger.error("git exit=%s stderr=%s", result.returncode, err[-800:])
@@ -64,27 +143,27 @@ def _run_git(
     return result
 
 
-def ls_remote_has_branch(repo_url: str, branch: str, *, pat: str, timeout: float) -> bool:
-    logger.info("ls-remote --heads %s %s", redact(repo_url), branch)
+def ls_remote_has_branch(
+    repo_url: str,
+    branch: str,
+    *,
+    pat: str,
+    timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> bool:
+    logger.info("ls-remote --heads %s refs/heads/%s", redact(repo_url), branch)
     env = isolated_git_env(repo_url, pat)
-    try:
-        result = subprocess.run(
-            ["git", *argv_helper_off(), "ls-remote", "--heads", repo_url, branch],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        logger.error("ls-remote timeout after %ss", timeout)
-        raise GitError(f"ls-remote timed out after {timeout}s") from exc
-    if result.returncode != 0:
-        err = redact((result.stderr or "").strip())
-        logger.error("ls-remote exit=%s stderr=%s", result.returncode, err[-800:])
-        raise GitError(f"ls-remote failed: {err[-800:]}")
-    needle = f"refs/heads/{branch}"
-    found = any(needle in line for line in (result.stdout or "").splitlines())
+    result = _run_git(
+        ["ls-remote", "--heads", repo_url, f"refs/heads/{branch}"],
+        env=env,
+        timeout=timeout,
+        job=job,
+        store=store,
+        should_stop=should_stop,
+    )
+    found = any(ls_remote_ref_is_branch(line, branch) for line in (result.stdout or "").splitlines())
     logger.info("ls-remote branch %s found=%s", branch, found)
     return found
 
@@ -96,21 +175,27 @@ def clone_repo(
     *,
     pat: str,
     timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
     env = isolated_git_env(repo_url, pat)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    git_kw = dict(job=job, store=store, should_stop=should_stop)
     _run_git(
         ["clone", "--branch", source_branch, "--single-branch", repo_url, str(dest)],
         env=env,
         timeout=timeout,
+        **git_kw,
     )
     _run_git(
         ["checkout", source_branch],
         env=env,
         cwd=dest,
         timeout=min(60.0, timeout),
+        **git_kw,
     )
-    _scrub_origin(dest, env, timeout=min(30.0, timeout))
+    _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
     gitmodules = dest / ".gitmodules"
     if gitmodules.is_file():
         logger.info(".gitmodules present; submodule update")
@@ -119,24 +204,52 @@ def clone_repo(
             env=env,
             cwd=dest,
             timeout=timeout,
+            **git_kw,
         )
 
 
-def _scrub_origin(dest: Path, env: dict, *, timeout: float) -> None:
-    try:
-        result = _run_git(
+def _scrub_origin(
+    dest: Path,
+    env: dict,
+    *,
+    timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> None:
+    result = _run_git(
+        ["remote", "get-url", "origin"],
+        env=env,
+        cwd=dest,
+        timeout=timeout,
+        job=job,
+        store=store,
+        should_stop=should_stop,
+    )
+    url = (result.stdout or "").strip()
+    if origin_has_userinfo(url):
+        clean = public_git_url(url)
+        logger.info("scrub origin userinfo -> %s", redact(clean))
+        _run_git(
+            ["remote", "set-url", "origin", clean],
+            env=env,
+            cwd=dest,
+            timeout=timeout,
+            job=job,
+            store=store,
+            should_stop=should_stop,
+        )
+        check = _run_git(
             ["remote", "get-url", "origin"],
             env=env,
             cwd=dest,
             timeout=timeout,
+            job=job,
+            store=store,
+            should_stop=should_stop,
         )
-    except GitError:
-        return
-    url = (result.stdout or "").strip()
-    parsed = urlparse(url)
-    if parsed.username or parsed.password:
-        clean = urlunparse(parsed._replace(netloc=parsed.hostname or ""))
-        logger.info("scrub origin userinfo -> %s", redact(clean))
-        _run_git(["remote", "set-url", "origin", clean], env=env, cwd=dest, timeout=timeout)
+        final = (check.stdout or "").strip()
+        if origin_has_userinfo(final):
+            raise GitError("origin still has userinfo after scrub")
     else:
         logger.info("origin has no userinfo")

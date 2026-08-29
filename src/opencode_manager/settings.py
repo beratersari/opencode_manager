@@ -67,14 +67,21 @@ def _as_path(value: Any, default: Path) -> Path:
     return path
 
 
+def _read_yaml(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path} must be a mapping")
+    return loaded
+
+
 def load_settings(path: Optional[Path] = None) -> Settings:
     settings_path = path or Path(os.environ.get("OSM_SETTINGS", _PROJECT_ROOT / "settings.yaml"))
-    data: dict[str, Any] = {}
-    if settings_path.is_file():
-        loaded = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(loaded, dict):
-            raise ValueError("settings file must be a mapping")
-        data = loaded
+    data = _read_yaml(settings_path)
+    # Local machine overrides. Not used when tests pass an explicit path.
+    if path is None and not os.environ.get("OSM_SETTINGS"):
+        data = {**data, **_read_yaml(_PROJECT_ROOT / "settings.local.yaml")}
     s = Settings()
     s.listen_host = str(data.get("listen_host", s.listen_host))
     s.listen_port = int(data.get("listen_port", s.listen_port))

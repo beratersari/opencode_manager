@@ -12,3 +12,11 @@ opencode-manager
 
 Unit tests: `python3.12 -m pytest tests -m "not live"`.
 Live tests (real git + real `opencode`): `python3.12 -m pytest tests -m live`.
+
+A test-only sender/listener (fake n8n Wait node) lives in [`tester/`](tester/):
+
+```bash
+python3 tester/tester.py
+```
+
+Then open http://127.0.0.1:8090.

@@ -17,3 +17,5 @@ web/dist/
 .coverage
 htmlcov/
 .DS_Store
+tester/replies.jsonl
+settings.local.yaml

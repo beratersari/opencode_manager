@@ -4,14 +4,18 @@ max_concurrent_jobs: 2
 callback_timeout_seconds: 15
 callback_retry_count: 3
 callback_allowed_hosts: []
-# Override in production. Tests pass explicit dirs.
-work_dir: .temp
-job_log_dir: logs/jobs
-job_store_dir: .temp/jobs
-queue_path: .temp/queue.json
+# Two roots: app log is always {project_root}/logs/app.log.
+# Job logs / clones / history are outside the repo (PLAN §9–§10).
+# Windows: C:\osm\.temp  C:\osm\logs  C:\osm\jobs
+work_dir: /var/lib/osm/.temp
+job_log_dir: /var/lib/osm/logs
+job_store_dir: /var/lib/osm/jobs
+queue_path: /var/lib/osm/queue.json
 log_level: INFO
 opencode_bin: opencode
 hang_timeout_seconds: 180
 git_clone_timeout_seconds: 300
 retry_backoff_seconds: 2
 retry_backoff_cap_seconds: 30
+# Optional overlay (gitignored): settings.local.yaml
+

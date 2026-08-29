@@ -41,7 +41,7 @@ def _run_git(
     timeout: float,
 ) -> subprocess.CompletedProcess:
     cmd = ["git", *argv_helper_off(), *args]
-    logger.info("git %s", redact(" ".join(args)))
+    logger.info("git run timeout=%ss cwd=%s -- %s", timeout, cwd or ".", redact(" ".join(args)))
     result = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -53,11 +53,18 @@ def _run_git(
     )
     if result.returncode != 0:
         err = redact((result.stderr or result.stdout or "").strip())
+        logger.error("git exit=%s stderr=%s", result.returncode, err[-800:])
         raise GitError(f"git failed ({result.returncode}): {err[-800:]}")
+    out = redact((result.stdout or "").strip())
+    if out:
+        logger.info("git ok stdout=%s", out[-400:])
+    else:
+        logger.info("git ok exit=0")
     return result
 
 
 def ls_remote_has_branch(repo_url: str, branch: str, *, pat: str, timeout: float) -> bool:
+    logger.info("ls-remote --heads %s %s", redact(repo_url), branch)
     env = isolated_git_env(repo_url, pat)
     result = subprocess.run(
         ["git", *argv_helper_off(), "ls-remote", "--heads", repo_url, branch],
@@ -69,9 +76,12 @@ def ls_remote_has_branch(repo_url: str, branch: str, *, pat: str, timeout: float
     )
     if result.returncode != 0:
         err = redact((result.stderr or "").strip())
+        logger.error("ls-remote exit=%s stderr=%s", result.returncode, err[-800:])
         raise GitError(f"ls-remote failed: {err[-800:]}")
     needle = f"refs/heads/{branch}"
-    return any(needle in line for line in (result.stdout or "").splitlines())
+    found = any(needle in line for line in (result.stdout or "").splitlines())
+    logger.info("ls-remote branch %s found=%s", branch, found)
+    return found
 
 
 def clone_repo(
@@ -98,6 +108,7 @@ def clone_repo(
     _scrub_origin(dest, env, timeout=min(30.0, timeout))
     gitmodules = dest / ".gitmodules"
     if gitmodules.is_file():
+        logger.info(".gitmodules present; submodule update")
         _run_git(
             ["submodule", "update", "--init", "--recursive"],
             env=env,
@@ -120,4 +131,7 @@ def _scrub_origin(dest: Path, env: dict, *, timeout: float) -> None:
     parsed = urlparse(url)
     if parsed.username or parsed.password:
         clean = urlunparse(parsed._replace(netloc=parsed.hostname or ""))
+        logger.info("scrub origin userinfo -> %s", redact(clean))
         _run_git(["remote", "set-url", "origin", clean], env=env, cwd=dest, timeout=timeout)
+    else:
+        logger.info("origin has no userinfo")

@@ -16,7 +16,9 @@ from opencode_manager.opencode.session import (
     OpenCodeClient,
     assess_idle,
     compact_marker_count,
+    last_assistant_id,
     last_assistant_text,
+    turn_has_new_assistant,
     session_is_busy,
     session_is_compacting,
     snapshot_chat,
@@ -76,8 +78,10 @@ def run_opencode_job(
 
     def close_serve() -> None:
         nonlocal handle, client
+        logger.info("close serve session=%s pid=%s", job.session_id or "", handle.pid if handle else None)
         if client is not None:
             if job.session_id:
+                logger.info("abort session %s", job.session_id)
                 client.abort(job.session_id)
             client.close()
             client = None
@@ -94,7 +98,16 @@ def run_opencode_job(
                 raise JobFailed(500, "manager shutting down")
             job.attempt = attempt
             _save(store, job)
+            logger.info(
+                "attempt %s/%s start original_posted=%s session=%s timeout=%ss",
+                attempt,
+                attempts,
+                job.original_posted,
+                job.session_id or "(none)",
+                job.timeout_in_seconds,
+            )
             if attempt > 1:
+                logger.info("outer backoff before attempt %s", attempt)
                 _backoff(settings, attempt)
             deadline = time.time() + job.timeout_in_seconds
             try:
@@ -103,7 +116,7 @@ def run_opencode_job(
                     handle = start_serve(
                         bin_name=settings.opencode_bin,
                         cwd=clone,
-                        log_path=settings.job_log_dir / f"{job.job_id}.serve.log",
+                        log_path=settings.work_dir / ".serve" / f"{job.job_id}.log",
                         timeout=min(remain, 90.0),
                     )
                     job.serve_pid = handle.pid
@@ -115,18 +128,29 @@ def run_opencode_job(
                 if not client.health():
                     raise AttemptFailed("serve-dead", "serve health failed")
                 inbound = job.session_id or None
-                had_live = bool(inbound and inbound.startswith("ses_"))
+                already_bound = bool(job.session_bound)
                 try:
                     sid, created = client.resume_or_create(
                         inbound, title=f"{job.jira_id} {job.job_id}"
                     )
                 except Exception as exc:  # noqa: BLE001
-                    if had_live:
+                    if already_bound:
                         raise AttemptFailed("create-fail", f"resume rejected: {exc}") from exc
                     raise AttemptFailed("create-fail", f"session create failed: {exc}") from exc
-                if had_live and created:
-                    raise AttemptFailed("create-fail", "resume rejected; will not open a blank session")
+                if already_bound and created:
+                    raise AttemptFailed(
+                        "create-fail",
+                        "resume rejected; will not open a blank session",
+                    )
+                logger.info(
+                    "session %s id=%s inbound=%s already_bound=%s",
+                    "created" if created else "resumed",
+                    sid,
+                    inbound or "(none)",
+                    already_bound,
+                )
                 job.session_id = sid
+                job.session_bound = True
                 _save(store, job)
                 if job.original_posted:
                     prompt_id, text = "HANG_RESUME", prompts.HANG_RESUME
@@ -134,6 +158,16 @@ def run_opencode_job(
                         prompt_id, text = "INCOMPLETE_RESUME", prompts.INCOMPLETE_RESUME
                 else:
                     prompt_id, text = "ORIGINAL", job.prompt
+                try:
+                    prior = client.list_messages(job.session_id)
+                except Exception:
+                    prior = []
+                baseline_assistant = last_assistant_id(prior)
+                logger.info(
+                    "turn baseline messages=%s last_assistant=%s",
+                    len(prior),
+                    baseline_assistant or "(none)",
+                )
                 _post_user(job, client, store, prompt_id, text)
                 outcome = _inner_loop(
                     job,
@@ -142,7 +176,10 @@ def run_opencode_job(
                     settings=settings,
                     deadline=deadline,
                     should_stop=should_stop,
+                    baseline_assistant_id=baseline_assistant,
+                    baseline_n=len(prior),
                 )
+                logger.info("inner loop left attempt=%s outcome=%s", attempt, outcome)
                 if outcome == "success":
                     return LoopResult(text=job.text or last_assistant_text(client.list_messages(job.session_id)), status_code=200)
                 if outcome == "asking":
@@ -203,12 +240,18 @@ def _post_user(
     status = client.status()
     if session_is_busy(status, job.session_id):
         raise AttemptFailed("hang", "session busy; refusing to POST a user message")
-    client.post_message(job.session_id, text, model=job.model, agent=job.agent_mode)
+    logger.info("POST user message prompt_id=%s chars=%s model=%s agent=%s", prompt_id, len(text), job.model, job.agent_mode)
+    try:
+        client.post_message(job.session_id, text, model=job.model, agent=job.agent_mode)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("user message POST failed prompt_id=%s err=%s", prompt_id, exc)
+        raise AttemptFailed("transport", f"user message POST failed: {exc}") from exc
     job.prompts.append(PromptRow(id=prompt_id, text=text, posted_at=utc_now()))
     if prompt_id == "ORIGINAL":
         job.original_posted = True
+        logger.info("ORIGINAL marked posted (OpenCode accepted the POST)")
     _save(store, job)
-    logger.info("posted %s", prompt_id)
+    logger.info("posted %s ok", prompt_id)
 
 
 def _inner_loop(
@@ -219,23 +262,30 @@ def _inner_loop(
     settings: Settings,
     deadline: float,
     should_stop: Callable[[], bool],
+    baseline_assistant_id: str = "",
+    baseline_n: int = 0,
 ) -> str:
     nudged = any(row.id == "UNATTENDED_NUDGE" for row in job.prompts)
     compact_nudged = False
     last_progress = time.time()
-    last_msg_n = 0
+    last_msg_n = baseline_n
     last_compact_n = 0
     hang_started: Optional[float] = None
     awaiting_turn = True
+    last_phase = ""
+    logger.info("inner loop enter hang_timeout=%ss", settings.hang_timeout_seconds)
 
     while True:
         if should_stop():
+            logger.warning("inner loop stop: manager shutting down")
             raise JobFailed(500, "manager shutting down")
         if time.time() >= deadline:
+            logger.warning("inner loop attempt clock hit zero")
             if job.session_id:
                 client.abort(job.session_id)
             return "timeout"
         if not client.health():
+            logger.warning("inner loop serve health failed")
             return "serve-dead"
         status = client.status()
         busy = session_is_busy(status, job.session_id)
@@ -247,19 +297,39 @@ def _inner_loop(
             messages = []
         job.chat_snapshot = snapshot_chat(messages, job.session_id)
         text = last_assistant_text(messages)
-        if text:
+        new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
+        if new_assistant and text:
             job.text = text
         _save(store, job)
 
         msg_n = len(messages)
         compact_n = compact_marker_count(messages)
-        if msg_n != last_msg_n or compact_n != last_compact_n or compacting:
+        if msg_n != last_msg_n or compact_n != last_compact_n or compacting or new_assistant:
             last_progress = time.time()
-            if msg_n > last_msg_n and text:
-                awaiting_turn = False
             last_msg_n = msg_n
             last_compact_n = compact_n
             hang_started = None
+        if new_assistant:
+            awaiting_turn = False
+            logger.info("new assistant after this turn id=%s", last_assistant_id(messages))
+
+        phase = (
+            "compacting"
+            if compacting
+            else "busy"
+            if busy
+            else "awaiting"
+            if awaiting_turn
+            else "idle"
+        )
+        if phase != last_phase:
+            logger.info(
+                "session phase=%s messages=%s compact_markers=%s",
+                phase,
+                msg_n,
+                compact_n,
+            )
+            last_phase = phase
 
         if compacting:
             awaiting_turn = False
@@ -270,7 +340,9 @@ def _inner_loop(
             awaiting_turn = False
             if hang_started is None:
                 hang_started = time.time()
+                logger.info("hang clock started (busy, not compacting)")
             if time.time() - last_progress >= settings.hang_timeout_seconds:
+                logger.warning("hang watchdog fired after %ss with no new markers", settings.hang_timeout_seconds)
                 client.abort(job.session_id)
                 return "hang"
             time.sleep(1.0)
@@ -282,11 +354,13 @@ def _inner_loop(
             continue
 
         verdict = assess_idle(messages)
+        logger.info("session idle assess=%s messages=%s", verdict, msg_n)
         if compact_n >= 8 and verdict != "success" and not compact_nudged:
             client.abort(job.session_id)
             wait_idle = time.time() + 60
             while time.time() < wait_idle and session_is_busy(client.status(), job.session_id):
                 time.sleep(0.5)
+            baseline_assistant_id = last_assistant_id(messages)
             _post_user(job, client, store, "COMPACT_LOOP_NUDGE", prompts.COMPACT_LOOP_NUDGE)
             compact_nudged = True
             awaiting_turn = True
@@ -297,6 +371,7 @@ def _inner_loop(
         if verdict == "question":
             if nudged:
                 return "asking"
+            baseline_assistant_id = last_assistant_id(messages)
             _post_user(job, client, store, "UNATTENDED_NUDGE", prompts.UNATTENDED_NUDGE)
             nudged = True
             awaiting_turn = True
@@ -305,6 +380,7 @@ def _inner_loop(
         if verdict == "compact_leftover":
             if compact_nudged:
                 return "compact_leftover"
+            baseline_assistant_id = last_assistant_id(messages)
             _post_user(job, client, store, "COMPACT_LOOP_NUDGE", prompts.COMPACT_LOOP_NUDGE)
             compact_nudged = True
             awaiting_turn = True

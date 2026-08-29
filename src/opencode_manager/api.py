@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from opencode_manager import __version__
 from opencode_manager.dashboard.chat import job_chat_payload
-from opencode_manager.log import read_job_log_lines
+from opencode_manager.log import get_logger, read_job_log_lines
 from opencode_manager.manager import Manager
 from opencode_manager.models import Envelope, utc_now
 
@@ -32,7 +32,22 @@ async def post_jobs(request: Request) -> JSONResponse:
         body = {}
     if not isinstance(body, dict):
         body = {}
+    get_logger().info(
+        "inbound POST /jobs jira_id=%s agent=%s model=%s branch=%s repo=%s session=%s",
+        body.get("jira_id"),
+        body.get("agent_mode"),
+        body.get("model"),
+        body.get("source_branch"),
+        body.get("repo_url"),
+        body.get("session_id") or "",
+    )
     status, envelope = manager.submit(body)
+    get_logger().info(
+        "inbound POST /jobs ack HTTP %s job_id=%s status_code=%s",
+        status,
+        envelope.job_id,
+        envelope.status_code,
+    )
     return JSONResponse(envelope.model_dump(), status_code=status)
 
 
@@ -74,7 +89,9 @@ def api_job(job_id: str, request: Request) -> Dict[str, Any]:
     job = manager.store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
-    logs = read_job_log_lines(manager.settings.job_log_dir, job.jira_id, job.job_id)
+    logs = read_job_log_lines(
+        manager.settings.job_log_dir, job.jira_id, job.job_id, log_file=job.log_file
+    )
     return {"job": job.public_dict(), "system_logs": logs, "server_time": utc_now()}
 
 
@@ -106,7 +123,9 @@ def api_logs(job_id: str, request: Request) -> Dict[str, Any]:
     job = manager.store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
-    lines = read_job_log_lines(manager.settings.job_log_dir, job.jira_id, job.job_id)
+    lines = read_job_log_lines(
+        manager.settings.job_log_dir, job.jira_id, job.job_id, log_file=job.log_file
+    )
     return {"job_id": job.job_id, "lines": lines, "server_time": utc_now()}
 
 

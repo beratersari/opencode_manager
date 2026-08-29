@@ -23,9 +23,11 @@ def _chmod_writable(path: Path) -> None:
 
 def hard_delete(path: Path, *, attempts: int = 6) -> bool:
     if not path.exists():
+        logger.info("hard-delete skip (missing) %s", path)
         return True
+    logger.info("hard-delete start %s attempts=%s", path, attempts)
     delay = 0.2
-    for _ in range(attempts):
+    for n in range(attempts):
         if os.name == "nt":
             subprocess.run(
                 ["cmd", "/c", "rd", "/s", "/q", str(path)],
@@ -45,7 +47,9 @@ def hard_delete(path: Path, *, attempts: int = 6) -> bool:
             except OSError:
                 pass
         if not path.exists():
+            logger.info("hard-delete ok on try %s/%s %s", n + 1, attempts, path)
             return True
+        logger.warning("hard-delete still present try %s/%s %s", n + 1, attempts, path)
         time.sleep(delay)
         delay = min(delay * 2, 2.0)
     logger.error("hard-delete left remnants at %s", path)

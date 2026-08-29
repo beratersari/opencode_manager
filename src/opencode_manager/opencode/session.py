@@ -121,6 +121,20 @@ def _info(message: Dict[str, Any]) -> Dict[str, Any]:
     return info if isinstance(info, dict) else message
 
 
+def turn_has_new_assistant(messages: List[Dict[str, Any]], baseline_id: str) -> bool:
+    got = last_assistant_id(messages)
+    return bool(got and got != (baseline_id or ""))
+
+
+def last_assistant_id(messages: List[Dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        info = _info(message)
+        if (info.get("role") or message.get("role")) != "assistant":
+            continue
+        return str(info.get("id") or message.get("id") or "")
+    return ""
+
+
 def last_assistant_text(messages: List[Dict[str, Any]]) -> str:
     texts: List[str] = []
     for message in messages:
@@ -217,12 +231,17 @@ class OpenCodeClient:
         """Return (session_id, created_new)."""
         if inbound and inbound.startswith("ses_"):
             got = self.get_session(inbound)
+            logger.info("GET /session/%s -> %s", inbound, got.status_code)
             if got.status_code == 200:
                 return inbound, False
             logger.info("inbound session_id rejected (%s); creating new", got.status_code)
         elif inbound:
             logger.info("inbound session_id is not ses_*; creating new")
-        return self.create_session(title), True
+        else:
+            logger.info("no inbound session_id; creating new")
+        sid = self.create_session(title)
+        logger.info("POST /session created %s", sid)
+        return sid, True
 
     def status(self) -> Dict[str, Any]:
         try:
@@ -260,24 +279,73 @@ class OpenCodeClient:
             "parts": [{"type": "text", "text": text}],
             "model": {"providerID": provider, "modelID": model_id},
         }
+        try:
+            response = self.http.post(
+                f"/session/{session_id}/prompt_async",
+                json=body,
+                headers=self.headers,
+                timeout=20.0,
+            )
+            if response.status_code < 400:
+                logger.info("user message accepted via prompt_async HTTP %s", response.status_code)
+                return
+            logger.info("prompt_async -> HTTP %s; falling back to /message", response.status_code)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("prompt_async failed (%s); falling back to /message", exc)
+
+        fail: list[str] = []
 
         def _send() -> None:
             timeout = httpx.Timeout(connect=15.0, read=600.0, write=30.0, pool=15.0)
-            with httpx.Client(base_url=self.base_url, verify=False, timeout=timeout) as http:
-                for path in (
-                    f"/session/{session_id}/prompt_async",
-                    f"/session/{session_id}/message",
-                ):
-                    try:
-                        response = http.post(path, json=body, headers=self.headers)
-                        if response.status_code < 400:
-                            return
-                        logger.debug("post %s -> %s", path, response.status_code)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.debug("post %s failed: %s", path, exc)
-            logger.warning("failed to POST user message on %s", session_id)
+            try:
+                with httpx.Client(base_url=self.base_url, verify=False, timeout=timeout) as http:
+                    response = http.post(
+                        f"/session/{session_id}/message",
+                        json=body,
+                        headers=self.headers,
+                    )
+                    if response.status_code >= 400:
+                        fail.append(f"HTTP {response.status_code}")
+                        logger.info("user message /message -> HTTP %s", response.status_code)
+                    else:
+                        logger.info("user message accepted via /message HTTP %s", response.status_code)
+            except Exception as exc:  # noqa: BLE001
+                fail.append(str(exc))
+                logger.info("user message /message failed: %s", exc)
 
-        threading.Thread(target=_send, name="osm-message", daemon=True).start()
+        thread = threading.Thread(target=_send, name="osm-message", daemon=True)
+        thread.start()
+        deadline = time.time() + 45.0
+        while time.time() < deadline:
+            if fail:
+                raise RuntimeError(fail[0])
+            if session_is_busy(self.status(), session_id):
+                logger.info("user message accepted (session went busy)")
+                return
+            try:
+                messages = self.list_messages(session_id)
+            except Exception:
+                messages = []
+            for message in reversed(messages):
+                info = _info(message)
+                if (info.get("role") or message.get("role")) != "user":
+                    continue
+                parts = message.get("parts") or info.get("parts") or []
+                blob = " ".join(
+                    str(p.get("text") or "")
+                    for p in parts
+                    if isinstance(p, dict)
+                )
+                if text[:80] and text[:80] in blob:
+                    logger.info("user message accepted (seen in session history)")
+                    return
+                break
+            if not thread.is_alive() and not fail:
+                return
+            time.sleep(0.3)
+        if fail:
+            raise RuntimeError(fail[0])
+        raise RuntimeError("user message POST was not accepted by OpenCode")
 
     def abort(self, session_id: str) -> None:
         try:

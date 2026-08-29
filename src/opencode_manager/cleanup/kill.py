@@ -36,8 +36,10 @@ def kill_job_tree(pids: Iterable[Optional[int]]) -> None:
     manager = os.getpid()
     for pid in pids:
         if pid and int(pid) != manager:
-            logger.info("killing pid %s", pid)
+            logger.info("kill process tree pid=%s", pid)
             kill_pid(int(pid))
+        elif pid == manager:
+            logger.warning("refusing to kill manager pid %s", manager)
 
 
 def reap_work_dir(work_dir: Path) -> int:

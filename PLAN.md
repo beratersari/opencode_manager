@@ -46,7 +46,7 @@ are wrong.
 | # | Topic | Decision |
 |---|---|---|
 | 1 | Product of a job | **Text only.** Last assistant output (or error). No git push, no MR. Clone is disposable. |
-| 2 | How OpenCode runs | **One `opencode serve` process per job**, unique localhost port, auto-approve via config. **Not** `opencode --auto`. **Not** one shared serve for all jobs. Kill that serve when the job ends. See §3.2. |
+| 2 | How OpenCode runs | **One `opencode serve` process per job**, unique localhost port. **Not** `opencode --auto` (one-shot CLI). **Not** one shared serve. No permission auto-approve. Kill that serve when the job ends. See §3.2. |
 | 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is **`jira_id` + repo + source branch** (Windows-safe short name / digest). Ticket makes two jobs unique; repo+branch is part of the key. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same identity ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
@@ -63,15 +63,15 @@ Especially rows 1 and 3.
 
 ### 3.1 Serve vs `--auto`
 
-You asked for both. They are different programs:
+They are different programs:
 
 - `opencode serve` is an HTTP server. Create/resume session, POST a prompt,
-  poll until idle. Matches n8n and virtual_developer.
-- `opencode --auto` is a one-shot CLI. No stable session HTTP API.
+  poll until idle. That is what we run.
+- `opencode --auto` is a one-shot CLI. No stable session HTTP API. We do
+  **not** run it.
 
-`--auto` in this plan means **permission auto-approve** (the agent may run
-tools without a human). That is an OpenCode config on the per-job serve,
-not the CLI flag.
+We do **not** turn on permission auto-approve. Serve runs in normal
+permission mode.
 
 ### 3.2 Shared serve vs per-job serve
 
@@ -133,8 +133,7 @@ cannot steal each other’s port.
 1. Clone is on disk at the stable path.
 2. Allocate a free port. Start
    `opencode serve --hostname 127.0.0.1 --port <free>`
-   with cwd = clone. Auto-approve is config on this process
-   (the serve equivalent of `--auto`).
+   with cwd = clone. No permission auto-approve.
 3. Wait until `GET /global/health` is 200, or fail this attempt
    (outer `retry_count` may apply).
 4. Create or resume `session_id`. Send `x-opencode-directory: <clone>`.
@@ -307,7 +306,7 @@ Every HTTP body (and every callback) uses the same shape so n8n has one parser:
 
 `job_id` is minted here (`job_…`). n8n does not send it. It is on
 every log line and is the dashboard / history key. The **per-job log
-file** is named by **`jira_id`**, not by `job_id`.
+file** is `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`.
 
 ### 4.3 Callbacks (this service → request `callback_url`)
 
@@ -741,7 +740,7 @@ See §3.2 for why this is per job and how ports work.
 2. Start `opencode serve` with:
    - `--hostname 127.0.0.1 --port <free>`
    - working directory = clone
-   - auto-approve / permission allow (serve equivalent of `--auto`)
+   - no permission auto-approve
    - store `{pid, port, base_url, cwd}` on the job immediately
 3. Wait until `GET /global/health` is 200, or fail this attempt
    (outer retry may apply). Boot time counts toward **this attempt’s**
@@ -811,17 +810,15 @@ Two sinks, **two different roots**:
 1. **App log** (whole process) — under the **project root**, not under
    `C:\osm` / `/var/lib/osm`:
    `{project_root}/logs/app.log`
-2. **Per-job log** — one file per **Jira ticket**, outside the repo.
-   Filename is the ticket id so operators can find it without the
-   `job_id`. Sequential runs of the same ticket **append** to
-   the same file (`job_id` on each line separates runs). Two
-   jobs for the same ticket never run at once (409), so no concurrent
-   writers.
+2. **Per-job log** — one file per **job**, outside the repo.
+   Name is `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` (accept
+   time, UTC). Same ticket later ⇒ a new file. Line still carries
+   `job_id` and `jira_id`.
 
 | OS | Default job-log file |
 |---|---|
-| Windows | `C:\osm\logs\{jira_id}.log` |
-| Linux | `/var/lib/osm/logs/{jira_id}.log` |
+| Windows | `C:\osm\logs\{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
+| Linux | `/var/lib/osm/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
 
 Create the directories on startup if they do not exist. Overridable
 via `job_log_dir`.
@@ -1008,7 +1005,7 @@ The table in §2 is the plan. These four are the ones that change the
 shape if you disagree:
 
 1. Text-only result — no push?
-2. Per-job serve + auto-approve, not `opencode --auto`?
+2. Per-job serve (not `opencode --auto`), no permission auto-approve?
 3. Always delete clone; re-clone to the same path and resume `session_id`?
 4. Per-request `callback_url` (not a setting); HTTP is only the ack?
 
@@ -1047,8 +1044,7 @@ build them).
 
 - [ ] Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 - [ ] App sink: `{project_root}/logs/app.log` (whole process).
-- [ ] Job sink: `{job_log_dir}/{jira_id}.log` (not `job_id`).
-- [ ] Append to the same ticket file across sequential runs.
+- [ ] Job sink: `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` (one file per job).
 - [ ] Line format includes timestamp, level, file:line, function, `job_id`, `jira_id`, message.
 - [ ] Bind `job_id` and `jira_id` with contextvars so concurrent jobs do not mix.
 - [ ] Never write the PAT to any log.
@@ -1133,7 +1129,7 @@ build them).
 
 - [ ] One `opencode serve` process per job. Not a shared serve.
 - [ ] Do not run `opencode --auto` as a one-shot CLI.
-- [ ] Auto-approve via that serve’s OpenCode config.
+- [ ] Do not enable permission auto-approve on the serve.
 - [ ] Allocate a free localhost port (`bind(127.0.0.1, 0)`). Never hardcode 4096.
 - [ ] Start `opencode serve --hostname 127.0.0.1 --port <free>` with cwd = clone.
 - [ ] Record `{serve_pid, serve_port, serve_base_url, clone_path, session_id}` immediately.
@@ -1294,7 +1290,7 @@ Windows).
 | **Details** | History row: ids, status, live, `agent_mode`, `model`, `session_id`, redacted `repo_url`, `source_branch`, `clone_path`, serve pid/port if live, timeout / retry_count / attempt n of m, timestamps, elapsed, error, callback `status_code`, last assistant **text** (the product). **Attempts table** like VD `retry_attempts`: number, kind (hang / timeout / incomplete / serve-dead / create-fail), prompt id sent, error, `session_id`, time. |
 | **Prompt** | Exact user messages we POSTed: `ORIGINAL` plus `UNATTENDED_NUDGE` / `COMPACT_LOOP_NUDGE` / `HANG_RESUME` / `INCOMPLETE_RESUME` (id, text, time). |
 | **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve. After serve is dead: persisted snapshot. Never require the clone to still exist. No Codex path. |
-| **Logs** | `{job_log_dir}/{jira_id}.log` lines for this `job_id` only. |
+| **Logs** | `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
 
 No Stop / Delete / Report. Refresh + live WS only.
 
@@ -1351,7 +1347,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Prompt tab lists every user message we POSTed (`ORIGINAL` + orchestrator ids) with exact text.
 - [ ] Transcript copies VD `JobChatTab` (user / assistant / tool / compact). OpenCode only.
 - [ ] Live transcript reads this job’s serve; finished jobs read the snapshot. Clone may be gone.
-- [ ] Logs tab: `{job_log_dir}/{jira_id}.log` filtered by this `job_id`.
+- [ ] Logs tab: `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`.
 - [ ] History store under `job_store_dir`, one JSON per `job_id`. Create dir on startup.
 - [ ] Write the history row on accept; update through the run; keep it after terminal and after clone delete.
 - [ ] Persist attempt rows (kind, prompt id, error, session_id, time) on each outer retry.

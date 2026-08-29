@@ -115,11 +115,13 @@ class JobRecord(BaseModel):
     callback_url: str = ""
     text: str = ""
     original_posted: bool = False
+    session_bound: bool = False
     prompt: str = ""
     attempts: List[AttemptRow] = Field(default_factory=list)
     prompts: List[PromptRow] = Field(default_factory=list)
     chat_snapshot: List[Dict[str, Any]] = Field(default_factory=list)
     extra_pids: List[int] = Field(default_factory=list)
+    log_file: str = ""
 
     def public_dict(self) -> Dict[str, Any]:
         data = self.model_dump()

@@ -43,6 +43,7 @@ def start_serve(
 ) -> ServeHandle:
     binary = shutil.which(bin_name) or bin_name
     port = free_port()
+    logger.info("start serve bin=%s cwd=%s port=%s health_timeout=%ss log=%s", binary, cwd, port, timeout, log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_f = open(log_path, "w", encoding="utf-8")
     env = os.environ.copy()
@@ -67,8 +68,8 @@ def start_serve(
     )
     proc._om_log_f = log_f  # type: ignore[attr-defined]
     base = f"http://127.0.0.1:{port}"
-    wait_health(base, str(cwd), timeout=timeout)
-    logger.info("opencode serve pid=%s port=%s", proc.pid, port)
+    health = wait_health(base, str(cwd), timeout=timeout)
+    logger.info("opencode serve up pid=%s port=%s health=%s", proc.pid, port, health)
     return ServeHandle(pid=int(proc.pid), port=port, base_url=base, proc=proc, log_path=log_path)
 
 
@@ -92,7 +93,9 @@ def wait_health(base_url: str, directory: str, *, timeout: float) -> dict:
 
 def stop_serve(handle: Optional[ServeHandle]) -> None:
     if handle is None:
+        logger.info("stop serve: no handle")
         return
+    logger.info("stop serve pid=%s port=%s", handle.pid, handle.port)
     kill_pid(handle.pid)
     try:
         handle.proc.wait(timeout=5)

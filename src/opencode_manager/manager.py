@@ -10,7 +10,8 @@ from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
 from opencode_manager.cleanup.rmtree import hard_delete
 from opencode_manager.dashboard.store import JobStore
-from opencode_manager.log import get_logger
+from opencode_manager.log import get_logger, job_log_filename
+from opencode_manager.log_context import bind, clear
 from opencode_manager.models import (
     Envelope,
     JobRecord,
@@ -41,11 +42,19 @@ class Manager:
         self._threads: list[threading.Thread] = []
 
     def boot(self) -> None:
-        logger.info("boot: reaping orphans under %s", self.settings.work_dir)
-        reap_work_dir(self.settings.work_dir)
+        logger.info(
+            "boot start work_dir=%s job_log_dir=%s job_store_dir=%s max_concurrent=%s",
+            self.settings.work_dir,
+            self.settings.job_log_dir,
+            self.settings.job_store_dir,
+            self.settings.max_concurrent_jobs,
+        )
+        killed = reap_work_dir(self.settings.work_dir)
+        logger.info("boot reap orphans under %s killed=%s", self.settings.work_dir, killed)
         for job in self.store.list_all():
             if job.status in {"queued", "running"}:
-                logger.info("boot leftover %s -> ERROR", job.job_id)
+                bind(job.job_id, job.jira_id, log_file=job.log_file)
+                logger.info("boot leftover %s status=%s -> ERROR (no callback)", job.job_id, job.status)
                 finish_job(
                     job,
                     Terminal(500, "process restarted; leftover job was not resumed"),
@@ -53,7 +62,9 @@ class Manager:
                     store=self.store,
                     send_callback=False,
                 )
+                clear()
         leftovers = self.queue.clear()
+        logger.info("boot dropped %s leftover queue rows", len(leftovers))
         for row in leftovers:
             job_id = str(row.get("job_id") or "")
             job = self.store.get(job_id) if job_id else None
@@ -71,7 +82,7 @@ class Manager:
     def shutdown(self) -> None:
         self.stopping = True
         self.ready = False
-        logger.info("shutdown: failing live jobs")
+        logger.info("shutdown: stop accepting jobs; failing live work")
         queued = self.queue.clear()
         live = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
         seen = {j.job_id for j in live}
@@ -81,7 +92,10 @@ class Manager:
                 job = self.store.get(job_id)
                 if job:
                     live.append(job)
+        logger.info("shutdown live jobs=%s", [j.job_id for j in live])
         for job in live:
+            bind(job.job_id, job.jira_id, log_file=job.log_file)
+            logger.info("shutdown fail job serve_pid=%s clone=%s", job.serve_pid, job.clone_path)
             kill_job_tree([job.serve_pid, *job.extra_pids])
             finish_job(
                 job,
@@ -94,11 +108,14 @@ class Manager:
                 from pathlib import Path
 
                 hard_delete(Path(job.clone_path))
+            clear()
         for thread in list(self._threads):
             thread.join(timeout=2)
+        logger.info("shutdown complete")
 
     def submit(self, body: Dict[str, Any]) -> tuple[int, Envelope]:
         if not self.ready or self.stopping:
+            logger.warning("reject POST /jobs: manager not accepting (ready=%s stopping=%s)", self.ready, self.stopping)
             return 503, Envelope(
                 text="manager is not accepting jobs",
                 session_id="",
@@ -108,6 +125,7 @@ class Manager:
             )
         err = validate_request_fields(body)
         if err:
+            logger.warning("reject POST /jobs 400: %s", err)
             return 400, Envelope(
                 text=err,
                 session_id="",
@@ -119,6 +137,7 @@ class Manager:
             {**body, "retry_count": max(1, int(body["retry_count"]))}
         )
         if not callback_host_allowed(req.callback_url, self.settings.callback_allowed_hosts):
+            logger.warning("reject POST /jobs 400: callback host not allowed")
             return 400, Envelope(
                 text="callback_url host is not allowed",
                 session_id="",
@@ -129,6 +148,12 @@ class Manager:
         with self._lock:
             live = self.store.live_for_jira(req.jira_id)
             if live:
+                logger.info(
+                    "reject POST /jobs 409: jira_id=%s already live as %s status=%s",
+                    req.jira_id,
+                    live.job_id,
+                    live.status,
+                )
                 return 409, Envelope(
                     text=f"jira_id {req.jira_id} already has a live job",
                     session_id=live.session_id or "",
@@ -137,6 +162,7 @@ class Manager:
                     job_id=live.job_id,
                 )
             job_id = mint_job_id()
+            accepted = utc_now()
             job = JobRecord(
                 job_id=job_id,
                 jira_id=req.jira_id,
@@ -149,26 +175,45 @@ class Manager:
                 source_branch=req.source_branch,
                 timeout_in_seconds=req.timeout_in_seconds,
                 retry_count=req.retry_count,
-                accepted_at=utc_now(),
+                accepted_at=accepted,
                 callback_url=req.callback_url,
                 prompt=req.prompt,
+                log_file=job_log_filename(req.jira_id, job_id, accepted),
             )
             self.store.save(job)
+            bind(job.job_id, job.jira_id, log_file=job.log_file)
+            logger.info(
+                "trigger accepted log_file=%s repo=%s branch=%s model=%s agent=%s "
+                "timeout=%ss retry_count=%s inbound_session=%s callback=%s "
+                "running=%s/%s",
+                job.log_file,
+                job.repo_url,
+                job.source_branch,
+                job.model,
+                job.agent_mode,
+                job.timeout_in_seconds,
+                job.retry_count,
+                job.session_id or "(none)",
+                job.callback_url,
+                self._running,
+                self.settings.max_concurrent_jobs,
+            )
             payload = req.model_dump()
             payload["job_id"] = job_id
             payload["accepted_at"] = job.accepted_at
-            started = False
             if self._running < self.settings.max_concurrent_jobs:
                 self._running += 1
                 job.status = "running"
                 job.started_at = utc_now()
                 self.store.save(job)
-                started = True
+                logger.info("dispatch now (slot free) started_at=%s", job.started_at)
                 self._start_thread(job, req.PAT)
                 text = "Job accepted and is now in progress."
             else:
                 self.queue.enqueue(payload)
+                logger.info("queued FIFO (capacity full)")
                 text = "Job accepted and queued."
+            clear()
             code = 202
             return code, Envelope(
                 text=text,
@@ -207,11 +252,14 @@ class Manager:
                 return
             nxt = self.queue.dequeue()
             if not nxt:
+                logger.info("slot free; queue empty running=%s", self._running)
                 return
             job = self.store.get(str(nxt.get("job_id") or ""))
             if not job:
+                logger.warning("dequeued missing job record %s", nxt.get("job_id"))
                 return
             self._running += 1
+            logger.info("dequeue %s jira_id=%s running=%s", job.job_id, job.jira_id, self._running)
             self._start_thread(job, str(nxt.get("PAT") or ""))
 
     def job_public(self, job_id: str) -> Optional[Dict[str, Any]]:

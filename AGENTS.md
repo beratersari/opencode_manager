@@ -103,8 +103,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 
 - Start `opencode serve --hostname 127.0.0.1 --port <free>`. Never
   hardcode `4096`. Record `{pid, port, base_url, cwd}` on the job.
-- Auto-approve via serve config (the meaning of `--auto`). Do not
-  run `opencode --auto` as a one-shot CLI.
+- Do not run `opencode --auto` as a one-shot CLI. Do not enable
+  permission auto-approve.
 - Scope requests with `x-opencode-directory: <clone>`.
 - Request `model` (`provider/id`) is required. Send it on every
   user message as `{ providerID, modelID }`. No settings default.
@@ -194,10 +194,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 
 - Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 - **App log** (whole process): `{project_root}/logs/app.log`.
-- **Per-job logs**: named by **`jira_id`**. Windows
-  `C:\osm\logs\{jira_id}.log`, Linux `/var/lib/osm/logs/{jira_id}.log`.
-  Append across runs of the same ticket. `job_id` stays on
-  the line, not in the filename.
+- **Per-job logs**: `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
+  (accept time, UTC). Windows `C:\osm\logs\…`, Linux
+  `/var/lib/osm/logs/…`. One file per job. `job_id` and `jira_id`
+  also stay on each line.
 - Tag every line with `job_id` and `jira_id` (contextvars).
 - Never log the PAT or a URL that still has userinfo.
 - Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.

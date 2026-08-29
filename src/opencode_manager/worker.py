@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
 
@@ -10,6 +11,7 @@ from opencode_manager.cleanup.kill import kill_job_tree
 from opencode_manager.cleanup.rmtree import hard_delete
 from opencode_manager.dashboard.store import JobStore
 from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
+from opencode_manager.git.detect import classify_host
 from opencode_manager.log import get_logger
 from opencode_manager.log_context import bind, clear
 from opencode_manager.models import Envelope, JobRecord, utc_now
@@ -17,6 +19,8 @@ from opencode_manager.opencode.retry import JobFailed, run_opencode_job
 from opencode_manager.settings import Settings
 
 logger = get_logger()
+_finish_lock = threading.Lock()
+_finished_ids: set[str] = set()
 
 
 @dataclass
@@ -40,17 +44,29 @@ class OpenCodeRunner:
         )
         job.clone_path = str(dest)
         self.store.save(job)
+        kind = classify_host(job.repo_url)
+        logger.info(
+            "pipeline git start host_kind=%s dest=%s branch=%s timeout=%ss",
+            kind,
+            dest,
+            job.source_branch,
+            self.settings.git_clone_timeout_seconds,
+        )
         if dest.exists():
-            logger.info("deleting leftover dest %s", dest)
-            hard_delete(dest)
+            logger.info("leftover clone dest exists; sequential hard-delete first")
+            ok = hard_delete(dest)
+            logger.info("leftover dest delete ok=%s still_exists=%s", ok, dest.exists())
         try:
+            logger.info("ls-remote check for source_branch=%s", job.source_branch)
             if not ls_remote_has_branch(
                 job.repo_url,
                 job.source_branch,
                 pat=job._pat,  # type: ignore[attr-defined]
                 timeout=self.settings.git_clone_timeout_seconds,
             ):
+                logger.warning("source_branch missing on remote: %s", job.source_branch)
                 return Terminal(404, f"source_branch {job.source_branch!r} does not exist on the remote")
+            logger.info("source_branch exists; cloning")
             clone_repo(
                 job.repo_url,
                 dest,
@@ -58,11 +74,14 @@ class OpenCodeRunner:
                 pat=job._pat,  # type: ignore[attr-defined]
                 timeout=self.settings.git_clone_timeout_seconds,
             )
+            logger.info("clone ready at %s", dest)
         except GitError as exc:
+            logger.error("git failed missing_branch=%s err=%s", exc.missing_branch, exc)
             if exc.missing_branch:
                 return Terminal(404, str(exc))
             return Terminal(500, f"git failed: {exc}")
         try:
+            logger.info("OpenCode phase start retry_count=%s timeout=%ss", job.retry_count, job.timeout_in_seconds)
             result = run_opencode_job(
                 job,
                 settings=self.settings,
@@ -70,16 +89,22 @@ class OpenCodeRunner:
                 clone=dest,
                 should_stop=should_stop,
             )
+            logger.info("OpenCode phase done status=%s text_len=%s", result.status_code, len(result.text or ""))
             return Terminal(result.status_code, result.text)
         except JobFailed as exc:
+            logger.error("OpenCode job failed status=%s %s", exc.status_code, exc.message)
             return Terminal(exc.status_code, exc.message)
         except Exception as exc:  # noqa: BLE001
             logger.exception("worker crashed")
             return Terminal(500, f"worker crashed: {exc}")
         finally:
+            logger.info("job-end cleanup: kill tree pids=%s then hard-delete clone", [job.serve_pid, *job.extra_pids])
             kill_job_tree([job.serve_pid, *job.extra_pids])
             if dest.exists():
-                hard_delete(dest)
+                ok = hard_delete(dest)
+                logger.info("clone delete ok=%s still_exists=%s", ok, dest.exists())
+            else:
+                logger.info("clone path already gone")
 
 
 def finish_job(
@@ -90,6 +115,14 @@ def finish_job(
     store: JobStore,
     send_callback: bool = True,
 ) -> None:
+    with _finish_lock:
+        if job.job_id in _finished_ids:
+            logger.info(
+                "finish_job skip %s already terminal (second caller)",
+                job.job_id,
+            )
+            return
+        _finished_ids.add(job.job_id)
     job.live = False
     if terminal.status_code == 200:
         job.status = "success"
@@ -105,6 +138,14 @@ def finish_job(
     if terminal.status_code != 200:
         job.error_message = terminal.text
     store.save(job)
+    logger.info(
+        "job terminal status=%s callback_status=%s session=%s send_callback=%s text_len=%s",
+        job.status,
+        terminal.status_code,
+        job.session_id or "",
+        send_callback,
+        len(terminal.text or ""),
+    )
     if send_callback and job.callback_url:
         post_callback(
             settings,
@@ -128,13 +169,16 @@ def run_pipeline(
     should_stop: Callable[[], bool],
     send_callback: bool = True,
 ) -> None:
-    bind(job.job_id, job.jira_id)
+    bind(job.job_id, job.jira_id, log_file=job.log_file)
     try:
         job.status = "running"
         job.started_at = job.started_at or utc_now()
         store.save(job)
+        logger.info("pipeline start log_file=%s clone_root=%s", job.log_file, settings.work_dir)
         terminal = runner.run(job, should_stop=should_stop)
+        logger.info("pipeline runner returned %s", terminal.status_code)
         finish_job(job, terminal, settings=settings, store=store, send_callback=send_callback)
+        logger.info("pipeline end")
     except Exception as exc:  # noqa: BLE001
         logger.exception("pipeline failed")
         finish_job(

@@ -18,6 +18,14 @@ def post_callback(settings: Settings, envelope: Envelope, callback_url: str) -> 
     payload: Dict[str, Any] = envelope.model_dump()
     last_err = None
     attempts = max(1, settings.callback_retry_count)
+    logger.info(
+        "callback start url=%s status_code=%s job_id=%s attempts=%s timeout=%ss",
+        callback_url,
+        envelope.status_code,
+        envelope.job_id,
+        attempts,
+        settings.callback_timeout_seconds,
+    )
     for index in range(attempts):
         try:
             with httpx.Client(timeout=settings.callback_timeout_seconds) as client:

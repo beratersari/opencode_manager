@@ -6,7 +6,7 @@ plan disagree, **fix the plan** — do not silently pick a third design.
 
 This is a small Windows/Linux worker between **n8n** and **OpenCode**.
 It is not Yaver / virtual_developer. No Jira poller, no GitLab MR, no
-Codex, no dashboard.
+Codex. The dashboard is **jobs-tab visualization only** (no writes).
 
 ## Intentional product choices
 
@@ -27,6 +27,9 @@ These look like bugs. They are not.
    do not block delete. Other jobs’ serves stay up.
 5. **`callback_url` is on the request**, not in settings. Do not
    guess it from `Host` / `Origin` / `Referer`.
+6. **Dashboard is GET-only.** Jobs list + job detail (prompt, chat,
+   logs, attempts). It never starts or stops work. History outlives
+   the clone.
 
 ## Hard rules
 
@@ -56,17 +59,19 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   running or queued job. Do not send callbacks for leftovers. Do
   not accept `POST /jobs` until boot is finished.
 - **Boot cleanup is process hygiene only.** Reap orphan processes
-  whose cwd/argv is `work_dir` (leftover serves, git, tools). Drop
-  leftover running/queued records so those `jira_id`s are not
-  `409`. Do **not** “handle” those jobs (no OpenCode, no terminal
-  callback, no re-enqueue).
+  whose cwd/argv is `work_dir` (leftover serves, git, tools). Mark
+  leftover running/queued rows **ERROR** in the job-history store
+  so the dashboard can show them. They are not live, so those
+  `jira_id`s are not `409`. Do **not** “handle” those jobs (no
+  OpenCode, no terminal callback, no re-enqueue).
 - **While shutting down:** stop accepting `POST /jobs`. Force-kill
   every job’s process tree (git, **that** job’s serve, tool
   children). Mark every running **and** queued job **ERROR**. Send
   each its one terminal callback `500`. Then the normal job-end
-  delete for each clone. Never kill the manager until that is done.
-- **If a request comes again:** after those jobs are ERROR (or
-  leftover records were dropped on boot), a new `POST /jobs` for
+  delete for each clone. Keep the history row for the dashboard.
+  Never kill the manager until that is done.
+- **If a request comes again:** after those jobs are ERROR (boot
+  leftover or shutdown), a new `POST /jobs` for
   the same `jira_id` is a **new** job. That worker hard-deletes the
   leftover clone path first, then clones. Resume `session_id` only if
   the caller sent one and it is still valid. Do not recover the
@@ -88,7 +93,7 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   Linux `/var/lib/osm/.temp`. Folder name identity is **`jira_id` +
   repo + source branch**. Two tickets ⇒ two folders. Same ticket +
   same repo + same branch later ⇒ same folder.
-- **New job** (including after boot-dropped leftovers): if that
+- **New job** (including after boot leftover ERROR): if that
   stable path already exists, sequential hard-delete it first, then
   clone. Boot does **not** delete leftover trees (no job handling).
 - Mid-job retries: **do not delete** the clone. Delete only when the
@@ -101,6 +106,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Auto-approve via serve config (the meaning of `--auto`). Do not
   run `opencode --auto` as a one-shot CLI.
 - Scope requests with `x-opencode-directory: <clone>`.
+- Request `model` (`provider/id`) is required. Send it on every
+  user message as `{ providerID, modelID }`. No settings default.
 - OpenCode only. No Codex.
 
 ### Session id — two moments
@@ -189,24 +196,39 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - **App log** (whole process): `{project_root}/logs/app.log`.
 - **Per-job logs**: named by **`jira_id`**. Windows
   `C:\osm\logs\{jira_id}.log`, Linux `/var/lib/osm/logs/{jira_id}.log`.
-  Append across runs of the same ticket. `correlation_id` stays on
+  Append across runs of the same ticket. `job_id` stays on
   the line, not in the filename.
-- Tag every line with `correlation_id` and `jira_id` (contextvars).
+- Tag every line with `job_id` and `jira_id` (contextvars).
 - Never log the PAT or a URL that still has userinfo.
-- Create `work_dir` and `job_log_dir` on startup if missing.
+- Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.
+
+### Dashboard (GET only)
+
+- Jobs tab only (`/jobs`, `/jobs/:jobId`). Same tech stack and look
+  as virtual_developer `web/` (React + Vite + Tailwind + Geist).
+- Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
+  No cancel, delete, settings, schedules, or storage actions.
+- Persist a history row per `job_id` (no PAT). Keep it after
+  clone delete and after boot leftover ERROR. 409 is only running or
+  queued.
+- Job detail: meta + attempts, prompts we POSTed, chat transcript
+  (live serve or snapshot), per-job log lines for that
+  `job_id`. Chat must work after the clone is gone.
 
 ## Do not copy from virtual_developer
 
-Jira poller, GitLab MR/`glab`, Codex, dashboard, settings PAT map,
+Jira poller, GitLab MR/`glab`, Codex, dashboard **writes**, Poll /
+Scheduled / Sessions / Storage / Settings tabs, settings PAT map,
 “create `feature/KEY` from target”, shared long-lived serve, “never
 kill serve”, keeping a dirty clone for reuse.
 
 Do copy: PAT env isolation, process-tree kill, Windows hard delete,
 compact-wait / one-nudge control loop, outer retry **shape**,
-per-job log context.
+per-job log context, jobs-tab SPA look (GET-only).
 
 ## Before you change behaviour
 
 If a change touches serve lifetime, session resume, clone path,
-cleanup, or callback counts, update **PLAN.md and this file** in the
-same change. Do not leave a third implicit design.
+cleanup, callback counts, or the dashboard GET contract, update
+**PLAN.md and this file** in the same change. Do not leave a third
+implicit design.

@@ -6,9 +6,10 @@ OpenCode in serve mode, drives the session until the task is finished, then
 calls a target API with the result.
 
 This is a smaller slice of [virtual_developer](https://github.com/beratersari/virtual_developer)
-(Yaver). Copy clone/PAT isolation, force-kill, hard delete, and the OpenCode
-serve control loop. Do **not** copy Jira polling, GitLab MRs, Codex, or the
-dashboard.
+(Yaver). Copy clone/PAT isolation, force-kill, hard delete, the OpenCode
+serve control loop, and the **jobs-tab dashboard look** (GET-only). Do
+**not** copy Jira polling, GitLab MRs, Codex, or dashboard write
+actions (cancel, delete, settings, schedules).
 
 The n8n JSON in this repo is only a fragment of the old poll loop
 (`prompt_async` → wait 60s → `GET /sessions`). That loop becomes **internal**.
@@ -23,7 +24,7 @@ retry? cleanup? file locks on Windows?
 
 You want n8n to do this instead:
 
-1. POST a job (repo, PAT, branch, prompt, optional session, Jira id, timeout, retries, **callback_url**).
+1. POST a job (repo, PAT, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
 2. Get an immediate ack (accepted / queued / already running / bad request).
 3. Later receive **exactly one** callback on the **`callback_url` from that request** (the caller, usually an n8n Wait node). That POST is the terminal result — never a “queued” or “started” ping.
 4. On success, the callback `text` is the last OpenCode assistant message.
@@ -46,7 +47,7 @@ are wrong.
 |---|---|---|
 | 1 | Product of a job | **Text only.** Last assistant output (or error). No git push, no MR. Clone is disposable. |
 | 2 | How OpenCode runs | **One `opencode serve` process per job**, unique localhost port, auto-approve via config. **Not** `opencode --auto`. **Not** one shared serve for all jobs. Kill that serve when the job ends. See §3.2. |
-| 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is **`jira_id` + repo + source branch** (Windows-safe short name / digest). Ticket makes two jobs unique; repo+branch is part of the key. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same identity ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). First user message is `ORIGINAL` until that POST succeeds. **Mid-job hang retry** (we already had a live id **and** `ORIGINAL` was POSTed): same `ses_*` or that attempt fails — never invent a blank session. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
+| 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is **`jira_id` + repo + source branch** (Windows-safe short name / digest). Ticket makes two jobs unique; repo+branch is part of the key. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same identity ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
 | 6 | Git auth | **Request PAT only.** No OS credential store, no settings PAT, no SSH. GitLab and TFS/Azure DevOps use different header schemes. |
@@ -145,9 +146,9 @@ cannot steal each other’s port.
 On manager crash: leftover serves are orphans. Startup **reaps
 processes** (recorded live pids, or anything bound to `work_dir`).
 It does **not** resume those jobs, dequeue the old queue, or send
-callbacks. Drop leftover live/queued records so a later `POST /jobs`
-for the same `jira_id` is a new job. Do not accept `/jobs` until
-boot is finished. See §5.1.
+callbacks. Mark leftover live/queued rows history **ERROR** (not
+live, so not `409`) so a later `POST /jobs` for the same `jira_id`
+is a new job. Do not accept `/jobs` until boot is finished. See §5.1.
 
 #### What we track per job
 
@@ -267,17 +268,18 @@ Different cases:
 | `source_branch` | yes | Remote branch that must already exist. Start point of the clone. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
+| `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. OpenCode rejects it later → fail the attempt (callback **500** if none remain). |
 | `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, …). Unknown → 400. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
-| `jira_id` | yes | Dedup key and correlation with n8n/Jira. |
+| `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. |
 | `callback_url` | yes | Absolute `http(s)` URL we POST the **terminal** result to. This is the caller (n8n Wait-node URL), **not** a setting on this server. Missing or non-http(s) → **400**. |
 
 Do **not** infer the target from `Host`, `Origin`, or `Referer`. n8n wait-node URLs are unique per execution (`…/webhook-waiting/<id>/…`) and fire **once** (the first POST resumes the Wait node). The site origin is not enough. The caller must send the exact URL it wants the result on.
 
 Because that URL is one-shot, we never POST `queued` or `in_progress` to it. Queued vs started lives only on the inbound HTTP ack. The callback is the terminal result only.
 
-Persist `callback_url` on the job record so a queued job still knows where to POST after dequeue **in this process**. A process restart does not send that callback — leftovers are dropped on boot (§5.1).
+Persist `callback_url` on the job record so a queued job still knows where to POST after dequeue **in this process**. A process restart does not send that callback — leftovers become history **ERROR** on boot (§5.1).
 
 ### 4.2 Immediate HTTP response
 
@@ -285,10 +287,10 @@ Always fast. Never wait for OpenCode.
 
 | Situation | HTTP | Body idea |
 |---|---|---|
-| Same `jira_id` running or queued | **409** | Already in progress. Include existing `session_id` if we have one, plus `correlation_id`. **No callback.** |
-| Capacity full | **202** | Queued. `correlation_id`, `session_id` (incoming or empty). One terminal callback later. |
+| Same `jira_id` running or queued | **409** | Already in progress. Include the existing `job_id` and `session_id` if we have one. **No callback.** |
+| Capacity full | **202** | Queued. `job_id`, `session_id` (incoming or empty). One terminal callback later. |
 | Capacity free, accepted | **202** | Started. One terminal callback later. |
-| Missing/invalid fields, SSH URL, unknown agent | **400** | Error text. No callback. |
+| Missing/invalid fields, SSH URL, unknown agent, bad `model` | **400** | Error text. No callback. |
 | `source_branch` missing on remote | **202** then callback **404** | Check in the worker after accept (§6.3). Not a sync 400. |
 
 Every HTTP body (and every callback) uses the same shape so n8n has one parser:
@@ -299,13 +301,13 @@ Every HTTP body (and every callback) uses the same shape so n8n has one parser:
   "session_id": "ses_… or empty",
   "status_code": 202,
   "jira_id": "PROJ-123",
-  "correlation_id": "job_…"
+  "job_id": "job_…"
 }
 ```
 
-`correlation_id` is minted here. n8n does not send it. It is the
-internal job id on every log line. The **per-job log file** is named
-by **`jira_id`**, not by `correlation_id`.
+`job_id` is minted here (`job_…`). n8n does not send it. It is on
+every log line and is the dashboard / history key. The **per-job log
+file** is named by **`jira_id`**, not by `job_id`.
 
 ### 4.3 Callbacks (this service → request `callback_url`)
 
@@ -358,7 +360,7 @@ n8n  --POST /jobs-->  manager
                                 ├─ detect GitLab vs TFS
                                 ├─ clone with request PAT only
                                 ├─ if source_branch missing on remote: cleanup + callback 404
-                                ├─ start opencode serve --dir <clone> :unique-port
+                                ├─ start opencode serve --hostname 127.0.0.1 --port <free> (cwd = clone)
                                 ├─ resume session_id or create
                                 ├─ POST prompt, wait all states, outer retry
                                 ├─ abort + force-kill tree
@@ -378,14 +380,16 @@ n8n  --POST /jobs-->  manager
 - Same `jira_id` already running **or** queued → 409. Do not stack.
 
 **Boot:** do not start any job. Do not listen for `POST /jobs` until
-boot is finished. Reap orphan processes on `work_dir`. Drop leftover
-running/queued records. No callbacks for those leftovers. No OpenCode.
+boot is finished. Reap orphan processes on `work_dir`. Leftover
+running/queued rows become history **ERROR** (no callback, no
+OpenCode). They stay visible on the dashboard. They are not live, so
+that `jira_id` is not `409`.
 
 **Shutdown:** stop accepting `/jobs`. Kill every job process tree.
 Mark every running and queued job ERROR. Terminal callback `500` for
-each. Then job-end delete.
+each. Then job-end delete. History rows stay (dashboard).
 
-**Next request:** after ERROR (or boot-dropped leftovers), a new POST
+**Next request:** after ERROR (including boot leftover ERROR), a new POST
 for that `jira_id` is a **new** job. That worker sequential-hard-deletes
 the leftover clone path first (if present), then clones. Resume
 `session_id` only if the caller sent one and it is still valid. Do not
@@ -578,7 +582,7 @@ duplicates work, blows context, and can trigger compact again.
 - `ORIGINAL` again after that one POST succeeded.
 - Any user message while status is `busy` / compacting.
 - A second `UNATTENDED_NUDGE` if the model asks again after the first
-  (then wait or escalate to hang/fail — do not nag).
+  (fail the job `500` — do not nag, do not hang-retry).
 
 **`UNATTENDED_NUDGE`**
 
@@ -743,7 +747,9 @@ See §3.2 for why this is per job and how ports work.
    (outer retry may apply). Boot time counts toward **this attempt’s**
    `timeout_in_seconds`.
 4. Create or resume session; set agent from `agent_mode`.
-   Send `x-opencode-directory: <clone>`.
+   Send `x-opencode-directory: <clone>`. On every user-message POST,
+   send this job’s `model` as OpenCode `{ providerID, modelID }`
+   (split on the first `/`). Do not pick a different model mid-job.
 5. Start a prompt (poll loop, §5.3). First user message is `ORIGINAL`
    until that POST succeeds (even on a later attempt). After a
    hang/timeout **serve restart** where `ORIGINAL` already landed, use
@@ -806,9 +812,9 @@ Two sinks, **two different roots**:
    `C:\osm` / `/var/lib/osm`:
    `{project_root}/logs/app.log`
 2. **Per-job log** — one file per **Jira ticket**, outside the repo.
-   Filename is the ticket id so operators can find it without a
-   correlation id. Sequential runs of the same ticket **append** to
-   the same file (`correlation_id` on each line separates runs). Two
+   Filename is the ticket id so operators can find it without the
+   `job_id`. Sequential runs of the same ticket **append** to
+   the same file (`job_id` on each line separates runs). Two
    jobs for the same ticket never run at once (409), so no concurrent
    writers.
 
@@ -823,7 +829,7 @@ via `job_log_dir`.
 Every line:
 
 ```
-YYYY-MM-DD HH:MM:SS.mmm  LEVEL     [file:line]  function  [correlation_id=… jira_id=…]  message
+YYYY-MM-DD HH:MM:SS.mmm  LEVEL     [file:line]  function  [job_id=… jira_id=…]  message
 ```
 
 Log: accept, queue position, clone start/end, branch check, serve start
@@ -854,10 +860,11 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `log_level` | Minimum level for both sinks |
 | `opencode_bin` | Path or name on PATH |
 | `queue_path` | Persisted queue/job store |
+| `job_store_dir` | Finished + live job history for the dashboard. Default **Windows** `C:\osm\jobs`, **Linux** `/var/lib/osm/jobs`. One JSON per `job_id`. Never write the PAT here. |
 | `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting**. Not the request timeout. |
 | `git_clone_timeout_seconds` | Safety cap for clone / `ls-remote`. Request timeout does not apply to git. |
 
-No GitLab PAT, no Jira token, no board id. Those belong to n8n.
+No GitLab PAT, no Jira token, no board id, no default model. Those belong to n8n.
 
 ---
 
@@ -879,13 +886,17 @@ Clone the repo for reference only. Do not import it as a dependency.
   here (no git/MR delivery gate).
 - `log_context` + file logger layout
 - short Windows-safe temp names
+- jobs-tab SPA look: React + Vite + Tailwind + Geist, Jobs list + job
+  detail tabs, chat transcript UI, `JobStore` one-JSON-per-job.
+  **GET-only** — strip every write control.
 
 **Do not copy**
 
 - Jira poller, reporter, webhooks
 - GitLab MR / `glab`
 - Codex backend
-- dashboard / React SPA
+- dashboard **writes** (cancel, delete, bulk-delete, settings PATCH, schedules, storage delete)
+- Poll / Scheduled / Sessions / Storage / Settings / issue-detail tabs
 - settings-level `GITLAB_HOST_PATS`
 - “if source is main, create `feature/KEY` from target”
 - shared long-lived `opencode serve` + “never kill serve”
@@ -924,9 +935,15 @@ opencode_manager/
       rmtree.py
     log.py
     log_context.py
+    dashboard/
+      api.py            # GET /api/jobs… + /ws only
+      store.py          # job history JSON
+      chat.py           # snapshot + live transcript
+  web/                  # React + Vite + Tailwind SPA (jobs tab only)
   logs/                 # app log only: logs/app.log (project root)
 # clones default:  Windows C:\osm\.temp   Linux /var/lib/osm/.temp
 # job logs default: Windows C:\osm\logs    Linux /var/lib/osm/logs
+# job history:      Windows C:\osm\jobs    Linux /var/lib/osm/jobs
 ```
 
 Cross-platform: `os.name` branches only in kill + rmtree + a few git env
@@ -936,7 +953,7 @@ keys. Everything else is the same.
 
 ## 13. Implementation order
 
-1. Settings + logger + correlation id + per-job files.
+1. Settings + logger + `job_id` + per-job files.
 2. HTTP `POST /jobs` + in-memory/disk queue + 409/202 rules + callbacks
    (fake worker first).
 3. Git classify + PAT clone + missing-branch fail + scrub/redact.
@@ -946,15 +963,18 @@ keys. Everything else is the same.
 7. Per-attempt OpenCode timeout (resets on each retry).
 8. Force-kill + sequential hard delete + retries.
 9. Persist queue for in-process dequeue; boot does not auto-run leftovers;
-    shutdown marks live jobs ERROR.
-10. Tests: PAT never on argv / never in logs; GitLab vs TFS header;
+    shutdown marks live jobs ERROR. Persist job-history rows for the dashboard.
+10. Read-only jobs dashboard (SPA + GET APIs + live WS).
+11. Tests: PAT never on argv / never in logs; GitLab vs TFS header;
     409 vs queue; one terminal callback (never queued/in_progress);
     missing branch; kill-then-delete; new job deletes leftover dest
     then clones;
     inbound invalid session_id creates a new one; hang-retry
     resume failure fails the attempt; idle incomplete uses
     INCOMPLETE_RESUME on the same serve; first-serve death before
-    ORIGINAL still sends ORIGINAL on the next attempt.
+    ORIGINAL still sends ORIGINAL on the next attempt;
+    dashboard GET-only (writes 405); PAT never in job-history JSON;
+    history survives restart; boot leftover is ERROR in history not 409.
 
 ---
 
@@ -1016,20 +1036,21 @@ build them).
 - [ ] Setting `log_level` (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 - [ ] Setting `opencode_bin`.
 - [ ] Setting `queue_path`.
+- [ ] Setting `job_store_dir` default Windows `C:\osm\jobs`, Linux `/var/lib/osm/jobs`.
 - [ ] Setting `hang_timeout_seconds` (default ~180).
 - [ ] Setting `git_clone_timeout_seconds`.
-- [ ] Create `work_dir` and `job_log_dir` on startup if missing.
+- [ ] Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.
 - [ ] Create `{project_root}/logs/` on startup if missing.
-- [ ] No GitLab PAT, Jira token, or board id in settings.
+- [ ] No GitLab PAT, Jira token, board id, or default model in settings.
 
 ### 16.2 Logging
 
 - [ ] Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 - [ ] App sink: `{project_root}/logs/app.log` (whole process).
-- [ ] Job sink: `{job_log_dir}/{jira_id}.log` (not `correlation_id`).
+- [ ] Job sink: `{job_log_dir}/{jira_id}.log` (not `job_id`).
 - [ ] Append to the same ticket file across sequential runs.
-- [ ] Line format includes timestamp, level, file:line, function, `correlation_id`, `jira_id`, message.
-- [ ] Bind `correlation_id` and `jira_id` with contextvars so concurrent jobs do not mix.
+- [ ] Line format includes timestamp, level, file:line, function, `job_id`, `jira_id`, message.
+- [ ] Bind `job_id` and `jira_id` with contextvars so concurrent jobs do not mix.
 - [ ] Never write the PAT to any log.
 - [ ] Never write a URL that still contains userinfo to any log.
 - [ ] Redact the PAT from git stderr before logging.
@@ -1038,14 +1059,15 @@ build them).
 
 - [ ] `POST /jobs` accepts the JSON fields in §4.1.
 - [ ] Inbound handler never waits for clone or OpenCode (ack only).
-- [ ] Mint `correlation_id` on accept; n8n does not send it.
-- [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `correlation_id`.
+- [ ] Mint `job_id` on accept; n8n does not send it.
+- [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `job_id`.
 - [ ] Missing required field → HTTP **400**, no callback.
 - [ ] Empty / omitted `source_branch` on the body → HTTP **400**, no callback.
 - [ ] `callback_url` missing or not `http`/`https` → HTTP **400**, no callback.
 - [ ] Do not infer callback from `Host` / `Origin` / `Referer`.
 - [ ] SSH `repo_url` (`git@`, `ssh://`) → HTTP **400**, no callback.
 - [ ] Unknown `agent_mode` → HTTP **400**, no callback.
+- [ ] Missing / empty / not `provider/id` `model` → HTTP **400**, no callback.
 - [ ] `retry_count < 1` treated as `1`.
 - [ ] Same `jira_id` already running → HTTP **409**, no callback.
 - [ ] Same `jira_id` already queued → HTTP **409**, no callback.
@@ -1062,9 +1084,9 @@ build them).
 - [ ] On dequeue run the same pipeline; do **not** send an `in_progress` callback.
 - [ ] After success / fail / timeout / ERROR, a new POST for that `jira_id` is a new job.
 - [ ] While booting: do not start any job, do not dequeue, do not accept `POST /jobs`.
-- [ ] On boot: reap orphan processes on `work_dir`; drop leftover running/queued records; no callbacks; no OpenCode for leftovers.
-- [ ] On shutdown: stop accepting `/jobs`; kill every job tree; mark running and queued jobs ERROR; terminal callback `500` each; then job-end delete.
-- [ ] A later `POST /jobs` for a boot-dropped or shutdown-ERROR `jira_id` is a new job (not `409`).
+- [ ] On boot: reap orphan processes on `work_dir`; mark leftover running/queued as history ERROR (no callback, no OpenCode); they are not live (`409` off).
+- [ ] On shutdown: stop accepting `/jobs`; kill every job tree; mark running and queued jobs ERROR; terminal callback `500` each; then job-end delete; keep history rows.
+- [ ] A later `POST /jobs` for a boot leftover ERROR or shutdown-ERROR `jira_id` is a new job (not `409`).
 
 ### 16.5 Callbacks
 
@@ -1120,6 +1142,7 @@ build them).
 - [ ] Wait for `GET /global/health` 200; fail this attempt if boot fails.
 - [ ] Serve boot time counts toward **this attempt’s** `timeout_in_seconds`.
 - [ ] Send `x-opencode-directory: <clone>` on OpenCode requests.
+- [ ] Every user-message POST sends this job’s `model` as `{ providerID, modelID }` (split on first `/`). Same model for the whole job. No settings default.
 - [ ] OpenCode only. No Codex code paths.
 
 ### 16.8 Session and prompts
@@ -1133,7 +1156,7 @@ build them).
 - [ ] Never send `ORIGINAL` again after that POST succeeded.
 - [ ] Serve-restart after `ORIGINAL` was POSTed: `HANG_RESUME`. Serve-restart before `ORIGINAL` was POSTed: `ORIGINAL`, not `HANG_RESUME`.
 - [ ] Live clarifying question: send `UNATTENDED_NUDGE` at most once per job (exact text in §5.3).
-- [ ] Second clarifying question after the nudge: do not send another nudge.
+- [ ] Second clarifying question after the nudge: fail the job (`500`); no second nudge; no `INCOMPLETE_RESUME`.
 - [ ] Compact loop aborted and session idle: send `COMPACT_LOOP_NUDGE` at most once per wait stretch (exact text in §5.3).
 - [ ] Outer hang / serve-dead / attempt-timeout restart **after** `ORIGINAL` was POSTed: send `HANG_RESUME` (exact text in §5.3).
 - [ ] Outer incomplete (idle unfinished finish, not compact, not still-asking): send `INCOMPLETE_RESUME` on the **same** serve (exact text in §5.3). Do **not** kill serve.
@@ -1195,6 +1218,7 @@ build them).
 - [ ] GitLab vs TFS/Azure DevOps use different auth headers.
 - [ ] 409 when the same `jira_id` is running or queued.
 - [ ] Accepted job (capacity full or free) → exactly one terminal callback; 409/400 → 0; never a `queued` / `in_progress` POST.
+- [ ] Missing / empty / not `provider/id` `model` → inbound **400**, no callback.
 - [ ] Missing remote branch → inbound 202 + callback 404.
 - [ ] Kill-then-hard-delete even when files are locked (retry).
 - [ ] New job after leftover dest exists: hard-delete that path first, then clone (not `git clone` into non-empty).
@@ -1209,9 +1233,134 @@ build them).
 - [ ] No Jira poller, reporter, or Jira webhook.
 - [ ] No GitLab MR / `glab`.
 - [ ] No Codex backend.
-- [ ] No ops dashboard / React SPA.
+- [ ] No dashboard writes (no cancel / delete / settings / schedules / storage from the UI).
+- [ ] No Poll, Scheduled, Sessions, Storage, Settings, or issue-detail tabs.
 - [ ] No settings-level GitLab PAT map.
 - [ ] No “create `feature/{KEY}` from target if source is main”.
 - [ ] No shared long-lived `opencode serve`.
 - [ ] No keeping a dirty clone for reuse.
 - [ ] No git push.
+
+---
+
+## 17. Dashboard (visualization only)
+
+Copy the **jobs tab** from virtual_developer’s `web/` SPA. Same tech
+stack and the same look. It is **read-only**. n8n still owns
+`POST /jobs`. The dashboard never starts, stops, retries, or deletes
+a job.
+
+virtual_developer pages we **do not** build: Poll, Scheduled,
+Sessions, Storage, Settings, issue detail (`/tasks/:key`).
+
+### 17.1 Product
+
+- Same process and `listen_host` / `listen_port` as `POST /jobs`.
+- SPA routes: `/` → `/jobs`, `/jobs`, `/jobs/:jobId`. Nothing else.
+- Live running jobs and the queue are visible. Terminal jobs stay
+  visible after clone delete and after process restart.
+- 409 is only **running or queued**. History rows (including boot
+  ERROR) do not 409.
+
+### 17.2 Tech stack (lock to virtual_developer `web/`)
+
+React 19, TypeScript, Vite, Tailwind 4 (`@tailwindcss/vite`),
+react-router-dom 7, react-markdown + remark-gfm, Geist / Geist Mono
+(`@fontsource-variable/geist*`), oxlint. Copy `web/src/index.css`
+tokens, `PageHeader`, `StatusBadge`, `Tabs`, `MetaCard`, `PromptBlock`,
+`MarkdownBody`, `LiveDot`, `Spinner`, job cards. Re-skin names from
+Yaver to this service. Do not add a second UI kit.
+
+Dev: Vite `:5173`, proxy `/api` and `/ws` to `listen_port`. Prod:
+serve `web/dist` from the manager (same MIME workaround as VD on
+Windows).
+
+### 17.3 What the UI shows (and what it must not)
+
+**Jobs list** (VD `JobsPage` / `JobsTable`, minus writes)
+
+- Cards: `jira_id`, `job_id`, status badge, live dot, `agent_mode`,
+  `model`, started_at, error preview.
+- Filters: All / In flight / Queue / Error / Completed. No Cancelled
+  tab (shutdown/boot leftovers are Error). No bulk-select, no Delete,
+  no queue Cancel.
+- Search by `jira_id`. Paginate like VD (page size 25).
+- Queue filter is GET-only: `jira_id`, position, accepted_at. No PAT.
+
+**Job detail** (VD `JobDetailPage` tabs, slimmed)
+
+| Tab | Source |
+|---|---|
+| **Details** | History row: ids, status, live, `agent_mode`, `model`, `session_id`, redacted `repo_url`, `source_branch`, `clone_path`, serve pid/port if live, timeout / retry_count / attempt n of m, timestamps, elapsed, error, callback `status_code`, last assistant **text** (the product). **Attempts table** like VD `retry_attempts`: number, kind (hang / timeout / incomplete / serve-dead / create-fail), prompt id sent, error, `session_id`, time. |
+| **Prompt** | Exact user messages we POSTed: `ORIGINAL` plus `UNATTENDED_NUDGE` / `COMPACT_LOOP_NUDGE` / `HANG_RESUME` / `INCOMPLETE_RESUME` (id, text, time). |
+| **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve. After serve is dead: persisted snapshot. Never require the clone to still exist. No Codex path. |
+| **Logs** | `{job_log_dir}/{jira_id}.log` lines for this `job_id` only. |
+
+No Stop / Delete / Report. Refresh + live WS only.
+
+**Do not show:** PAT, URLs with userinfo, MR / commit / feature branch /
+delivery, Codex, Jira description, workflow_type, worker backend
+(always OpenCode).
+
+### 17.4 GET API (dashboard → manager)
+
+All under `/api`. **GET and WebSocket only.** POST / PATCH / DELETE
+on `/api/*` → **405**. `POST /jobs` (n8n) is unchanged and is not
+under `/api`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/meta` | app name, version, server_time |
+| GET | `/api/jobs` | page, page_size, `jira_id` filter. `{ jobs, total, page, page_size, server_time }` |
+| GET | `/api/jobs/{job_id}` | one job + `system_logs` (this `job_id` only) |
+| GET | `/api/jobs/{job_id}/prompts` | prompt artifacts |
+| GET | `/api/jobs/{job_id}/chat` | transcript (live serve or snapshot) |
+| GET | `/api/jobs/{job_id}/logs` | job-log lines for this id |
+| GET | `/api/queue` | queued rows, no PAT, no `callback_url` secrets required on the card |
+| WS | `/ws` | live snapshot: running count, queue count, generation. No settings/poll payload. |
+
+404 if the id is unknown. Never put PAT in a response.
+
+### 17.5 Persistence (required or the UI is empty)
+
+Clone delete and boot-no-resume stay. History is a **new** store.
+
+- Accept → write a history row keyed by `job_id`.
+- Update status, session, attempts, prompts, chat snapshot, result
+  text, error, callback `status_code` as the worker runs.
+- Terminal (200 / 404 / 500 / 504 / shutdown ERROR / boot ERROR):
+  keep the row. Delete the clone as today.
+- Chat snapshot: persist messages while polling and again at job
+  end. After kill-serve the snapshot is the transcript.
+- History JSON never contains the PAT. Queue file may still hold
+  PAT for in-process dequeue only; dashboard DTOs strip it.
+- Same ticket, later POST: **new** `job_id`, new row. List
+  shows both. Per-job log file still appends by `jira_id`.
+
+### 17.6 Requirements (atomic)
+
+- [ ] `web/` Vite app: React 19 + TS + Tailwind 4 + react-router-dom + react-markdown + Geist, same tokens/components as virtual_developer `web/`.
+- [ ] Routes `/`, `/jobs`, `/jobs/:jobId` only. `/` redirects to `/jobs`.
+- [ ] Nav is Jobs only. No Poll / Scheduled / Sessions / Storage / Settings / issue pages.
+- [ ] Prod: manager serves `web/dist` on the same `listen_port`. Dev: Vite proxies `/api` and `/ws`.
+- [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, started_at, error preview.
+- [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25.
+- [ ] No Delete, no bulk-select, no Stop, no queue Cancel, no Report.
+- [ ] Job detail tabs: Details, Prompt, Transcript, Logs.
+- [ ] Details shows the §17.3 meta fields, last assistant text, and the attempts table.
+- [ ] Prompt tab lists every user message we POSTed (`ORIGINAL` + orchestrator ids) with exact text.
+- [ ] Transcript copies VD `JobChatTab` (user / assistant / tool / compact). OpenCode only.
+- [ ] Live transcript reads this job’s serve; finished jobs read the snapshot. Clone may be gone.
+- [ ] Logs tab: `{job_log_dir}/{jira_id}.log` filtered by this `job_id`.
+- [ ] History store under `job_store_dir`, one JSON per `job_id`. Create dir on startup.
+- [ ] Write the history row on accept; update through the run; keep it after terminal and after clone delete.
+- [ ] Persist attempt rows (kind, prompt id, error, session_id, time) on each outer retry.
+- [ ] Persist a chat snapshot during the poll loop and at job end.
+- [ ] History JSON and every `/api` body omit the PAT and any URL userinfo.
+- [ ] `GET /api/meta`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/prompts`, `/api/jobs/{id}/chat`, `/api/jobs/{id}/logs`, `/api/queue`.
+- [ ] `WS /ws` pushes running/queue counts (no poll/settings payload).
+- [ ] POST / PATCH / DELETE under `/api` → **405**.
+- [ ] Boot leftover running/queued → history ERROR, no callback; not `409`.
+- [ ] Shutdown ERROR rows stay in history after clone delete.
+- [ ] New POST for the same `jira_id` after terminal → new `job_id` and a new list row.
+- [ ] Tests: dashboard writes 405; PAT absent from history JSON and `/api` bodies; list/detail/chat/logs 200; history survives restart; boot leftover is ERROR in history and the next `POST /jobs` is not 409.

@@ -40,7 +40,7 @@ echo
 
 if [[ -z "$OSM_PY" ]]; then
   echo "[ERROR] .venv is missing."
-  echo "Run scripts/install.sh first. It creates .venv from vendor/python/linux/bin/python3."
+  echo "Run scripts/install.sh first. It creates .venv from the bundled Python for this OS."
   exit 1
 fi
 echo "Python  : $OSM_PY"

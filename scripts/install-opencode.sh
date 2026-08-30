@@ -14,6 +14,8 @@ else
   exit 1
 fi
 cd "$ROOT"
+# shellcheck source=osm-lib.sh
+. "$ROOT/scripts/osm-lib.sh"
 
 echo "========================================"
 echo "  OpenCode Session Manager"
@@ -24,23 +26,14 @@ echo "Project : $ROOT"
 echo "Target  : $HOME/.opencode"
 echo
 
-if [[ ! -f "$ROOT/vendor/bin/opencode" && ! -f "$ROOT/vendor/bin/opencode.exe" ]]; then
-  echo "[ERROR] vendor/bin/opencode is missing."
-  echo "Use the CI zip, or run: python3 packaging/build_dist.py --in-place"
+if [[ ! -f "$ROOT/vendor/bin/$(osm_os_tag)/opencode" && ! -f "$ROOT/vendor/bin/opencode" ]]; then
+  echo "[ERROR] vendor/bin/$(osm_os_tag)/opencode is missing."
+  echo "Use a current CI zip (macOS needs darwin-arm64 or darwin-x64), or:"
+  echo "  python3 packaging/build_dist.py --in-place"
   exit 1
 fi
 
-PY=""
-if [[ -x "$ROOT/vendor/python/linux/bin/python3" ]]; then
-  PY="$ROOT/vendor/python/linux/bin/python3"
-elif [[ -x "$ROOT/.venv/bin/python" ]]; then
-  PY="$ROOT/.venv/bin/python"
-fi
-if [[ -z "$PY" ]]; then
-  echo "[ERROR] Bundled Python missing (vendor/python/linux/bin/python3)."
-  echo "Run ./install.sh from the CI zip, or python3 packaging/build_dist.py --in-place."
-  exit 1
-fi
+PY="$(osm_require_bundled_python "$ROOT")" || exit 1
 
 echo "Python  : $PY"
 echo

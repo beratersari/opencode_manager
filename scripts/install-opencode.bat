@@ -30,9 +30,9 @@ echo Project : %ROOT%
 echo Target  : %USERPROFILE%\.opencode
 echo.
 
-if not exist "%ROOT%\vendor\bin\opencode.exe" (
-    if not exist "%ROOT%\vendor\bin\opencode" (
-        echo [ERROR] vendor\bin\opencode.exe is missing.
+if not exist "%ROOT%\vendor\bin\windows\opencode.exe" (
+    if not exist "%ROOT%\vendor\bin\opencode.exe" (
+        echo [ERROR] vendor\bin\windows\opencode.exe is missing.
         echo Use the CI zip, or run: python packaging\build_dist.py --in-place
         call :maybe_pause
         exit /b 1

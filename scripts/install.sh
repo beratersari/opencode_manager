@@ -40,15 +40,11 @@ if [[ ! -f "$WEB_DIST/index.html" ]]; then
   exit 1
 fi
 
-BUNDLED_PY="$ROOT/vendor/python/linux/bin/python3"
-if [[ ! -x "$BUNDLED_PY" ]]; then
-  echo "[ERROR] Missing $BUNDLED_PY"
-  echo "The zip must include a bundled Python. Use the CI zip, or:"
-  echo "  python3 packaging/build_dist.py --in-place"
-  exit 1
-fi
+# shellcheck source=osm-lib.sh
+. "$ROOT/scripts/osm-lib.sh"
+BUNDLED_PY="$(osm_require_bundled_python "$ROOT")" || exit 1
 PYTHON_VERSION="$("$BUNDLED_PY" --version 2>&1)"
-echo "[OK] Bundled $PYTHON_VERSION"
+echo "[OK] Bundled $PYTHON_VERSION ($(osm_os_tag))"
 echo "     $BUNDLED_PY"
 
 if command -v git >/dev/null 2>&1; then

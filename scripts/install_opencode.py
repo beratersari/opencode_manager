@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import stat
 import sys
@@ -38,9 +39,15 @@ def dest_dir() -> Path:
 
 def vendor_binary(root: Path) -> Path | None:
     vendor_bin = root / "vendor" / "bin"
-    names = ("opencode.exe", "opencode") if os.name == "nt" else ("opencode", "opencode.exe")
-    for name in names:
-        path = vendor_bin / name
+    if os.name == "nt":
+        candidates = (vendor_bin / "windows" / "opencode.exe", vendor_bin / "opencode.exe")
+    elif sys.platform == "darwin":
+        machine = platform.machine().lower()
+        tag = "darwin-arm64" if machine in {"arm64", "aarch64"} else "darwin-x64"
+        candidates = (vendor_bin / tag / "opencode", vendor_bin / "opencode")
+    else:
+        candidates = (vendor_bin / "linux" / "opencode", vendor_bin / "opencode")
+    for path in candidates:
         if path.is_file():
             return path
     return None

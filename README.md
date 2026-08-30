@@ -117,22 +117,57 @@ curl -sS 'http://127.0.0.1:8080/api/jobs/job_xxxxxxxx/logs'
 
 ## Run
 
-Needs Python 3.11+, Node (for the dashboard build), `git`, and the
-`opencode` CLI on `PATH` (or set `opencode_bin` in `settings.yaml` /
-gitignored `settings.local.yaml`). Set **one** `data_dir` (clones in
+Needs Python 3.11+, `git`, and the **offline zip** (or a source tree after
+`packaging/build_dist.py --in-place`). Set **one** `data_dir` (clones in
 `.temp/`, logs in `logs/`, history in `jobs/`). Default listen is
 `0.0.0.0:8080` in `settings.yaml`.
 
+### Offline zip (no network on the target)
+
+CI workflow **Offline Distribution** builds **one** zip (Windows + Linux) with:
+
+- `vendor/python-wheels` — pip packages for the manager
+- `vendor/bin/opencode.exe` and `vendor/bin/opencode` — OpenCode CLI (Windows + Linux)
+- `web/dist` — prebuilt GET-only dashboard (no Node on the target)
+
+Extract it. Install a supported Python (see `vendor/SUPPORTED_PYTHON.txt`)
+and Git. Then:
+
 ```bash
-# install
+# Windows
+install.bat
+install-opencode.bat
+start.bat
+
+# Linux
+./install.sh
+./install-opencode.sh
+./start.sh
+```
+
+`install.bat` / `install.sh` install the manager only (venv + wheels +
+prebuilt SPA). They never hit PyPI or npm. OpenCode is a separate
+installer: `install-opencode.*` deletes `<user>/.opencode` (Windows:
+`%USERPROFILE%\.opencode`) and copies `vendor/bin` from scratch.
+`start-frontend` is a Python SPA proxy on `:5173` (not Vite). The manager
+also serves the same SPA at http://127.0.0.1:8080/jobs.
+
+### Build the vendor payload (needs network, once)
+
+On a machine that can reach GitHub / PyPI / npm:
+
+```bash
+python3 packaging/build_dist.py --in-place   # fills vendor/ + web/dist in this repo
+python3 packaging/build_dist.py              # writes dist/opencode-manager-*.zip
+```
+
+### From source (developers)
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 python -m pip install -e ".[dev]"
-
-# dashboard (once, or after changing web/)
 cd web && npm install && npm run build && cd ..
-
-# start
 opencode-manager
 ```
 

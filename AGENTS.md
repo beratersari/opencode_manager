@@ -262,6 +262,24 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - Create `{data_dir}` layout on startup if missing: `.temp`,
   `.serve`, `logs`, `jobs`, `queue.json`.
 
+### Offline install
+
+- Target installers never hit the network.
+  - `install.bat` / `install.sh` — manager only (venv +
+    `vendor/python-wheels` + check `web/dist`). Fail if those are
+    missing. One installer; do not split backend vs frontend.
+  - `install-opencode.bat` / `install-opencode.sh` — OpenCode CLI
+    only. Install root is `<user>/.opencode` (Windows:
+    `%USERPROFILE%\.opencode`, not AppData). Detect that folder,
+    delete it, then copy `vendor/bin` from scratch.
+- CI (`packaging/build_dist.py`, workflow **Offline Distribution**)
+  produces **one** zip for Windows and Linux: wheels for both,
+  `vendor/bin/opencode.exe` + `vendor/bin/opencode`, and `web/dist`.
+- No npm on the target. `start-frontend` is the Python SPA proxy
+  (`dashboard.frontend_proxy`), not Vite.
+- Do not vendor Git or CPython. Do not vendor Codex, `glab`, portable
+  Node, or oh-my-opencode.
+
 ### Dashboard (GET only)
 
 - Jobs tab only (`/jobs`, `/jobs/:jobId`). Same tech stack and look

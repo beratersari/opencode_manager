@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from opencode_manager.dashboard.store import JobStore
-from opencode_manager.log import get_logger
+from opencode_manager.log import clip, get_logger, log_fail
 from opencode_manager.models import AttemptRow, JobRecord, PromptRow, utc_now
 from opencode_manager.opencode import prompts
 from opencode_manager.cleanup.kill import kill_pid
-from opencode_manager.opencode.serve import ServeHandle, start_serve, stop_serve
+from opencode_manager.opencode.serve import ServeHandle, serve_log_path, start_serve, stop_serve
 from opencode_manager.opencode.session import (
     OpenCodeClient,
     assess_idle,
@@ -25,6 +25,7 @@ from opencode_manager.opencode.session import (
     session_is_compacting,
     snapshot_chat,
     unknown_model_message,
+    _last_finish,
 )
 from opencode_manager.settings import Settings
 
@@ -137,7 +138,7 @@ def run_opencode_job(
                         handle = start_serve(
                             bin_name=settings.opencode_bin,
                             cwd=clone,
-                            log_path=settings.work_dir / ".serve" / f"{job.job_id}.log",
+                            log_path=serve_log_path(settings.serve_dir, job.job_id),
                             timeout=min(remain, 90.0),
                             on_spawn=record_spawn,
                             should_stop=should_stop,
@@ -213,15 +214,46 @@ def run_opencode_job(
                     baseline_n=len(prior),
                     baseline_compact_n=compact_floor,
                 )
-                logger.info("inner loop left attempt=%s outcome=%s", attempt, outcome)
+                logger.info(
+                    "inner loop left attempt=%s/%s outcome=%s remaining=%s original_posted=%s session=%s",
+                    attempt,
+                    attempts,
+                    outcome,
+                    attempts - attempt,
+                    job.original_posted,
+                    job.session_id or "(none)",
+                )
                 if outcome == "success":
                     return LoopResult(text=job.text or last_assistant_text(client.list_messages(job.session_id)), status_code=200)
                 if outcome == "asking":
+                    log_fail(
+                        logger,
+                        "job fail still asking after UNATTENDED_NUDGE",
+                        attempt=attempt,
+                        session=job.session_id,
+                        text=job.text,
+                    )
                     raise JobFailed(500, "model still asking after UNATTENDED_NUDGE")
                 if outcome == "compact_leftover":
+                    log_fail(
+                        logger,
+                        "job fail compact leftover after COMPACT_LOOP_NUDGE",
+                        attempt=attempt,
+                        session=job.session_id,
+                    )
                     raise JobFailed(500, "compact leftover after COMPACT_LOOP_NUDGE")
                 last_kind = outcome
                 last_error = f"attempt {attempt} ended: {outcome}"
+                logger.info(
+                    "attempt %s/%s will retry kind=%s next_prompt=%s kill_serve=%s",
+                    attempt,
+                    attempts,
+                    outcome,
+                    "INCOMPLETE_RESUME"
+                    if outcome == "incomplete"
+                    else ("HANG_RESUME" if job.original_posted else "ORIGINAL"),
+                    outcome != "incomplete",
+                )
                 job.attempts.append(
                     AttemptRow(
                         number=attempt,
@@ -244,7 +276,15 @@ def run_opencode_job(
             except AttemptFailed as exc:
                 last_kind = exc.kind
                 last_error = exc.message
-                logger.error("attempt %s failed: %s", attempt, exc.message)
+                log_fail(
+                    logger,
+                    "attempt failed",
+                    attempt=f"{attempt}/{attempts}",
+                    kind=exc.kind,
+                    err=exc.message,
+                    session=job.session_id,
+                    original_posted=job.original_posted,
+                )
                 job.attempts.append(
                     AttemptRow(
                         number=attempt,
@@ -259,6 +299,15 @@ def run_opencode_job(
                 close_serve()
                 continue
         status = 504 if last_kind == "timeout" else 500
+        log_fail(
+            logger,
+            "OpenCode attempts exhausted",
+            last_kind=last_kind,
+            last_error=last_error,
+            attempts=attempts,
+            callback_status=status,
+            session=job.session_id,
+        )
         raise JobFailed(status, last_error)
     finally:
         close_serve()
@@ -273,8 +322,23 @@ def _post_user(
 ) -> None:
     status = client.status()
     if session_is_busy(status, job.session_id):
+        log_fail(
+            logger,
+            "refuse POST user message; session busy",
+            prompt_id=prompt_id,
+            session=job.session_id,
+            status=status,
+        )
         raise AttemptFailed("hang", "session busy; refusing to POST a user message")
-    logger.info("POST user message prompt_id=%s chars=%s model=%s agent=%s", prompt_id, len(text), job.model, job.agent_mode)
+    logger.info(
+        "POST user message prompt_id=%s chars=%s model=%s agent=%s session=%s preview=%s",
+        prompt_id,
+        len(text),
+        job.model,
+        job.agent_mode,
+        job.session_id,
+        clip(text, 160),
+    )
     try:
         client.post_message(job.session_id, text, model=job.model, agent=job.agent_mode)
     except Exception as exc:  # noqa: BLE001
@@ -311,7 +375,27 @@ def _inner_loop(
     last_phase = ""
     new_assistant_logs = 0
     hang_clock_logs = 0
-    logger.info("inner loop enter hang_timeout=%ss", settings.hang_timeout_seconds)
+    logger.info(
+        "inner loop enter hang_timeout=%ss attempt_deadline_in=%ss session=%s",
+        settings.hang_timeout_seconds,
+        max(0.0, deadline - time.time()),
+        job.session_id or "(none)",
+    )
+
+    def _leave(kind: str, messages: list, **extra: object) -> str:
+        role, finish = _last_finish(messages)
+        logger.info(
+            "inner leave kind=%s last_role=%s last_finish=%s last_assistant=%s "
+            "messages=%s text=%s %s",
+            kind,
+            role or "-",
+            finish or "(none)",
+            last_assistant_id(messages) or "(none)",
+            len(messages),
+            clip(last_assistant_text(messages), 240),
+            " ".join(f"{k}={v}" for k, v in extra.items()),
+        )
+        return kind
 
     while True:
         if should_stop():
@@ -321,10 +405,18 @@ def _inner_loop(
             logger.warning("inner loop attempt clock hit zero")
             if job.session_id:
                 client.abort(job.session_id)
-            return "timeout"
+            try:
+                timed = client.list_messages(job.session_id) if job.session_id else []
+            except Exception:
+                timed = []
+            return _leave("timeout", timed)
         if not client.health():
             logger.warning("inner loop serve health failed")
-            return "serve-dead"
+            try:
+                dead_msgs = client.list_messages(job.session_id) if job.session_id else []
+            except Exception:
+                dead_msgs = []
+            return _leave("serve-dead", dead_msgs)
         status = client.status()
         busy = session_is_busy(status, job.session_id)
         compacting = session_is_compacting(status, job.session_id)
@@ -400,9 +492,15 @@ def _inner_loop(
                         hang_clock_logs,
                     )
             if time.time() - last_progress >= settings.hang_timeout_seconds:
-                logger.warning("hang watchdog fired after %ss with no new markers", settings.hang_timeout_seconds)
+                logger.warning(
+                    "hang watchdog fired after %ss with no new markers last_assistant=%s last_finish=%s messages=%s",
+                    settings.hang_timeout_seconds,
+                    last_assistant_id(messages) or "(none)",
+                    _last_finish(messages)[1] or "(none)",
+                    msg_n,
+                )
                 client.abort(job.session_id)
-                return "hang"
+                return _leave("hang", messages, quiet_for=f"{settings.hang_timeout_seconds}s")
             time.sleep(1.0)
             continue
 
@@ -412,11 +510,15 @@ def _inner_loop(
             continue
 
         verdict = assess_idle(messages)
+        role, finish = _last_finish(messages)
         logger.info(
-            "session idle assess=%s messages=%s new_compacts=%s",
+            "session idle assess=%s messages=%s new_compacts=%s last_role=%s last_finish=%s last_assistant=%s",
             verdict,
             msg_n,
             new_compacts,
+            role or "-",
+            finish or "(none)",
+            last_assistant_id(messages) or "(none)",
         )
         if new_compacts >= _COMPACT_LOOP_NEW and verdict != "success" and not compact_nudged:
             client.abort(job.session_id)
@@ -430,10 +532,10 @@ def _inner_loop(
             last_progress = time.time()
             continue
         if verdict == "success":
-            return "success"
+            return _leave("success", messages)
         if verdict == "question":
             if nudged:
-                return "asking"
+                return _leave("asking", messages)
             baseline_assistant_id = last_assistant_id(messages)
             _post_user(job, client, store, "UNATTENDED_NUDGE", prompts.UNATTENDED_NUDGE)
             nudged = True
@@ -442,11 +544,11 @@ def _inner_loop(
             continue
         if verdict == "compact_leftover":
             if compact_nudged:
-                return "compact_leftover"
+                return _leave("compact_leftover", messages)
             baseline_assistant_id = last_assistant_id(messages)
             _post_user(job, client, store, "COMPACT_LOOP_NUDGE", prompts.COMPACT_LOOP_NUDGE)
             compact_nudged = True
             awaiting_turn = True
             last_progress = time.time()
             continue
-        return "incomplete"
+        return _leave("incomplete", messages, finish=finish or "(none)")

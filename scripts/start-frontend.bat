@@ -26,12 +26,7 @@ set "BACKEND_URL=http://127.0.0.1:8080"
 set "WEB_DIST=%ROOT%\web\dist"
 set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"
 set "OSM_PY="
-if exist "%VENV_PY%" (
-    set "OSM_PY=%VENV_PY%"
-) else (
-    where python >nul 2>&1
-    if not errorlevel 1 set "OSM_PY=python"
-)
+if exist "%VENV_PY%" set "OSM_PY=%VENV_PY%"
 
 echo ========================================
 echo   OpenCode Session Manager - Frontend
@@ -42,8 +37,8 @@ echo Proxies  : /api and /ws  -^>  %BACKEND_URL%
 echo.
 
 if not defined OSM_PY (
-    echo [ERROR] No project .venv and python is not on PATH.
-    echo Run scripts\install.bat first.
+    echo [ERROR] .venv is missing.
+    echo Run scripts\install.bat first. It creates .venv from vendor\python\windows\python.exe.
     call :maybe_pause
     exit /b 1
 )

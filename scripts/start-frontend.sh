@@ -22,8 +22,6 @@ VENV_PY="$ROOT/.venv/bin/python"
 OSM_PY=""
 if [[ -x "$VENV_PY" ]]; then
   OSM_PY="$VENV_PY"
-elif command -v python3 >/dev/null 2>&1; then
-  OSM_PY="python3"
 fi
 
 echo "========================================"
@@ -35,8 +33,8 @@ echo "Proxies  : /api and /ws  ->  ${BACKEND_URL}"
 echo
 
 if [[ -z "$OSM_PY" ]]; then
-  echo "[ERROR] No project .venv and python3 is not on PATH."
-  echo "Run scripts/install.sh first."
+  echo "[ERROR] .venv is missing."
+  echo "Run scripts/install.sh first. It creates .venv from vendor/python/linux/bin/python3."
   exit 1
 fi
 echo "Python   : $OSM_PY"

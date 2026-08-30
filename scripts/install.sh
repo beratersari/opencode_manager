@@ -40,41 +40,16 @@ if [[ ! -f "$WEB_DIST/index.html" ]]; then
   exit 1
 fi
 
-PY=""
-for candidate in python3.12 python3.11 python3; do
-  if command -v "$candidate" >/dev/null 2>&1; then
-    PY="$candidate"
-    break
-  fi
-done
-if [[ -z "$PY" ]]; then
-  echo "[ERROR] Python 3 is not installed or not on PATH."
-  echo "Install a supported Python (see vendor/SUPPORTED_PYTHON.txt)."
+BUNDLED_PY="$ROOT/vendor/python/linux/bin/python3"
+if [[ ! -x "$BUNDLED_PY" ]]; then
+  echo "[ERROR] Missing $BUNDLED_PY"
+  echo "The zip must include a bundled Python. Use the CI zip, or:"
+  echo "  python3 packaging/build_dist.py --in-place"
   exit 1
 fi
-
-PYTHON_VERSION="$("$PY" --version 2>&1)"
-echo "[OK] $PYTHON_VERSION"
-if ! "$PY" -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 11) else 1)"; then
-  echo "[ERROR] Python 3.11 or newer is required."
-  echo "Found: $PYTHON_VERSION"
-  exit 1
-fi
-
-if [[ -f "$ROOT/vendor/SUPPORTED_PYTHON.txt" ]]; then
-  if ! "$PY" -c "
-import sys, pathlib
-p = pathlib.Path(r'''$ROOT''') / 'vendor' / 'SUPPORTED_PYTHON.txt'
-lines = [l.strip() for l in p.read_text(encoding='utf-8', errors='ignore').splitlines() if l.strip() and not l.strip().startswith('#')]
-ver = f'{sys.version_info.major}.{sys.version_info.minor}'
-print('Supported in this package:', ', '.join(lines))
-print('Your Python minor:', ver)
-raise SystemExit(0 if (not lines or ver in lines) else 1)
-"; then
-    echo "[ERROR] Your Python is not in vendor/SUPPORTED_PYTHON.txt."
-    exit 1
-  fi
-fi
+PYTHON_VERSION="$("$BUNDLED_PY" --version 2>&1)"
+echo "[OK] Bundled $PYTHON_VERSION"
+echo "     $BUNDLED_PY"
 
 if command -v git >/dev/null 2>&1; then
   echo "[OK] git found"
@@ -83,13 +58,13 @@ else
 fi
 
 echo
-echo "Step 1: Python virtual environment..."
-if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-  "$PY" -m venv "$VENV_DIR"
-  echo "[OK] Created $VENV_DIR"
-else
-  echo "[OK] Using existing $VENV_DIR"
+echo "Step 1: Python virtual environment from bundled python..."
+if [[ -e "$VENV_DIR" ]]; then
+  echo "Removing existing .venv so it matches the bundled interpreter..."
+  rm -rf "$VENV_DIR"
 fi
+"$BUNDLED_PY" -m venv "$VENV_DIR"
+echo "[OK] Created $VENV_DIR"
 VENV_PY="$VENV_DIR/bin/python"
 
 echo

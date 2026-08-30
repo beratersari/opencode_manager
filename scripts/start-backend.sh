@@ -20,8 +20,6 @@ VENV_PY="$ROOT/.venv/bin/python"
 OSM_PY=""
 if [[ -x "$VENV_PY" ]]; then
   OSM_PY="$VENV_PY"
-elif command -v python3 >/dev/null 2>&1; then
-  OSM_PY="python3"
 fi
 
 export GIT_TERMINAL_PROMPT=0
@@ -41,12 +39,9 @@ echo "API+SPA : http://0.0.0.0:${DASH_PORT}/  (open http://127.0.0.1:${DASH_PORT
 echo
 
 if [[ -z "$OSM_PY" ]]; then
-  echo "[ERROR] No project .venv and python3 is not on PATH."
-  echo "Run scripts/install.sh (offline, creates .venv)."
+  echo "[ERROR] .venv is missing."
+  echo "Run scripts/install.sh first. It creates .venv from vendor/python/linux/bin/python3."
   exit 1
-fi
-if [[ ! -x "$VENV_PY" ]]; then
-  echo "[WARNING] .venv missing — using system python. Prefer scripts/install.sh."
 fi
 echo "Python  : $OSM_PY"
 

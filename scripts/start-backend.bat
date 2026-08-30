@@ -24,12 +24,7 @@ set "DASH_PORT=8080"
 set "FRONTEND_PORT=5173"
 set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"
 set "OSM_PY="
-if exist "%VENV_PY%" (
-    set "OSM_PY=%VENV_PY%"
-) else (
-    where python >nul 2>&1
-    if not errorlevel 1 set "OSM_PY=python"
-)
+if exist "%VENV_PY%" set "OSM_PY=%VENV_PY%"
 
 set "GIT_TERMINAL_PROMPT=0"
 set "PYTHONUNBUFFERED=1"
@@ -44,13 +39,10 @@ echo API+SPA : http://0.0.0.0:%DASH_PORT%/  ^(open http://127.0.0.1:%DASH_PORT%/
 echo.
 
 if not defined OSM_PY (
-    echo [ERROR] No project .venv and python is not on PATH.
-    echo Run scripts\install.bat ^(offline, creates .venv^).
+    echo [ERROR] .venv is missing.
+    echo Run scripts\install.bat first. It creates .venv from vendor\python\windows\python.exe.
     call :maybe_pause
     exit /b 1
-)
-if not exist "%VENV_PY%" (
-    echo [WARNING] .venv missing — using system python. Prefer scripts\install.bat.
 )
 echo Python  : %OSM_PY%
 

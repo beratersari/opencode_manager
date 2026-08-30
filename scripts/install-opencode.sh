@@ -31,19 +31,14 @@ if [[ ! -f "$ROOT/vendor/bin/opencode" && ! -f "$ROOT/vendor/bin/opencode.exe" ]
 fi
 
 PY=""
-if [[ -x "$ROOT/.venv/bin/python" ]]; then
+if [[ -x "$ROOT/vendor/python/linux/bin/python3" ]]; then
+  PY="$ROOT/vendor/python/linux/bin/python3"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
   PY="$ROOT/.venv/bin/python"
-else
-  for candidate in python3.12 python3.11 python3; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      PY="$candidate"
-      break
-    fi
-  done
 fi
 if [[ -z "$PY" ]]; then
-  echo "[ERROR] Python 3 is not installed or not on PATH."
-  echo "The OpenCode installer is a small stdlib script; any Python 3.11+ works."
+  echo "[ERROR] Bundled Python missing (vendor/python/linux/bin/python3)."
+  echo "Run ./install.sh from the CI zip, or python3 packaging/build_dist.py --in-place."
   exit 1
 fi
 

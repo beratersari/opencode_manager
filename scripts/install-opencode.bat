@@ -40,18 +40,11 @@ if not exist "%ROOT%\vendor\bin\opencode.exe" (
 )
 
 set "PY="
-if exist "%ROOT%\.venv\Scripts\python.exe" set "PY=%ROOT%\.venv\Scripts\python.exe"
+if exist "%ROOT%\vendor\python\windows\python.exe" set "PY=%ROOT%\vendor\python\windows\python.exe"
+if not defined PY if exist "%ROOT%\.venv\Scripts\python.exe" set "PY=%ROOT%\.venv\Scripts\python.exe"
 if not defined PY (
-    where python >nul 2>&1
-    if not errorlevel 1 set "PY=python"
-)
-if not defined PY (
-    where py >nul 2>&1
-    if not errorlevel 1 set "PY=py -3"
-)
-if not defined PY (
-    echo [ERROR] Python is not installed or not on PATH.
-    echo The OpenCode installer is a small stdlib script; any Python 3.11+ works.
+    echo [ERROR] Bundled python.exe missing ^(vendor\python\windows\python.exe^).
+    echo Run install.bat from the CI zip, or python packaging\build_dist.py --in-place.
     call :maybe_pause
     exit /b 1
 )

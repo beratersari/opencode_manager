@@ -838,23 +838,21 @@ Still protect the manager PID and every *other* job’s serve pid.
 
 Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 
-Two sinks, **two different roots**:
+Two sinks, **one data root** (`data_dir`):
 
-1. **App log** (whole process) — under the **project root**, not under
-   `C:\osm` / `/var/lib/osm`:
-   `{project_root}/logs/app.log`
-2. **Per-job log** — one file per **job**, outside the repo.
+1. **App log** (whole process): `{data_dir}/logs/app.log`
+2. **Per-job log** — one file per **job**.
    Name is `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` (accept
    time, UTC). Same ticket later ⇒ a new file. Line still carries
-   `job_id` and `jira_id`.
+   `job_id` and `jira_id`. Path:
+   `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
 
-| OS | Default job-log file |
+| OS | Default `data_dir` |
 |---|---|
-| Windows | `C:\osm\logs\{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
-| Linux | `/var/lib/osm/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
+| Windows | `C:\osm` |
+| Linux | `/var/lib/osm` |
 
-Create the directories on startup if they do not exist. Overridable
-via `job_log_dir`.
+Create the directories on startup if they do not exist.
 
 Every line:
 
@@ -887,12 +885,9 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `callback_timeout_seconds` | Per callback HTTP timeout |
 | `callback_retry_count` | If the caller URL is down |
 | `callback_allowed_hosts` | Optional allow-list (SSRF). Empty = any http(s) URL from the request. |
-| `work_dir` | Clone root. Default **Windows** `C:\osm\.temp`, **Linux** `/var/lib/osm/.temp` |
-| `job_log_dir` | Per-job log root. Default **Windows** `C:\osm\logs`, **Linux** `/var/lib/osm/logs` |
+| `data_dir` | **One root** for everything OSM writes. Default **Windows** `C:\osm`, **Linux** `/var/lib/osm`. Derived: `{data_dir}/.temp` clones, `{data_dir}/.serve` serve logs, `{data_dir}/logs` app + job logs, `{data_dir}/jobs` history, `{data_dir}/queue.json`. |
 | `log_level` | Minimum level for both sinks |
 | `opencode_bin` | Path or name on PATH |
-| `queue_path` | Persisted queue/job store |
-| `job_store_dir` | Finished + live job history for the dashboard. Default **Windows** `C:\osm\jobs`, **Linux** `/var/lib/osm/jobs`. One JSON per `job_id`. Never write the PAT here. |
 | `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting** **and** this turn has not produced an assistant yet. Not the request timeout. |
 | `git_clone_timeout_seconds` | Safety cap for clone / `ls-remote`. Request timeout does not apply to git. |
 
@@ -1063,23 +1058,19 @@ build them).
 - [ ] Setting `callback_timeout_seconds`.
 - [ ] Setting `callback_retry_count`.
 - [ ] Setting `callback_allowed_hosts` (empty = any http(s) URL).
-- [ ] Setting `work_dir` default Windows `C:\osm\.temp`, Linux `/var/lib/osm/.temp`.
-- [ ] Setting `job_log_dir` default Windows `C:\osm\logs`, Linux `/var/lib/osm/logs`.
+- [ ] Setting `data_dir` default Windows `C:\osm`, Linux `/var/lib/osm`. Derive `.temp`, `.serve`, `logs`, `jobs`, `queue.json`.
 - [ ] Setting `log_level` (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 - [ ] Setting `opencode_bin`.
-- [ ] Setting `queue_path`.
-- [ ] Setting `job_store_dir` default Windows `C:\osm\jobs`, Linux `/var/lib/osm/jobs`.
 - [ ] Setting `hang_timeout_seconds` (default ~180).
 - [ ] Setting `git_clone_timeout_seconds`.
-- [ ] Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.
-- [ ] Create `{project_root}/logs/` on startup if missing.
+- [ ] Create the `data_dir` layout on startup if missing.
 - [ ] No GitLab PAT, Jira token, board id, or default model in settings.
 
 ### 16.2 Logging
 
 - [ ] Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-- [ ] App sink: `{project_root}/logs/app.log` (whole process).
-- [ ] Job sink: `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` (one file per job).
+- [ ] App sink: `{data_dir}/logs/app.log` (whole process).
+- [ ] Job sink: `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` (one file per job).
 - [ ] Line format includes timestamp, level, file:line, function, `job_id`, `jira_id`, message.
 - [ ] Bind `job_id` and `jira_id` with contextvars so concurrent jobs do not mix.
 - [ ] Never write the PAT to any log.
@@ -1335,9 +1326,13 @@ Windows).
 | **Details** | History row: ids, status, live, `agent_mode`, `model`, `session_id`, redacted `repo_url`, `source_branch`, `clone_path`, serve pid/port if live, timeout / retry_count / attempt n of m, timestamps, elapsed, error, callback `status_code`, last assistant **text** (the product). **Attempts table** like VD `retry_attempts`: number, kind (hang / timeout / incomplete / serve-dead / create-fail), prompt id sent, error, `session_id`, time. |
 | **Prompt** | Exact user messages we POSTed: `ORIGINAL` plus `UNATTENDED_NUDGE` / `COMPACT_LOOP_NUDGE` / `HANG_RESUME` / `INCOMPLETE_RESUME` (id, text, time). |
 | **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve. After serve is dead: **this job’s** persisted snapshot (never replace from global `opencode.db` by shared `session_id` — later tickets reuse the same `ses_*`). Missing tool output on existing snapshot ids may be filled from the db. Never require the clone to still exist. No Codex path. |
-| **Logs** | `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
+| **Logs** | OSM job log `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`, then OpenCode serve stdout/stderr `GET /api/jobs/{id}/serve-log`. |
 
-No Stop / Delete / Report. Refresh + live WS only.
+No Stop / Delete. Refresh + live WS only. **Report issue** on
+job detail is a client-built zip from GET data (note, job JSON,
+prompts, chat, OSM log via `GET /api/jobs/{id}/logs?limit=0`,
+OpenCode serve log via `GET /api/jobs/{id}/serve-log`).
+The note is not persisted. No POST.
 
 **Do not show:** PAT, URLs with userinfo, MR / commit / feature branch /
 delivery, Codex, Jira description, workflow_type, worker backend
@@ -1356,7 +1351,8 @@ under `/api`.
 | GET | `/api/jobs/{job_id}` | one job + `system_logs` (this `job_id` only) |
 | GET | `/api/jobs/{job_id}/prompts` | prompt artifacts |
 | GET | `/api/jobs/{job_id}/chat` | transcript (live serve or snapshot) |
-| GET | `/api/jobs/{job_id}/logs` | job-log lines for this id |
+| GET | `/api/jobs/{job_id}/logs` | job-log lines for this id. `limit` (default 2000, last N). `limit=0` = whole file (report zip). |
+| GET | `/api/jobs/{job_id}/serve-log` | this job's `opencode serve` stdout/stderr (`{data_dir}/.serve/{job_id}.log`, redacted). `{ text, missing }`. |
 | GET | `/api/queue` | queued rows, optional `jira_id`. No PAT, no `callback_url` secrets required on the card |
 | WS | `/ws` | live snapshot: running count, queue count, generation. No settings/poll payload. |
 
@@ -1386,19 +1382,19 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Prod: manager serves `web/dist` on the same `listen_port`. Dev: Vite proxies `/api` and `/ws`.
 - [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, started_at, error preview.
 - [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25. List filters paginate on the server; Queue search uses `/api/queue?jira_id=`.
-- [ ] No Delete, no bulk-select, no Stop, no queue Cancel, no Report.
+- [ ] No Delete, no bulk-select, no Stop, no queue Cancel. Report issue is a GET-only zip download on job detail (note not stored).
 - [ ] Job detail tabs: Details, Prompt, Transcript, Logs.
 - [ ] Details shows the §17.3 meta fields, last assistant text, and the attempts table.
 - [ ] Prompt tab lists every user message we POSTed (`ORIGINAL` + orchestrator ids) with exact text.
 - [ ] Transcript copies VD `JobChatTab` (user / assistant / tool / compact). OpenCode only.
 - [ ] Live transcript reads this job’s serve; finished jobs read the snapshot. Clone may be gone.
-- [ ] Logs tab: `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`.
+- [ ] Logs tab: OSM job log, then OpenCode serve log (`GET /api/jobs/{id}/serve-log`).
 - [ ] History store under `job_store_dir`, one JSON per `job_id`. Create dir on startup.
 - [ ] Write the history row on accept; update through the run; keep it after terminal and after clone delete.
 - [ ] Persist attempt rows (kind, prompt id, error, session_id, time) on each outer retry.
 - [ ] Persist a chat snapshot during the poll loop and at job end.
 - [ ] History JSON and every `/api` body omit the PAT and any URL userinfo.
-- [ ] `GET /api/meta`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/prompts`, `/api/jobs/{id}/chat`, `/api/jobs/{id}/logs`, `/api/queue`.
+- [ ] `GET /api/meta`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/prompts`, `/api/jobs/{id}/chat`, `/api/jobs/{id}/logs` (`limit=0` = whole file), `/api/jobs/{id}/serve-log`, `/api/queue`.
 - [ ] `WS /ws` pushes running/queue counts (no poll/settings payload).
 - [ ] POST / PATCH / DELETE under `/api` → **405**.
 - [ ] Boot leftover running/queued → history ERROR, no callback; not `409`.

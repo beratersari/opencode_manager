@@ -240,3 +240,25 @@ def test_boot_leftover_is_error_not_409(tmp_settings: Settings) -> None:
         res = client.post("/jobs", json=_body(jira_id="LEFT-1"))
         assert res.status_code == 202
         assert res.json()["job_id"] != "job_leftover"
+
+
+def test_serve_log_get_is_redacted_and_missing_ok(tmp_settings: Settings) -> None:
+    from opencode_manager.dashboard.store import JobStore
+    from opencode_manager.opencode.serve import serve_log_path
+
+    store = JobStore(tmp_settings.job_store_dir)
+    job = JobRecord(job_id="job_serve1", jira_id="SRV-1", status="success", live=False)
+    store.save(job)
+    path = serve_log_path(tmp_settings.serve_dir, job.job_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("clone https://oauth2:supersecret@gitlab.example/r.git\nok\n", encoding="utf-8")
+    with _client(tmp_settings) as client:
+        missing = client.get("/api/jobs/job_nope/serve-log")
+        assert missing.status_code == 404
+        got = client.get("/api/jobs/job_serve1/serve-log")
+        assert got.status_code == 200
+        body = got.json()
+        assert body["missing"] is False
+        assert "supersecret" not in body["text"]
+        assert "gitlab.example" in body["text"]
+        assert "***" in body["text"]

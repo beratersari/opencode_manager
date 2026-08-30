@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JobDetailPage } from './JobDetailPage'
@@ -8,12 +8,14 @@ const fetchJob = vi.fn()
 const fetchPrompts = vi.fn()
 const fetchChat = vi.fn()
 const fetchLogs = vi.fn()
+const fetchServeLog = vi.fn()
 
 vi.mock('../../api/client', () => ({
   fetchJob: (...args: unknown[]) => fetchJob(...args),
   fetchPrompts: (...args: unknown[]) => fetchPrompts(...args),
   fetchChat: (...args: unknown[]) => fetchChat(...args),
   fetchLogs: (...args: unknown[]) => fetchLogs(...args),
+  fetchServeLog: (...args: unknown[]) => fetchServeLog(...args),
 }))
 
 vi.mock('../../app/live', () => ({
@@ -52,6 +54,7 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockReset()
     fetchChat.mockReset()
     fetchLogs.mockReset()
+    fetchServeLog.mockReset()
   })
 
   it('clears the previous job when the next id 404s', async () => {
@@ -64,6 +67,7 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
 
     const { router } = renderAt('job_aaa')
 
@@ -95,6 +99,7 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
 
     renderAt('job_run')
     await waitFor(() => {
@@ -112,6 +117,7 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
 
     renderAt('job_aaa')
     await waitFor(() => {
@@ -135,6 +141,7 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
 
     renderAt('job_err')
     await waitFor(() => {
@@ -152,11 +159,66 @@ describe('JobDetailPage', () => {
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
 
     renderAt('job_bbb')
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'job_bbb' })).toBeTruthy()
     })
     expect(screen.getAllByText('BBB-1').length).toBeGreaterThan(0)
+  })
+
+  it('shows the serve log under the job log on the Logs tab', async () => {
+    fetchJob.mockResolvedValue({ job: jobA, system_logs: [] })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [{ timestamp: 't', message: 'osm line' }] })
+    fetchServeLog.mockResolvedValue({
+      job_id: 'job_aaa',
+      missing: false,
+      text: 'opencode serve listening',
+    })
+
+    renderAt('job_aaa')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'job_aaa' })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Logs/ }))
+    expect(screen.getByText('Job log')).toBeTruthy()
+    expect(screen.getByText('osm line')).toBeTruthy()
+    expect(screen.getByText('OpenCode serve')).toBeTruthy()
+    expect(screen.getByText('opencode serve listening')).toBeTruthy()
+  })
+
+  it('opens the report dialog for the selected job', async () => {
+    fetchJob.mockResolvedValue({ job: jobA, system_logs: [] })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
+
+    renderAt('job_aaa')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Report issue' })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }))
+    expect(screen.getByRole('dialog', { name: 'Report issue' })).toBeTruthy()
+    expect(screen.getByText(/AAA-1 · job_aaa/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Download zip' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    fireEvent.change(screen.getByPlaceholderText('What went wrong?'), {
+      target: { value: 'too short' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Download zip' }))
+    expect(fetchLogs).not.toHaveBeenCalledWith('job_aaa', { limit: 0 })
+    fireEvent.change(screen.getByPlaceholderText('What went wrong?'), {
+      target: { value: 'it stopped mid-answer' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Download zip' }))
+    await waitFor(() => {
+      expect(fetchLogs).toHaveBeenCalledWith('job_aaa', { limit: 0 })
+      expect(fetchServeLog).toHaveBeenCalledWith('job_aaa')
+    })
   })
 })

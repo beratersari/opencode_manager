@@ -102,8 +102,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   from `main`. Missing field on the body → inbound **400**. Missing
   on the remote → inbound **202**, worker checks, callback **404**.
   Never return a sync 404 for a missing remote ref.
-- Clones live under `work_dir`. Defaults: Windows `C:\osm\.temp`,
-  Linux `/var/lib/osm/.temp`. Folder name is the **ticket id**
+- One settings root: `data_dir` (Windows `C:\osm`, Linux
+  `/var/lib/osm`). Clones live under `{data_dir}/.temp`. Folder name is the **ticket id**
   (`jira_id`, Windows-safe). Dedup is one live job per ticket, so
   repo and branch are not part of the path. Two tickets ⇒ two
   folders. Same ticket later ⇒ same folder (hard-delete, then clone).
@@ -250,17 +250,17 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 ### Logs
 
 - Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-- **App log** (whole process): `{project_root}/logs/app.log`.
-- **Per-job logs**: `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
-  (accept time, UTC). Windows `C:\osm\logs\…`, Linux
-  `/var/lib/osm/logs/…`. One file per job. `job_id` and `jira_id`
+- **App log** (whole process): `{data_dir}/logs/app.log`.
+- **Per-job logs**: `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
+  (accept time, UTC). One file per job. `job_id` and `jira_id`
   also stay on each line.
 - Tag every line with `job_id` and `jira_id` (contextvars).
 - Never log the PAT or a URL that still has userinfo. Redact
   `user:pass@`, Azure-style `user@` (PAT as username), and `:pass@`.
   Inbound `POST /jobs` logs the redacted `repo_url` only — never the
   `PAT` field.
-- Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.
+- Create `{data_dir}` layout on startup if missing: `.temp`,
+  `.serve`, `logs`, `jobs`, `queue.json`.
 
 ### Dashboard (GET only)
 
@@ -268,12 +268,18 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   as virtual_developer `web/` (React + Vite + Tailwind + Geist).
 - Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
   No cancel, delete, settings, schedules, or storage actions.
+  **Report issue** on job detail is a local zip download (note +
+  job JSON + prompts + chat + OSM job log + OpenCode serve log).
+  The note is not stored. `GET /api/jobs/:id/logs?limit=0` is the
+  whole manager log; `GET /api/jobs/:id/serve-log` is
+  `{data_dir}/.serve/{job_id}.log` (redacted). Default logs
+  `limit=2000` stays for the Logs tab.
 - Persist a history row per `job_id` (no PAT). Keep it after
   clone delete and after boot leftover ERROR. 409 is only running or
   queued.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
   (live serve or snapshot), per-job log lines for that
-  `job_id`. Chat must work after the clone is gone. After the serve
+  `job_id`, then that job’s OpenCode serve log. Chat must work after the clone is gone. After the serve
   is dead, `/api/jobs/:id/chat` is **this job’s snapshot** — do not
   replace it from global `opencode.db` by `session_id` (later jobs
   reuse the same `ses_*` / clone path). Filling missing tool

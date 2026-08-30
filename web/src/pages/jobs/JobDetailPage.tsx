@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchChat, fetchJob, fetchLogs, fetchPrompts } from '../../api/client'
+import { fetchChat, fetchJob, fetchLogs, fetchPrompts, fetchServeLog } from '../../api/client'
 import type { ChatMessage, JobItem, LogLine, PromptRow } from '../../api/types'
 import { useLive } from '../../app/live'
 import { LiveDot } from '../../ui/LiveDot'
 import { MarkdownBody } from '../../ui/MarkdownBody'
 import { MetaCard } from '../../ui/MetaCard'
+import { ReportIssueDialog } from '../../ui/ReportIssueDialog'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Tabs } from '../../ui/Tabs'
+import { downloadBlob } from '../../util/download'
+import { buildJobReportFiles, reportNoteReady, reportZipName } from '../../util/jobReport'
+import { zipTextFiles } from '../../util/zipStore'
 import { JobChatTab } from './JobChatTab'
 
 type Tab = 'overview' | 'prompt' | 'chat' | 'logs'
@@ -19,8 +23,13 @@ export function JobDetailPage() {
   const [prompts, setPrompts] = useState<PromptRow[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [logs, setLogs] = useState<LogLine[]>([])
+  const [serveLog, setServeLog] = useState('')
+  const [serveLogMissing, setServeLogMissing] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
 
   const seqRef = useRef(0)
 
@@ -31,11 +40,18 @@ export function JobDetailPage() {
       if (seqRef.current !== mine) return
       setJob(body.job)
       setError(null)
-      const [p, c, l] = await Promise.all([fetchPrompts(id), fetchChat(id), fetchLogs(id)])
+      const [p, c, l, s] = await Promise.all([
+        fetchPrompts(id),
+        fetchChat(id),
+        fetchLogs(id),
+        fetchServeLog(id),
+      ])
       if (seqRef.current !== mine) return
       setPrompts(p.prompts || [])
       setMessages(c.messages || [])
       setLogs(l.lines || [])
+      setServeLog(s.text || '')
+      setServeLogMissing(Boolean(s.missing))
     } catch (e) {
       if (seqRef.current !== mine) return
       if (opts.clearOnError) {
@@ -43,6 +59,8 @@ export function JobDetailPage() {
         setPrompts([])
         setMessages([])
         setLogs([])
+        setServeLog('')
+        setServeLogMissing(true)
       }
       setError(e instanceof Error ? e.message : 'Failed to load job')
     }
@@ -55,9 +73,50 @@ export function JobDetailPage() {
     setPrompts([])
     setMessages([])
     setLogs([])
+    setServeLog('')
+    setServeLogMissing(true)
     setError(null)
+    setReportOpen(false)
+    setReportBusy(false)
+    setReportError(null)
     void load(jobId.trim(), mine, { clearOnError: true })
   }, [jobId, load])
+
+  const downloadReport = useCallback(
+    async (note: string) => {
+      const id = jobId.trim()
+      if (!id || !reportNoteReady(note)) return
+      setReportBusy(true)
+      setReportError(null)
+      try {
+        const [body, p, c, l, serve] = await Promise.all([
+          fetchJob(id),
+          fetchPrompts(id),
+          fetchChat(id),
+          fetchLogs(id, { limit: 0 }),
+          fetchServeLog(id),
+        ])
+        const files = buildJobReportFiles({
+          job: body.job,
+          prompts: p.prompts || [],
+          messages: c.messages || [],
+          logs: l.lines || [],
+          serveLog: serve.text || '',
+          serveLogMissing: serve.missing,
+          note,
+          exportedAt: new Date().toISOString(),
+        })
+        const zip = zipTextFiles(files)
+        downloadBlob(reportZipName(body.job), zip, 'application/zip')
+        setReportOpen(false)
+      } catch (e) {
+        setReportError(e instanceof Error ? e.message : 'Failed to build report')
+      } finally {
+        setReportBusy(false)
+      }
+    },
+    [jobId],
+  )
 
   useEffect(() => {
     if (job?.live) void load(jobId.trim(), seqRef.current, { clearOnError: false })
@@ -80,7 +139,18 @@ export function JobDetailPage() {
         </p>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          className="vd-btn vd-btn-secondary"
+          disabled={!job}
+          onClick={() => {
+            setReportError(null)
+            setReportOpen(true)
+          }}
+        >
+          Report issue
+        </button>
         <button
           type="button"
           className="vd-btn vd-btn-secondary"
@@ -90,12 +160,24 @@ export function JobDetailPage() {
         </button>
       </div>
 
+      {reportOpen && job && (
+        <ReportIssueDialog
+          title={`${job.jira_id} · ${job.job_id}`}
+          busy={reportBusy}
+          error={reportError}
+          onClose={() => {
+            if (!reportBusy) setReportOpen(false)
+          }}
+          onDownload={(note) => void downloadReport(note)}
+        />
+      )}
+
       <Tabs
         tabs={[
           { id: 'overview', label: 'Details' },
           { id: 'prompt', label: 'Prompt', count: prompts.length },
           { id: 'chat', label: 'Transcript', count: messages.length },
-          { id: 'logs', label: 'Logs', count: logs.length },
+          { id: 'logs', label: 'Logs', count: logs.length + (serveLog ? serveLog.split('\n').filter(Boolean).length : 0) },
         ]}
         value={tab}
         onChange={setTab}
@@ -106,7 +188,9 @@ export function JobDetailPage() {
         {job && tab === 'overview' && <Overview job={job} />}
         {job && tab === 'prompt' && <PromptTab prompts={prompts} />}
         {job && tab === 'chat' && <JobChatTab messages={messages} live={job.live} />}
-        {job && tab === 'logs' && <LogsTab lines={logs} />}
+        {job && tab === 'logs' && (
+          <LogsTab lines={logs} serveLog={serveLog} serveMissing={serveLogMissing} />
+        )}
       </div>
     </section>
   )
@@ -197,17 +281,66 @@ function PromptTab({ prompts }: { prompts: PromptRow[] }) {
   )
 }
 
-function LogsTab({ lines }: { lines: LogLine[] }) {
-  if (lines.length === 0) {
-    return <p className="text-sm text-text-muted">No log lines for this job_id.</p>
-  }
+function LogsTab({
+  lines,
+  serveLog,
+  serveMissing,
+}: {
+  lines: LogLine[]
+  serveLog: string
+  serveMissing: boolean
+}) {
   return (
-    <div className="max-h-[70vh] overflow-auto rounded border border-border bg-bg p-4 font-mono text-[11px] leading-relaxed text-text-secondary">
-      {lines.map((line, i) => (
-        <div key={`${line.timestamp}-${i}`} className="border-b border-border/50 py-0.5">
-          {line.message}
+    <div className="space-y-6">
+      <LogBlock title="Job log" empty="No OSM log lines for this job_id.">
+        {lines.length > 0
+          ? lines.map((line, i) => (
+              <div key={`${line.timestamp}-${i}`} className="border-b border-border/50 py-0.5">
+                {line.message}
+              </div>
+            ))
+          : null}
+      </LogBlock>
+      <LogBlock
+        title="OpenCode serve"
+        empty={
+          serveMissing
+            ? 'No serve log — serve never started or the file was removed.'
+            : 'Serve log is empty.'
+        }
+      >
+        {serveLog
+          ? serveLog.split('\n').map((line, i) => (
+              <div key={`serve-${i}`} className="border-b border-border/50 py-0.5 whitespace-pre-wrap">
+                {line || ' '}
+              </div>
+            ))
+          : null}
+      </LogBlock>
+    </div>
+  )
+}
+
+function LogBlock({
+  title,
+  empty,
+  children,
+}: {
+  title: string
+  empty: string
+  children: ReactNode
+}) {
+  const hasBody = children != null && !(Array.isArray(children) && children.length === 0)
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">{title}</div>
+      {hasBody ? (
+        <div className="max-h-[50vh] overflow-auto rounded border border-border bg-bg p-4 font-mono text-[11px] leading-relaxed text-text-secondary">
+          {children}
         </div>
-      ))}
+      ) : (
+        <p className="text-sm text-text-muted">{empty}</p>
+      )}
     </div>
   )
 }

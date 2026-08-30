@@ -15,6 +15,7 @@ from opencode_manager.dashboard.chat import job_chat_payload
 from opencode_manager.log import get_logger, read_job_log_lines, redact
 from opencode_manager.manager import Manager
 from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
+from opencode_manager.opencode.serve import read_serve_log, serve_log_path
 
 router = APIRouter()
 
@@ -125,15 +126,40 @@ def api_chat(job_id: str, request: Request) -> Dict[str, Any]:
 
 
 @router.get("/api/jobs/{job_id}/logs")
-def api_logs(job_id: str, request: Request) -> Dict[str, Any]:
+def api_logs(
+    job_id: str,
+    request: Request,
+    limit: int = Query(default=2000, ge=0),
+) -> Dict[str, Any]:
     manager = _mgr(request)
     job = manager.store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
     lines = read_job_log_lines(
-        manager.settings.job_log_dir, job.jira_id, job.job_id, log_file=job.log_file
+        manager.settings.job_log_dir,
+        job.jira_id,
+        job.job_id,
+        log_file=job.log_file,
+        limit=limit,
     )
     return {"job_id": job.job_id, "lines": lines, "server_time": utc_now()}
+
+
+@router.get("/api/jobs/{job_id}/serve-log")
+def api_serve_log(job_id: str, request: Request) -> Dict[str, Any]:
+    """OpenCode serve stdout/stderr for this job. GET-only; used by report zip."""
+    manager = _mgr(request)
+    job = manager.store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"No job {job_id}")
+    path = serve_log_path(manager.settings.serve_dir, job.job_id)
+    text = read_serve_log(path)
+    return {
+        "job_id": job.job_id,
+        "missing": not path.is_file(),
+        "text": text,
+        "server_time": utc_now(),
+    }
 
 
 @router.get("/api/queue")

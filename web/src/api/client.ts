@@ -39,8 +39,17 @@ export function fetchChat(jobId: string) {
   return request<JobChatPayload>(`/api/jobs/${encodeURIComponent(jobId)}/chat`)
 }
 
-export function fetchLogs(jobId: string) {
-  return request<{ lines: LogLine[] }>(`/api/jobs/${encodeURIComponent(jobId)}/logs`)
+export function fetchServeLog(jobId: string) {
+  return request<{ job_id: string; missing: boolean; text: string }>(
+    `/api/jobs/${encodeURIComponent(jobId)}/serve-log`,
+  )
+}
+
+export function fetchLogs(jobId: string, opts?: { limit?: number }) {
+  const params = new URLSearchParams()
+  if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
+  const q = params.toString() ? `?${params.toString()}` : ''
+  return request<{ lines: LogLine[] }>(`/api/jobs/${encodeURIComponent(jobId)}/logs${q}`)
 }
 
 export function fetchQueue(opts?: { jiraId?: string }) {

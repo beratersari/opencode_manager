@@ -64,6 +64,13 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Unknown `model` fails the job before any user POST | `test_unknown_model_fails_job_before_prompt` |
 
+## Idle assess
+
+| Condition | Test |
+|---|---|
+| Last-turn `finish=length` (max tokens) is incomplete, not success | `test_assess_length_finish_is_incomplete` |
+| Unknown unfinished finish is incomplete, not a fall-through success | `test_assess_unknown_unfinished_finish_is_incomplete` |
+
 ## Compact loop
 
 | Condition | Test |

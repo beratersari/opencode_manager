@@ -488,7 +488,7 @@ until OpenCode is actually idle:
 
 | Observation | Action |
 |---|---|
-| Compact / `Session auto-compacted` / `busy_compacting` | **Wait.** No new user message. No “Continue”. |
+| Compact / `Session auto-compacted` / `busy_compacting` | **Wait.** No new user message. No OSM “Continue”. OpenCode itself may insert a synthetic user turn (`Continue if you have next steps…`, `synthetic` + `compaction_continue`) so `SessionPrompt.run` does not exit on the compact summary’s `finish=stop`. Leave that turn alone. |
 | `tool-calls` / unfinished finish **and the session is still busy** | Wait. |
 | Compact recap that quotes “Shall I…?” | Still compact, not a live question. Wait. |
 | Clarifying question (live, last turn stopped) | **One** unattended nudge (see prompts below), then wait. Never re-send the original prompt. |
@@ -496,7 +496,20 @@ until OpenCode is actually idle:
 | Real last-turn `stop`, not premature (or the only leftover signal is OpenCode todos) | **Success.** Leave the loop. Product is last assistant text — leftover todos are not a delivery gate. |
 | Still asking after the one unattended nudge | **Fail the job** (`500`). No second nudge. No `INCOMPLETE_RESUME`. |
 | Compact-related leftover after wait / after `COMPACT_LOOP_NUDGE` already used | **Fail the job** (`500`). Do not send `INCOMPLETE_RESUME` (it races compact). |
-| Session **idle**, last finish unfinished (`tool-calls` / null / not a clean `stop`), not compact, not a live question | **Incomplete.** Leave the inner loop. Do not wait for the hang clock. |
+| Session **idle**, last finish unfinished (`tool-calls` / `length` / null / not a clean `stop`), not compact, not a live question | **Incomplete.** Leave the inner loop. Do not wait for the hang clock. |
+
+OpenCode **1.18.13** (TUI and `opencode serve`, same
+`SessionPrompt.run`) injects that synthetic Continue after a
+successful **auto** compact. `SessionPrompt.run` exits when the last
+assistant `finish` is not `tool-calls` and
+`lastUser.id < lastAssistant.id`. The compact summary is
+`finish=stop`; without a newer user message the loop ends and the
+session goes idle. OSM would then treat that `stop` as success
+(`assess_idle`) and end the job. Do not POST our own copy. Do not
+disable `experimental.compaction.autocontinue` (default
+`enabled: true`). The five OSM prompts in this section do not
+include that string. Snapshot may show it as a normal user bubble
+because it drops `synthetic` / `compaction_continue`.
 
 This is what “handle all states of OpenCode until it is done” means.
 The n8n 60s poll is a crude version. Implement the real serve control
@@ -1189,14 +1202,14 @@ build them).
 
 - [ ] Drive the turn with a poll loop (`prompt_async` or background `/message` + watchdog).
 - [ ] Do not block on `/message` for the whole attempt budget.
-- [ ] Compact / `busy_compacting` / `Session auto-compacted`: wait; no new user message; no “Continue”.
+- [ ] Compact / `busy_compacting` / `Session auto-compacted`: wait; no OSM user message; no OSM “Continue”. Leave OpenCode’s synthetic post-compact Continue (`compaction_continue`) alone; do not disable `experimental.compaction.autocontinue`.
 - [ ] `tool-calls` / unfinished finish **while busy**: wait.
 - [ ] Compact recap that quotes “Shall I…?” is not a live question; wait.
 - [ ] Compact-only loop (~8 new compact markers, no work turn): abort the turn; wait until **idle**; then one `COMPACT_LOOP_NUDGE`.
 - [ ] Real last-turn `stop`, not premature (or only leftover todos): success; leave the loop.
 - [ ] Still asking after the one unattended nudge: fail the job (`500`); no `INCOMPLETE_RESUME`.
 - [ ] Compact-related leftover after wait / after `COMPACT_LOOP_NUDGE`: fail the job (`500`); no `INCOMPLETE_RESUME`.
-- [ ] Session idle, last finish unfinished, not compact, not a live question: leave inner as **incomplete** (do not wait for hang).
+- [ ] Session idle, last finish unfinished (`tool-calls` / `length` / null / not a clean `stop`), not compact, not a live question: leave inner as **incomplete** (do not wait for hang).
 - [ ] Healthy compact-wait does not consume `retry_count`.
 
 ### 16.10 Timeout, hang, outer retry

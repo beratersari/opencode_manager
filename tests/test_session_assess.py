@@ -62,6 +62,26 @@ def test_assess_incomplete_tool_calls() -> None:
     assert assess_idle(messages) == "incomplete"
 
 
+def test_assess_length_finish_is_incomplete() -> None:
+    """OpenCode `finish=length` is a max-token cutoff, not a clean stop."""
+    messages = [
+        {
+            "info": {"role": "assistant", "id": "a_stop", "finish": "stop"},
+            "parts": [{"type": "text", "text": "I need to fix several issues before tests."}],
+        },
+        {
+            "info": {"role": "assistant", "id": "a_cut", "finish": "length"},
+            "parts": [{"type": "reasoning", "text": "OK, I'm going to"}],
+        },
+    ]
+    assert assess_idle(messages) == "incomplete"
+
+
+def test_assess_unknown_unfinished_finish_is_incomplete() -> None:
+    messages = [{"info": {"role": "assistant", "finish": "max_tokens"}, "parts": []}]
+    assert assess_idle(messages) == "incomplete"
+
+
 def test_resume_old_stop_is_not_a_new_turn() -> None:
     prior = [
         {"id": "u1", "info": {"role": "user", "id": "u1"}, "parts": [{"type": "text", "text": "3+4"}]},

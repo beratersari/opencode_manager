@@ -280,13 +280,11 @@ def assess_idle(messages: List[Dict[str, Any]]) -> str:
         return "compact_leftover"
     if role == "assistant" and looks_like_question(text):
         return "question"
+    # Only a clean last-turn `stop` is success. Idle + unfinished finish
+    # (tool-calls, length / max tokens, null, user last, …) is incomplete.
     if finish == "stop":
         return "success"
-    if finish in {"tool-calls", "tool_calls", ""} and role == "assistant":
-        return "incomplete"
-    if role == "user":
-        return "incomplete"
-    return "success"
+    return "incomplete"
 
 
 class OpenCodeClient:

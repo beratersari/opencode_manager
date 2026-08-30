@@ -174,6 +174,24 @@ Never POST a user message while the session is `busy` / compacting.
 
 - Healthy compact can take minutes. **Wait.** That is not a retry.
 - Do not send “Continue” during compact (races OpenCode’s loop).
+  OSM never POSTs `Continue if you have next steps, or stop and ask
+  for clarification if you are unsure how to proceed.` That string
+  is **not** one of the five prompts above.
+- OpenCode (TUI and `opencode serve`, same `SessionPrompt.run`)
+  injects that line itself after a successful **auto** compact:
+  a synthetic user part (`synthetic: true`,
+  `metadata.compaction_continue: true`). TUI “continues itself”
+  because of this insert — the human does not type it. The
+  dashboard may show it as a normal user bubble; snapshot drops
+  those flags. Do not treat it as an OSM-posted prompt.
+- Why OpenCode inserts it: `SessionPrompt.run` **exits** when the
+  last assistant `finish` is not `tool-calls` and
+  `lastUser.id < lastAssistant.id`. The compact summary is an
+  assistant `finish=stop`. Without a newer user message the serve
+  goes idle. OSM would then `assess_idle` that `stop` as **success**
+  and end the job. Do not disable
+  `experimental.compaction.autocontinue` (default `enabled: true`)
+  and do not strip that synthetic turn.
 - Compact-loop (~8) counts **new** compact markers **this wait**
   only. Markers already in the session when the turn started do not
   count (resumed `ses_*` / KAN-95).
@@ -188,7 +206,8 @@ Never POST a user message while the session is `busy` / compacting.
   If `ORIGINAL` was already POSTed: same `session_id` → `HANG_RESUME`.
   If `ORIGINAL` was never POSTed: create if we have no live id, then
   send `ORIGINAL`. Same if serve is dead.
-- Incomplete (session **idle**, last finish unfinished, not compact,
+- Incomplete (session **idle**, last finish unfinished — `tool-calls`,
+  `length` / max tokens, null, not a clean `stop` — not compact,
   not still-asking): **same serve**, POST `INCOMPLETE_RESUME`. Do
   **not** abort or kill serve. Counts against `retry_count`.
 - Still asking after the one nudge, or compact-related leftover after

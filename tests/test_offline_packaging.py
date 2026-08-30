@@ -23,7 +23,7 @@ def test_read_versions(tmp_path: Path) -> None:
     )
     data = _load().read_versions(p)
     assert data["OPENCODE_VERSION"] == "1.18.10"
-    assert data["PYTHON_MIN_VERSION"] == "3.11"
+    assert data.get("PYTHON_MIN_VERSION") == "3.11"
 
 
 def test_runtime_requirements_from_pyproject() -> None:
@@ -33,6 +33,19 @@ def test_runtime_requirements_from_pyproject() -> None:
     assert "fastapi" in joined
     assert "uvicorn" in joined
     assert "httpx" in joined
+
+
+def test_standalone_python_asset_names() -> None:
+    ver = {
+        "PYTHON_FULL_VERSION": "3.12.14",
+        "PYTHON_STANDALONE_TAG": "20260825",
+    }
+    mod = _load()
+    win = mod.standalone_python_asset(ver, "windows")
+    linux = mod.standalone_python_asset(ver, "linux")
+    assert win.endswith("x86_64-pc-windows-msvc-install_only.tar.gz")
+    assert linux.endswith("x86_64-unknown-linux-gnu-install_only.tar.gz")
+    assert "3.12.14" in win and "3.12.14" in linux
 
 
 def test_opencode_asset_names() -> None:
@@ -77,7 +90,11 @@ def test_install_scripts_are_offline_only() -> None:
         assert "web" in text and "dist" in text
         assert "install-opencode" in text
         assert "npm" not in text.lower() or "does not run npm" in text.lower()
+        assert "vendor/python" in text.replace("\\", "/")
+        assert "BUNDLED" in text or "bundled" in text.lower()
+        assert "where python" not in text.lower()
     for text in (oc_bat, oc_sh):
         assert "vendor" in text
         assert "from scratch" in text.lower()
         assert "install_opencode.py" in text
+        assert "vendor/python" in text.replace("\\", "/")

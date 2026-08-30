@@ -322,6 +322,62 @@ def build_spa(root: Path) -> Path:
     return dist
 
 
+def standalone_python_asset(ver: dict[str, str], os_name: str) -> str:
+    full = ver.get("PYTHON_FULL_VERSION") or "3.12.14"
+    tag = ver.get("PYTHON_STANDALONE_TAG") or "20260825"
+    if os_name == "windows":
+        triple = "x86_64-pc-windows-msvc"
+    elif os_name == "linux":
+        triple = "x86_64-unknown-linux-gnu"
+    else:
+        raise SystemExit(f"No standalone Python asset for {os_name}")
+    return f"cpython-{full}+{tag}-{triple}-install_only.tar.gz"
+
+
+def find_python_root(extracted: Path, os_name: str) -> Path:
+    if os_name == "windows":
+        hit = find_file(extracted, ("python.exe",))
+        if hit is None:
+            raise SystemExit("python.exe not found in standalone archive")
+        return hit.parent
+    hit = find_file(extracted, ("python3", "python"))
+    if hit is None:
+        raise SystemExit("python3 not found in standalone archive")
+    # install_only: <root>/bin/python3
+    if hit.parent.name == "bin":
+        return hit.parent.parent
+    return hit.parent
+
+
+def fetch_standalone_python(ver: dict[str, str], os_name: str, dest: Path) -> str:
+    asset = standalone_python_asset(ver, os_name)
+    tag = ver.get("PYTHON_STANDALONE_TAG") or "20260825"
+    repo = ver.get("PYTHON_STANDALONE_REPO") or "astral-sh/python-build-standalone"
+    url = f"https://github.com/{repo}/releases/download/{tag}/{asset}"
+    with tempfile.TemporaryDirectory(prefix="osm-py-") as tmp:
+        tmp_path = Path(tmp)
+        archive = tmp_path / asset
+        download(url, archive)
+        extracted = tmp_path / "extract"
+        extract_archive(archive, extracted)
+        root = find_python_root(extracted, os_name)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(root, dest)
+    if os_name == "windows":
+        exe = dest / "python.exe"
+        if not exe.is_file():
+            raise SystemExit(f"Missing {exe} after extract")
+        print(f"  Bundled Python: {exe} ({exe.stat().st_size / (1024 * 1024):.1f} MB)")
+    else:
+        exe = dest / "bin" / "python3"
+        if not exe.is_file():
+            raise SystemExit(f"Missing {exe} after extract")
+        exe.chmod(exe.stat().st_mode | 0o111)
+        print(f"  Bundled Python: {exe} ({exe.stat().st_size / (1024 * 1024):.1f} MB)")
+    return asset
+
+
 def fetch_opencode(ver: dict[str, str], os_name: str, arch: str, dest_bin: Path) -> str:
     version = ver["OPENCODE_VERSION"]
     repo = ver.get("OPENCODE_REPO") or "anomalyco/opencode"
@@ -438,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     reqs = runtime_requirements(root)
     wheel_versions = [
         x.strip()
-        for x in (ver.get("PYTHON_WHEEL_VERSIONS") or "3.11,3.12,3.13").split(",")
+        for x in (ver.get("PYTHON_WHEEL_VERSIONS") or "3.12").split(",")
         if x.strip()
     ]
 
@@ -467,17 +523,24 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
         (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
-        print("\nStep 3: Fetching OpenCode CLI into vendor/bin...")
+        print("\nStep 3: Fetching bundled CPython (windows + linux)...")
+        py_assets = []
+        for pack_os, dest_name in (("windows", "windows"), ("linux", "linux")):
+            py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
+        print("\nStep 4: Fetching OpenCode CLI into vendor/bin...")
         assets = []
         for pack_os, pack_arch in (("windows", "x64"), ("linux", "x64")):
             assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin"))
         (vendor / "DIST_VERSION.txt").write_text(
             f"in-place vendor\nProductVersion={version}\nOpenCode={ver.get('OPENCODE_VERSION')}\n"
-            f"OpenCodeAsset={','.join(assets)}\nPythonWheels={','.join(supported)}\n",
+            f"OpenCodeAsset={','.join(assets)}\n"
+            f"PythonStandalone={','.join(py_assets)}\n"
+            f"PythonWheels={','.join(supported)}\n",
             encoding="utf-8",
         )
         print("\n[OK] In-place vendor ready.")
         print(f"  {wheels}")
+        print(f"  {vendor / 'python'}")
         print(f"  {vendor / 'bin'}")
         print("  web/dist")
         print("Run scripts/install.sh (or scripts\\install.bat).")
@@ -504,7 +567,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
 
-    print("\nStep 4: Fetching OpenCode CLI (windows + linux)...")
+    print("\nStep 4: Fetching bundled CPython (windows + linux)...")
+    py_assets = []
+    for pack_os, dest_name in (("windows", "windows"), ("linux", "linux")):
+        py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
+
+    print("\nStep 5: Fetching OpenCode CLI (windows + linux)...")
     assets = []
     for pack_os, pack_arch in (("windows", "x64"), ("linux", "x64")):
         assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin"))
@@ -515,15 +583,15 @@ def main(argv: list[str] | None = None) -> int:
         f"DistName={dist_name}\n"
         f"OpenCode={ver.get('OPENCODE_VERSION')}\n"
         f"OpenCodeAsset={','.join(assets)}\n"
-        f"PythonMin={ver.get('PYTHON_MIN_VERSION') or '3.11'}\n"
+        f"PythonStandalone={','.join(py_assets)}\n"
         f"PythonWheels={','.join(supported)}\n"
-        "Single zip: Windows + Linux. No Node at runtime. No Codex. No glab.\n"
+        "Single zip: Windows + Linux. Bundled CPython creates .venv. No Node.\n"
     )
     (stage / "DIST_VERSION.txt").write_text(marker, encoding="utf-8")
     (stage / "VERSION").write_text(version + "\n", encoding="utf-8")
 
     zip_path = out_dir / f"{dist_name}.zip"
-    print("\nStep 5: Writing zip...")
+    print("\nStep 6: Writing zip...")
     write_zip(stage, zip_path)
     print("\n[OK] Offline zip ready.")
     print(f"  {zip_path}")

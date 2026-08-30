@@ -34,3 +34,12 @@ def test_pat_not_on_argv_helper():
     assert "insteadOf" in joined_keys or "extraHeader" in joined_keys
     argvish = ["git", "clone", "https://gitlab.example/g/r.git"]
     assert "SUPERSECRET" not in " ".join(argvish)
+
+
+def test_empty_pat_is_anonymous_https():
+    env = isolated_git_env("https://github.com/example/public.git", "")
+    values = " ".join(env[k] for k in env if k.startswith("GIT_CONFIG_VALUE_"))
+    keys = " ".join(env[k] for k in env if k.startswith("GIT_CONFIG_KEY_"))
+    assert "Authorization" not in values
+    assert "insteadOf" not in keys
+    assert "credential.helper" in keys

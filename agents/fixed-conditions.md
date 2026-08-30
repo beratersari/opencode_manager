@@ -56,6 +56,13 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Shutdown kills `extra_pids`, sends one `500`, then `POST /jobs` is `503` | `test_shutdown_kills_extra_pids_and_rejects_submit` |
 | Missing dequeued store row does not stall the queue | `test_on_done_skips_missing_queue_row` |
 
+## Compact loop
+
+| Condition | Test |
+|---|---|
+| Compact-loop (~8) ignores markers already in the session | `test_historical_compact_markers_do_not_trigger_compact_loop_nudge` |
+| Eight **new** compact markers this wait still nudge | `test_eight_new_compact_markers_this_wait_trigger_nudge` |
+
 ## Dashboard list
 
 | Condition | Test |

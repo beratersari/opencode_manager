@@ -24,7 +24,7 @@ retry? cleanup? file locks on Windows?
 
 You want n8n to do this instead:
 
-1. POST a job (repo, PAT, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
+1. POST a job (repo, optional PAT, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
 2. Get an immediate ack (accepted / queued / already running / bad request).
 3. Later receive **exactly one** callback on the **`callback_url` from that request** (the caller, usually an n8n Wait node). That POST is the terminal result — never a “queued” or “started” ping.
 4. On success, the callback `text` is the last OpenCode assistant message.
@@ -50,7 +50,7 @@ are wrong.
 | 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is the **ticket id** (`jira_id`, Windows-safe folder). Dedup is one live job per ticket, so repo and branch are not in the path. Same ticket later ⇒ same folder. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same path ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
-| 6 | Git auth | **Request PAT only.** No OS credential store, no settings PAT, no SSH. GitLab and TFS/Azure DevOps use different header schemes. |
+| 6 | Git auth | **Request PAT when present.** Public HTTPS may omit it. No OS credential store, no settings PAT, no SSH. GitLab and TFS/Azure DevOps use different header schemes. |
 | 7 | Source branch | Must exist on the remote. Missing field on the body → inbound **400**. Missing on the remote → inbound **202**, then callback **404**. Do not invent a branch from `main`. |
 | 8 | Codex | Never. OpenCode only. |
 
@@ -266,7 +266,7 @@ Different cases:
 | Field | Required | Meaning |
 |---|---|---|
 | `repo_url` | yes | HTTPS clone URL. GitLab or TFS/Azure DevOps Git. SSH rejected. |
-| `PAT` | yes | Used **only** for this job’s git. Never stored in settings, never logged. |
+| `PAT` | no | Used **only** for this job’s git when the remote needs auth. Omit or empty for a **public** HTTPS repo. Never stored in settings, never logged. Missing/empty is inbound **202**; a private remote then fails in the worker (callback **500**). |
 | `source_branch` | yes | Remote branch that must already exist. Start point of the clone. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
@@ -492,7 +492,7 @@ until OpenCode is actually idle:
 | `tool-calls` / unfinished finish **and the session is still busy** | Wait. |
 | Compact recap that quotes “Shall I…?” | Still compact, not a live question. Wait. |
 | Clarifying question (live, last turn stopped) | **One** unattended nudge (see prompts below), then wait. Never re-send the original prompt. |
-| Compact-only loop (many new compact markers, no work turn; ~8 cycles) | Abort the in-flight turn. Wait until the **same** session is **idle**. Then one compact-loop nudge. Do **not** Continue while compact is still running. |
+| Compact-only loop (many **new** compact markers this wait, no work turn; ~8 cycles) | Abort the in-flight turn. Wait until the **same** session is **idle**. Then one compact-loop nudge. Do **not** Continue while compact is still running. Lifetime / resumed-session compact history does **not** count (KAN-95). |
 | Real last-turn `stop`, not premature (or the only leftover signal is OpenCode todos) | **Success.** Leave the loop. Product is last assistant text — leftover todos are not a delivery gate. |
 | Still asking after the one unattended nudge | **Fail the job** (`500`). No second nudge. No `INCOMPLETE_RESUME`. |
 | Compact-related leftover after wait / after `COMPACT_LOOP_NUDGE` already used | **Fail the job** (`500`). Do not send `INCOMPLETE_RESUME` (it races compact). |
@@ -510,9 +510,12 @@ Hang detector **inside** the wait (still not a retry by itself):
   dead (KAN-95). Use `prompt_async` if present; otherwise `/message`
   in the background plus a watchdog.
 - Hang clock: session is `busy` **and not compacting** **and** no new
-  message / compact marker for `hang_timeout_seconds` (settings,
-  default ~180s, **not** `timeout_in_seconds`). That ends **this
-  attempt** early.
+  message / compact marker **and no assistant yet this turn** for
+  `hang_timeout_seconds` (settings, default ~180s, **not**
+  `timeout_in_seconds`). That ends **this attempt** early.
+  **Intentional:** once this turn has an assistant message (id ≠ the
+  pre-POST baseline), that is progress for the rest of the wait. A
+  frozen mid-generation is the attempt clock, not hang.
 - While status is `compacting` / `busy_compacting`, **reset / do not
   start** the hang clock. Compact-in-progress counts as progress.
 - Serve process died or `/global/health` fails.
@@ -664,8 +667,10 @@ Always put the live id on every callback.
 ### 6.1 PAT isolation (must)
 
 virtual_developer already solved the “Windows GCM popped a prompt” class
-of bugs. Copy that pattern, but the PAT comes from **the request**, not
-from settings/`GITLAB_PAT`.
+of bugs. Copy that pattern, but the PAT comes from **the request** when the
+caller sent one, not from settings/`GITLAB_PAT`. Public HTTPS clones
+may omit `PAT`; then we still disable helpers and send **no** auth
+header.
 
 For every git child of a job:
 
@@ -865,7 +870,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `opencode_bin` | Path or name on PATH |
 | `queue_path` | Persisted queue/job store |
 | `job_store_dir` | Finished + live job history for the dashboard. Default **Windows** `C:\osm\jobs`, **Linux** `/var/lib/osm/jobs`. One JSON per `job_id`. Never write the PAT here. |
-| `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting**. Not the request timeout. |
+| `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting** **and** this turn has not produced an assistant yet. Not the request timeout. |
 | `git_clone_timeout_seconds` | Safety cap for clone / `ls-remote`. Request timeout does not apply to git. |
 
 No GitLab PAT, no Jira token, no board id, no default model. Those belong to n8n.
@@ -1112,6 +1117,7 @@ build them).
 
 - [ ] Classify host: GitLab vs Azure DevOps Services vs TFS / Azure DevOps Server.
 - [ ] Ambiguous URL with `/_git/` or `/tfs/` uses TFS rules.
+- [ ] `PAT` optional: omit/empty for public HTTPS (no auth header). Private remotes without a PAT fail in the worker, not inbound 400.
 - [ ] GitLab auth: username `oauth2`, password = request PAT (`GIT_CONFIG_*` insteadOf + Basic).
 - [ ] Azure DevOps / TFS auth: Basic `base64(":PAT")` extraHeader (empty username).
 - [ ] Never send GitLab `oauth2:PAT` to a TFS / Azure DevOps host.
@@ -1189,7 +1195,8 @@ build them).
 - [ ] Each outer retry resets the attempt clock (fresh `timeout_in_seconds`).
 - [ ] `retry_count` is max attempts, first included (`3` × `1800` = 5400s OpenCode).
 - [ ] Do not retry a clean finish.
-- [ ] Hang clock runs only when status is `busy` **and not compacting** and no new message/marker for `hang_timeout_seconds`.
+- [ ] Hang clock runs only when status is `busy` **and not compacting** and no new message/marker **and no assistant yet this turn** for `hang_timeout_seconds`.
+- [ ] Compact-loop (~8) counts **new** compact markers this wait only; resumed-session history does not count.
 - [ ] While `compacting` / `busy_compacting`, do not start or run the hang clock.
 - [ ] Serve death or `/global/health` fail ends this attempt.
 - [ ] Attempt clock hitting zero ends this attempt.

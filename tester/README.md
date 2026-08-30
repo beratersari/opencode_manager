@@ -14,7 +14,8 @@ OSM later --POST /callback-->  this app :8090
 
 ## Run
 
-Manager must already be up on `:8080`.
+Manager must already be up on `:8080`. `PAT` is optional on the form
+(public HTTPS repos). Leave it blank when the remote does not need auth.
 
 From the repo root:
 

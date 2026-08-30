@@ -63,7 +63,7 @@
         <div class="row">
           <div>
             <label>jira_id</label>
-            <input name="jira_id" placeholder="TEST-1" />
+            <input name="jira_id" required value="TEST-1" />
           </div>
           <div>
             <label>session_id (optional)</label>
@@ -71,9 +71,9 @@
           </div>
         </div>
         <label>repo_url</label>
-        <input name="repo_url" required placeholder="https://gitlab.example/group/repo.git" />
-        <label>PAT</label>
-        <input name="PAT" type="password" required />
+        <input name="repo_url" required value="https://github.com/beratersari/opencode_manager" />
+        <label>PAT (optional for public repos)</label>
+        <input name="PAT" type="password" placeholder="leave empty for public HTTPS" />
         <div class="row">
           <div>
             <label>source_branch</label>
@@ -82,17 +82,17 @@
           <div>
             <label>agent_mode</label>
             <select name="agent_mode">
+              <option>explore</option>
               <option>build</option>
               <option>plan</option>
               <option>general</option>
-              <option>explore</option>
             </select>
           </div>
         </div>
         <div class="row">
           <div>
             <label>model</label>
-            <input name="model" required value="opencode/hy3-free" />
+            <input name="model" required value="opencode/ling-3.0-flash-fin-free" />
           </div>
           <div>
             <label>timeout_in_seconds</label>
@@ -102,7 +102,7 @@
         <label>retry_count</label>
         <input name="retry_count" type="number" min="1" value="1" />
         <label>prompt</label>
-        <textarea name="prompt" required>Do not use tools. Reply with hello and nothing else.</textarea>
+        <textarea name="prompt" required>Explore the repo, what is it?</textarea>
         <button type="submit">Send job</button>
         <button type="button" class="ghost" id="clear">Clear inbox</button>
       </form>
@@ -206,6 +206,7 @@
       const payload = Object.fromEntries(fd.entries())
       payload.timeout_in_seconds = Number(payload.timeout_in_seconds)
       payload.retry_count = Number(payload.retry_count)
+      if (!String(payload.PAT || '').trim()) delete payload.PAT
       const res = await fetch('/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

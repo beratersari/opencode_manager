@@ -28,6 +28,9 @@ from opencode_manager.settings import Settings
 
 logger = get_logger()
 _REPEAT_LOG_EVERY = 50
+# Compact-loop is ~8 *new* markers this wait (PLAN §5.3). Lifetime history
+# from a resumed ses_* must not count (virtual_developer KAN-95).
+_COMPACT_LOOP_NEW = 8
 
 
 def _log_every(n: int, every: int = _REPEAT_LOG_EVERY) -> bool:
@@ -178,13 +181,16 @@ def run_opencode_job(
                     prompt_id, text = "ORIGINAL", job.prompt
                 try:
                     prior = client.list_messages(job.session_id)
+                    compact_floor: Optional[int] = compact_marker_count(prior)
                 except Exception:
                     prior = []
+                    compact_floor = None
                 baseline_assistant = last_assistant_id(prior)
                 logger.info(
-                    "turn baseline messages=%s last_assistant=%s",
+                    "turn baseline messages=%s last_assistant=%s compact_markers=%s",
                     len(prior),
                     baseline_assistant or "(none)",
+                    compact_floor if compact_floor is not None else "(unknown)",
                 )
                 _post_user(job, client, store, prompt_id, text)
                 outcome = _inner_loop(
@@ -196,6 +202,7 @@ def run_opencode_job(
                     should_stop=should_stop,
                     baseline_assistant_id=baseline_assistant,
                     baseline_n=len(prior),
+                    baseline_compact_n=compact_floor,
                 )
                 logger.info("inner loop left attempt=%s outcome=%s", attempt, outcome)
                 if outcome == "success":
@@ -282,12 +289,14 @@ def _inner_loop(
     should_stop: Callable[[], bool],
     baseline_assistant_id: str = "",
     baseline_n: int = 0,
+    baseline_compact_n: Optional[int] = None,
 ) -> str:
     nudged = any(row.id == "UNATTENDED_NUDGE" for row in job.prompts)
     compact_nudged = False
     last_progress = time.time()
     last_msg_n = baseline_n
-    last_compact_n = 0
+    compact_floor = baseline_compact_n
+    last_compact_n = baseline_compact_n if baseline_compact_n is not None else 0
     hang_started: Optional[float] = None
     awaiting_turn = True
     last_phase = ""
@@ -310,11 +319,13 @@ def _inner_loop(
         status = client.status()
         busy = session_is_busy(status, job.session_id)
         compacting = session_is_compacting(status, job.session_id)
+        listed_ok = True
         try:
             messages = client.list_messages(job.session_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("list messages failed: %s", exc)
             messages = []
+            listed_ok = False
         job.chat_snapshot = snapshot_chat(messages, job.session_id)
         text = last_assistant_text(messages)
         new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
@@ -324,6 +335,12 @@ def _inner_loop(
 
         msg_n = len(messages)
         compact_n = compact_marker_count(messages)
+        if compact_floor is None and listed_ok:
+            compact_floor = compact_n
+            last_compact_n = compact_n
+        new_compacts = compact_n - (compact_floor if compact_floor is not None else 0)
+        # INTENTIONAL: a new assistant this turn (id ≠ baseline) is progress
+        # for the rest of the wait. Hang is "never started answering".
         if msg_n != last_msg_n or compact_n != last_compact_n or compacting or new_assistant:
             last_progress = time.time()
             last_msg_n = msg_n
@@ -350,10 +367,11 @@ def _inner_loop(
         )
         if phase != last_phase:
             logger.info(
-                "session phase=%s messages=%s compact_markers=%s",
+                "session phase=%s messages=%s compact_markers=%s new_compacts=%s",
                 phase,
                 msg_n,
                 compact_n,
+                new_compacts,
             )
             last_phase = phase
 
@@ -385,8 +403,13 @@ def _inner_loop(
             continue
 
         verdict = assess_idle(messages)
-        logger.info("session idle assess=%s messages=%s", verdict, msg_n)
-        if compact_n >= 8 and verdict != "success" and not compact_nudged:
+        logger.info(
+            "session idle assess=%s messages=%s new_compacts=%s",
+            verdict,
+            msg_n,
+            new_compacts,
+        )
+        if new_compacts >= _COMPACT_LOOP_NEW and verdict != "success" and not compact_nudged:
             client.abort(job.session_id)
             wait_idle = time.time() + 60
             while time.time() < wait_idle and session_is_busy(client.status(), job.session_id):

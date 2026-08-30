@@ -27,7 +27,7 @@ def mint_job_id() -> str:
 
 class JobRequest(BaseModel):
     repo_url: str
-    PAT: str
+    PAT: str = ""
     source_branch: str
     session_id: Optional[str] = None
     prompt: str
@@ -38,13 +38,18 @@ class JobRequest(BaseModel):
     jira_id: str
     callback_url: str
 
-    @field_validator("repo_url", "PAT", "source_branch", "prompt", "model", "agent_mode", "jira_id", "callback_url")
+    @field_validator("repo_url", "source_branch", "prompt", "model", "agent_mode", "jira_id", "callback_url")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         text = (value or "").strip()
         if not text:
             raise ValueError("field must not be empty")
         return text
+
+    @field_validator("PAT")
+    @classmethod
+    def _optional_pat(cls, value: Optional[str]) -> str:
+        return (value or "").strip()
 
     @field_validator("session_id")
     @classmethod
@@ -136,7 +141,6 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
     """Return a 400 message or None if the body is usable."""
     required = (
         "repo_url",
-        "PAT",
         "source_branch",
         "prompt",
         "model",

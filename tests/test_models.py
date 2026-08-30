@@ -44,6 +44,14 @@ def test_valid_body():
     assert validate_request_fields(_ok()) is None
 
 
+def test_missing_or_empty_pat_is_ok():
+    body = _ok()
+    del body["PAT"]
+    assert validate_request_fields(body) is None
+    assert validate_request_fields(_ok(PAT="")) is None
+    assert validate_request_fields(_ok(PAT="   ")) is None
+
+
 def test_parse_model():
     assert parse_model("opencode/hy3-free") == ("opencode", "hy3-free")
 
@@ -53,3 +61,12 @@ def test_retry_count_zero_is_coerced_by_request():
 
     req = JobRequest.model_validate(_ok(retry_count=0))
     assert req.retry_count == 1
+
+
+def test_job_request_allows_omitted_pat():
+    from opencode_manager.models import JobRequest
+
+    body = _ok()
+    del body["PAT"]
+    req = JobRequest.model_validate(body)
+    assert req.PAT == ""

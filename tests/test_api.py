@@ -80,7 +80,6 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda b: b.pop("PAT"),
         lambda b: b.pop("source_branch"),
         lambda b: b.pop("jira_id"),
         lambda b: b.pop("callback_url"),
@@ -149,6 +148,15 @@ def test_queue_other_ticket(tmp_settings: Settings) -> None:
         assert b.status_code == 202
         assert "queued" in b.json()["text"].lower()
         blocker.set()
+
+
+def test_public_repo_without_pat_is_accepted(tmp_settings: Settings) -> None:
+    body = _body()
+    del body["PAT"]
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=body)
+        assert res.status_code == 202
+        assert res.json()["job_id"].startswith("job_")
 
 
 def test_dashboard_writes_405(tmp_settings: Settings) -> None:

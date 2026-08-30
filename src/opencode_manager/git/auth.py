@@ -32,13 +32,19 @@ def isolated_git_env(repo_url: str, pat: str) -> Dict[str, str]:
         _git_config_pairs([("credential.helper", "")], env)
         return env
     pairs: list[tuple[str, str]] = [("credential.helper", "")]
+    token = (pat or "").strip()
+    if not token:
+        # Public HTTPS: no auth header. Helpers stay off so we never
+        # fall back to the machine credential store.
+        _git_config_pairs(pairs, env)
+        return env
     if kind == "gitlab":
-        basic = base64.b64encode(f"oauth2:{pat}".encode("utf-8")).decode("ascii")
+        basic = base64.b64encode(f"oauth2:{token}".encode("utf-8")).decode("ascii")
         src = f"{scheme}://{host}/"
-        pairs.append((f"url.{scheme}://oauth2:{pat}@{host}/.insteadOf", src))
+        pairs.append((f"url.{scheme}://oauth2:{token}@{host}/.insteadOf", src))
         pairs.append(("http.extraHeader", f"Authorization: Basic {basic}"))
     else:
-        basic = base64.b64encode(f":{pat}".encode("utf-8")).decode("ascii")
+        basic = base64.b64encode(f":{token}".encode("utf-8")).decode("ascii")
         pairs.append(("http.extraHeader", f"Authorization: Basic {basic}"))
     _git_config_pairs(pairs, env)
     return env

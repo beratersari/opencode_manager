@@ -30,6 +30,12 @@ These look like bugs. They are not.
 6. **Dashboard is GET-only.** Jobs list + job detail (prompt, chat,
    logs, attempts). It never starts or stops work. History outlives
    the clone.
+7. **Hang clock is “never started answering.”** Once this turn has a
+   new assistant message (id ≠ the pre-POST baseline), that counts as
+   progress for the rest of the wait. A frozen mid-generation is the
+   attempt `timeout_in_seconds`, not hang. Hang is `busy` + not
+   compacting + no assistant yet this turn + no new messages / compact
+   markers.
 
 ## Hard rules
 
@@ -82,9 +88,13 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 
 ### Git
 
-- Clone with the **request PAT only**. Disable credential helpers
-  (`GIT_TERMINAL_PROMPT=0`, empty `credential.helper`). PAT must not
-  appear on `git` argv, in logs, or in callbacks.
+- Clone with the **request PAT** when the caller sent one. `PAT` is
+  optional: omit or leave empty for a **public** HTTPS repo. Disable
+  credential helpers (`GIT_TERMINAL_PROMPT=0`, empty
+  `credential.helper`). PAT must not appear on `git` argv, in logs,
+  or in callbacks. No PAT ⇒ no auth header (do not fall back to the
+  OS credential store). Private remotes without a PAT fail in the
+  worker (callback **500**), not as inbound **400**.
 - GitLab: `oauth2` + PAT. TFS / Azure DevOps: Basic `base64(":PAT")`
   (empty username). Detect from the URL. Never send GitLab auth to TFS.
 - Reject `git@` / `ssh://`.
@@ -157,12 +167,17 @@ Never POST a user message while the session is `busy` / compacting.
 
 - Healthy compact can take minutes. **Wait.** That is not a retry.
 - Do not send “Continue” during compact (races OpenCode’s loop).
+- Compact-loop (~8) counts **new** compact markers **this wait**
+  only. Markers already in the session when the turn started do not
+  count (resumed `ses_*` / KAN-95).
 - While status is `compacting` / `busy_compacting`, that **is**
   progress. Do **not** run the hang clock (compact may last minutes
   with no new markers).
 - Hang watchdog: `busy` **and not compacting** **and** no new
-  message / compact marker for `hang_timeout_seconds` → **outer
-  retry**: abort → kill **this** serve → new serve, same path.
+  message / compact marker **and no assistant yet this turn** for
+  `hang_timeout_seconds` → **outer retry**: abort → kill **this**
+  serve → new serve, same path. An assistant id that appeared after
+  the POST is progress (intentional; see product choice 7).
   If `ORIGINAL` was already POSTed: same `session_id` → `HANG_RESUME`.
   If `ORIGINAL` was never POSTed: create if we have no live id, then
   send `ORIGINAL`. Same if serve is dead.

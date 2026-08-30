@@ -266,8 +266,9 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 
 - Target installers never hit the network.
   - `install.bat` / `install.sh` — manager only. Create `.venv` with
-    the bundled interpreter (`vendor/python/windows/python.exe` or
-    `vendor/python/linux/bin/python3`), then install from
+    the bundled interpreter (`vendor/python/windows/python.exe`,
+    `vendor/python/linux/bin/python3`, or
+    `vendor/python/darwin-arm64|darwin-x64/bin/python3`), then install from
     `vendor/python-wheels` and check `web/dist`. Do not use a
     system Python. Recreate `.venv` from scratch each install.
   - `install-opencode.bat` / `install-opencode.sh` — OpenCode CLI

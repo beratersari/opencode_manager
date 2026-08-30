@@ -79,9 +79,13 @@ jobs:
             vendor/python-wheels \
             vendor/python/windows/python.exe \
             vendor/python/linux/bin/python3 \
+            vendor/python/darwin-arm64/bin/python3 \
+            vendor/python/darwin-x64/bin/python3 \
             vendor/SUPPORTED_PYTHON.txt \
-            vendor/bin/opencode.exe \
-            vendor/bin/opencode \
+            vendor/bin/windows/opencode.exe \
+            vendor/bin/linux/opencode \
+            vendor/bin/darwin-arm64/opencode \
+            vendor/bin/darwin-x64/opencode \
             pyproject.toml \
             settings.yaml
           do

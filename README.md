@@ -125,9 +125,9 @@ listen is `0.0.0.0:8080` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
-CI workflow **Offline Distribution** builds **one** zip (Windows + Linux) with:
+CI workflow **Offline Distribution** builds **one** zip (Windows, Linux, and macOS) with:
 
-- `vendor/python/windows/python.exe` and `vendor/python/linux/bin/python3` — bundled CPython used to create `.venv`
+- `vendor/python/windows/python.exe`, `vendor/python/linux/bin/python3`, `vendor/python/darwin-arm64/bin/python3` — bundled CPython used to create `.venv`
 - `vendor/python-wheels` — pip packages matching that interpreter
 - `vendor/bin/opencode.exe` and `vendor/bin/opencode` — OpenCode CLI (Windows + Linux)
 - `web/dist` — prebuilt GET-only dashboard (no Node on the target)

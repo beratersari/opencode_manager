@@ -56,6 +56,12 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Shutdown kills `extra_pids`, sends one `500`, then `POST /jobs` is `503` | `test_shutdown_kills_extra_pids_and_rejects_submit` |
 | Missing dequeued store row does not stall the queue | `test_on_done_skips_missing_queue_row` |
 
+## Model inventory
+
+| Condition | Test |
+|---|---|
+| Unknown `model` fails the job before any user POST | `test_unknown_model_fails_job_before_prompt` |
+
 ## Compact loop
 
 | Condition | Test |

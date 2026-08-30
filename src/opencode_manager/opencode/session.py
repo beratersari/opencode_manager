@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
@@ -11,6 +11,93 @@ from opencode_manager.log import get_logger
 from opencode_manager.models import parse_model
 
 logger = get_logger()
+
+
+def known_model_ids_from_payload(data: Any) -> List[str]:
+    """Extract ``provider/model`` ids from GET /config/providers or /provider."""
+    out: List[str] = []
+
+    def _add(provider: str, model: str) -> None:
+        prov = (provider or "").strip()
+        mid = (model or "").strip()
+        if not mid:
+            return
+        if "/" in mid and not prov:
+            out.append(mid)
+            return
+        if prov:
+            out.append(f"{prov}/{mid}")
+        else:
+            out.append(mid)
+
+    def _walk_provider(pid: str, body: Any) -> None:
+        if not isinstance(body, dict):
+            return
+        models = body.get("models")
+        if isinstance(models, dict):
+            for mid in models:
+                if isinstance(mid, str):
+                    _add(pid, mid)
+        elif isinstance(models, list):
+            for item in models:
+                if isinstance(item, str):
+                    _add(pid, item)
+                elif isinstance(item, dict):
+                    _add(pid, str(item.get("id") or item.get("modelID") or ""))
+
+    if isinstance(data, list):
+        for row in data:
+            if isinstance(row, dict):
+                pid = str(row.get("id") or row.get("providerID") or "")
+                _walk_provider(pid, row)
+        return out
+
+    if not isinstance(data, dict):
+        return out
+
+    providers = data.get("providers")
+    if providers is None:
+        providers = data.get("all")
+    if isinstance(providers, dict):
+        for pid, body in providers.items():
+            _walk_provider(str(pid), body)
+    elif isinstance(providers, list):
+        for row in providers:
+            if not isinstance(row, dict):
+                continue
+            pid = str(row.get("id") or row.get("providerID") or "")
+            _walk_provider(pid, row)
+
+    default = data.get("default")
+    if isinstance(default, dict):
+        for pid, mid in default.items():
+            if isinstance(mid, str) and mid.strip():
+                _add(str(pid), mid)
+    return out
+
+
+def model_is_known(requested: str, known: Sequence[str]) -> bool:
+    """True when ``requested`` is in the serve inventory (or inventory is empty)."""
+    req = (requested or "").strip()
+    if not req:
+        return True
+    bag = {(k or "").strip() for k in known if (k or "").strip()}
+    if not bag:
+        return True
+    if req in bag:
+        return True
+    tail = req.split("/", 1)[-1]
+    tails = {k.split("/", 1)[-1] for k in bag}
+    if "/" not in req:
+        return tail in tails
+    return tail in bag
+
+
+def unknown_model_message(requested: str, known: Sequence[str]) -> str:
+    sample = ", ".join(list(known)[:12])
+    more = f" (+{len(known) - 12} more)" if len(known) > 12 else ""
+    extra = f" Available: {sample}{more}." if sample else ""
+    return f"model {requested!r} is not available on this OpenCode serve.{extra}"
 
 QUESTION_HINTS = (
     "shall i",
@@ -218,6 +305,31 @@ class OpenCodeClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    def list_known_models(self) -> List[str]:
+        """Model ids this serve will accept (``provider/id``). Empty if unknown."""
+        ids: List[str] = []
+        for path in ("/config/providers", "/provider"):
+            try:
+                response = self.http.get(path, headers=self.headers, timeout=15.0)
+            except Exception:
+                continue
+            if response.status_code >= 400:
+                continue
+            try:
+                ids.extend(known_model_ids_from_payload(response.json()))
+            except Exception:
+                continue
+            if ids:
+                break
+        seen = set()
+        out: List[str] = []
+        for mid in ids:
+            if mid in seen:
+                continue
+            seen.add(mid)
+            out.append(mid)
+        return out
 
     def get_session(self, session_id: str) -> httpx.Response:
         return self.http.get(f"/session/{session_id}", headers=self.headers, timeout=15.0)

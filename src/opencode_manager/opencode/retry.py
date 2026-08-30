@@ -19,10 +19,12 @@ from opencode_manager.opencode.session import (
     compact_marker_count,
     last_assistant_id,
     last_assistant_text,
+    model_is_known,
     turn_has_new_assistant,
     session_is_busy,
     session_is_compacting,
     snapshot_chat,
+    unknown_model_message,
 )
 from opencode_manager.settings import Settings
 
@@ -148,6 +150,13 @@ def run_opencode_job(
                 assert client is not None
                 if not client.health():
                     raise AttemptFailed("serve-dead", "serve health failed")
+                try:
+                    known_models = client.list_known_models()
+                except Exception as exc:  # noqa: BLE001
+                    logger.info("model list check skipped: %s", exc)
+                    known_models = []
+                if known_models and not model_is_known(job.model, known_models):
+                    raise JobFailed(500, unknown_model_message(job.model, known_models))
                 inbound = job.session_id or None
                 already_bound = bool(job.session_bound)
                 try:

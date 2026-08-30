@@ -270,7 +270,7 @@ Different cases:
 | `source_branch` | yes | Remote branch that must already exist. Start point of the clone. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
-| `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. OpenCode rejects it later → fail the attempt (callback **500** if none remain). |
+| `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
 | `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, …). Unknown → 400. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
@@ -757,6 +757,11 @@ See §3.2 for why this is per job and how ports work.
 3. Wait until `GET /global/health` is 200, or fail this attempt
    (outer retry may apply). Boot time counts toward **this attempt’s**
    `timeout_in_seconds`.
+3b. `GET /config/providers` (fallback `GET /provider`). If the request
+    `model` is not in that inventory: fail the job **500** now
+    (`text` names the missing model and lists what this serve has).
+    No user message. No inner loop. No remaining retries. If the
+    inventory cannot be read, skip the check and POST as today.
 4. Create or resume session; set agent from `agent_mode`.
    Send `x-opencode-directory: <clone>`. On every user-message POST,
    send this job’s `model` as OpenCode `{ providerID, modelID }`
@@ -1076,6 +1081,7 @@ build them).
 - [ ] SSH `repo_url` (`git@`, `ssh://`) → HTTP **400**, no callback.
 - [ ] Unknown `agent_mode` → HTTP **400**, no callback.
 - [ ] Missing / empty / not `provider/id` `model` → HTTP **400**, no callback.
+- [ ] After serve health, unknown `model` vs `/config/providers` → job **500**, no user message, no remaining retries.
 - [ ] `retry_count < 1` treated as `1`.
 - [ ] Same `jira_id` already running → HTTP **409**, no callback.
 - [ ] Same `jira_id` already queued → HTTP **409**, no callback.

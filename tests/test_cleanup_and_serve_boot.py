@@ -204,6 +204,65 @@ def test_serve_boot_timeout_uses_retry_count(tmp_settings: Settings, monkeypatch
     assert [row.kind for row in job.attempts] == ["serve-dead", "serve-dead", "serve-dead"]
 
 
+def test_unknown_model_fails_job_before_prompt(tmp_settings: Settings, monkeypatch) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    clone = tmp_settings.work_dir / "clone"
+    clone.mkdir()
+    job = JobRecord(
+        job_id="job_badmodel",
+        jira_id="T-MODEL",
+        prompt="do it",
+        model="opencode/hy3-free",
+        agent_mode="build",
+        retry_count=3,
+        timeout_in_seconds=30,
+        status="running",
+    )
+    posted: list[str] = []
+
+    class _Handle:
+        pid = 4242
+        port = 9
+        base_url = "http://127.0.0.1:9"
+
+    class _Client:
+        def __init__(self, *_a, **_k) -> None:
+            return None
+
+        def health(self) -> bool:
+            return True
+
+        def list_known_models(self) -> list[str]:
+            return ["opencode/ling-3.0-flash-fin-free", "opencode/mimo-v2.5-free"]
+
+        def close(self) -> None:
+            return None
+
+        def abort(self, *_a, **_k) -> None:
+            return None
+
+        def post_message(self, *_a, **_k) -> None:
+            posted.append("nope")
+
+    monkeypatch.setattr("opencode_manager.opencode.retry.start_serve", lambda **_k: _Handle())
+    monkeypatch.setattr("opencode_manager.opencode.retry.stop_serve", lambda *_a, **_k: None)
+    monkeypatch.setattr("opencode_manager.opencode.retry.OpenCodeClient", _Client)
+    monkeypatch.setattr("opencode_manager.opencode.retry.kill_pid", lambda *_a, **_k: None)
+    with pytest.raises(JobFailed) as excinfo:
+        run_opencode_job(
+            job,
+            settings=tmp_settings,
+            store=store,
+            clone=clone,
+            should_stop=lambda: False,
+        )
+    assert excinfo.value.status_code == 500
+    assert "hy3-free" in excinfo.value.message
+    assert "ling-3.0-flash-fin-free" in excinfo.value.message
+    assert posted == []
+    assert job.attempts == []
+
+
 @pytest.mark.skipif(os.name == "nt", reason="fake serve script is a POSIX shell stub")
 def test_start_serve_kills_child_on_health_timeout(tmp_path: Path) -> None:
     fake = tmp_path / "fake-opencode"

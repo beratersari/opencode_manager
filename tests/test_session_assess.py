@@ -3,11 +3,14 @@ import json
 from opencode_manager.opencode.retry import _log_every
 from opencode_manager.opencode.session import (
     assess_idle,
+    known_model_ids_from_payload,
     last_assistant_id,
     looks_like_question,
+    model_is_known,
     session_is_busy,
     snapshot_chat,
     turn_has_new_assistant,
+    unknown_model_message,
 )
 
 
@@ -29,6 +32,29 @@ def test_question_detect() -> None:
 def test_assess_stop_success() -> None:
     messages = [{"info": {"role": "assistant", "finish": "stop"}, "parts": [{"type": "text", "text": "done"}]}]
     assert assess_idle(messages) == "success"
+
+
+def test_known_model_ids_from_config_providers() -> None:
+    payload = {
+        "providers": [
+            {
+                "id": "opencode",
+                "models": {
+                    "ling-3.0-flash-fin-free": {},
+                    "mimo-v2.5-free": {},
+                },
+            }
+        ]
+    }
+    ids = known_model_ids_from_payload(payload)
+    assert "opencode/ling-3.0-flash-fin-free" in ids
+    assert "opencode/mimo-v2.5-free" in ids
+    assert model_is_known("opencode/ling-3.0-flash-fin-free", ids)
+    assert not model_is_known("opencode/hy3-free", ids)
+    assert model_is_known("opencode/hy3-free", []) is True
+    msg = unknown_model_message("opencode/hy3-free", ids)
+    assert "hy3-free" in msg
+    assert "ling-3.0-flash-fin-free" in msg
 
 
 def test_assess_incomplete_tool_calls() -> None:

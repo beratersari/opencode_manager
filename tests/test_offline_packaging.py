@@ -43,8 +43,10 @@ def test_standalone_python_asset_names() -> None:
     mod = _load()
     win = mod.standalone_python_asset(ver, "windows")
     linux = mod.standalone_python_asset(ver, "linux")
+    dar = mod.standalone_python_asset(ver, "darwin-arm64")
     assert win.endswith("x86_64-pc-windows-msvc-install_only.tar.gz")
     assert linux.endswith("x86_64-unknown-linux-gnu-install_only.tar.gz")
+    assert dar.endswith("aarch64-apple-darwin-install_only.tar.gz")
     assert "3.12.14" in win and "3.12.14" in linux
 
 
@@ -75,6 +77,16 @@ def test_default_dist_name_has_no_os_suffix() -> None:
     assert "opencode-manager-{os_name}" not in src
 
 
+def test_install_sh_picks_os_specific_python() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert "osm-lib.sh" in text
+    assert "osm_require_bundled_python" in text
+    lib = (root / "scripts" / "osm-lib.sh").read_text(encoding="utf-8")
+    assert "darwin-arm64" in lib
+    assert "darwin-x64" in lib
+
+
 def test_install_scripts_are_offline_only() -> None:
     root = Path(__file__).resolve().parents[1]
     assert not (root / "scripts" / "install-backend.bat").exists()
@@ -90,11 +102,11 @@ def test_install_scripts_are_offline_only() -> None:
         assert "web" in text and "dist" in text
         assert "install-opencode" in text
         assert "npm" not in text.lower() or "does not run npm" in text.lower()
-        assert "vendor/python" in text.replace("\\", "/")
-        assert "BUNDLED" in text or "bundled" in text.lower()
+        assert "vendor/python" in text.replace("\\", "/") or "osm-lib.sh" in text
+        assert "BUNDLED" in text or "bundled" in text.lower() or "osm_require_bundled_python" in text
         assert "where python" not in text.lower()
     for text in (oc_bat, oc_sh):
         assert "vendor" in text
         assert "from scratch" in text.lower()
         assert "install_opencode.py" in text
-        assert "vendor/python" in text.replace("\\", "/")
+        assert "vendor/python" in text.replace("\\", "/") or "osm-lib.sh" in text

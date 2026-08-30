@@ -179,6 +179,8 @@ def opencode_asset(ver: dict[str, str], os_name: str, arch: str) -> str:
 WHEEL_PLATFORMS = {
     "windows": "win_amd64",
     "linux": "manylinux2014_x86_64",
+    "darwin-arm64": "macosx_11_0_arm64",
+    "darwin-x64": "macosx_11_0_x86_64",
 }
 
 
@@ -329,6 +331,10 @@ def standalone_python_asset(ver: dict[str, str], os_name: str) -> str:
         triple = "x86_64-pc-windows-msvc"
     elif os_name == "linux":
         triple = "x86_64-unknown-linux-gnu"
+    elif os_name in {"darwin-arm64", "darwin"}:
+        triple = "aarch64-apple-darwin"
+    elif os_name == "darwin-x64":
+        triple = "x86_64-apple-darwin"
     else:
         raise SystemExit(f"No standalone Python asset for {os_name}")
     return f"cpython-{full}+{tag}-{triple}-install_only.tar.gz"
@@ -490,7 +496,19 @@ def main(argv: list[str] | None = None) -> int:
     os_name, arch = host_platform()
     version = os.environ.get("OSM_PRODUCT_VERSION") or product_version(root)
     dist_name = args.dist_name or f"opencode-manager-{version}"
-    pack_platforms = ["windows", "linux"]
+    pack_platforms = ["windows", "linux", "darwin-arm64", "darwin-x64"]
+    pack_pythons = (
+        ("windows", "windows"),
+        ("linux", "linux"),
+        ("darwin-arm64", "darwin-arm64"),
+        ("darwin-x64", "darwin-x64"),
+    )
+    pack_opencodes = (
+        ("windows", "x64", "windows"),
+        ("linux", "x64", "linux"),
+        ("darwin", "arm64", "darwin-arm64"),
+        ("darwin", "x64", "darwin-x64"),
+    )
     reqs = runtime_requirements(root)
     wheel_versions = [
         x.strip()
@@ -503,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     print("========================================")
     print(f"Repo     : {root}")
     print(f"Host     : {os_name}-{arch}")
-    print(f"Zip      : one archive (windows + linux)")
+    print(f"Zip      : one archive (windows + linux + macOS)")
     print(f"Version  : {version}")
     print(f"OpenCode : {ver.get('OPENCODE_VERSION')}")
     print(f"Wheels   : {', '.join(wheel_versions)}")
@@ -523,14 +541,14 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
         (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
-        print("\nStep 3: Fetching bundled CPython (windows + linux)...")
+        print("\nStep 3: Fetching bundled CPython (windows + linux + macOS)...")
         py_assets = []
-        for pack_os, dest_name in (("windows", "windows"), ("linux", "linux")):
+        for pack_os, dest_name in pack_pythons:
             py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
         print("\nStep 4: Fetching OpenCode CLI into vendor/bin...")
         assets = []
-        for pack_os, pack_arch in (("windows", "x64"), ("linux", "x64")):
-            assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin"))
+        for pack_os, pack_arch, dest_name in pack_opencodes:
+            assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin" / dest_name))
         (vendor / "DIST_VERSION.txt").write_text(
             f"in-place vendor\nProductVersion={version}\nOpenCode={ver.get('OPENCODE_VERSION')}\n"
             f"OpenCodeAsset={','.join(assets)}\n"
@@ -558,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
 
     vendor = stage / "vendor"
     wheels = vendor / "python-wheels"
-    print("\nStep 3: Downloading Python wheels (windows + linux)...")
+    print("\nStep 3: Downloading Python wheels (windows + linux + macOS)...")
     pip_download_wheels(reqs, wheels, wheel_versions, pack_platforms)
     supported = supported_python_versions(wheels, wheel_versions)
     (vendor / "SUPPORTED_PYTHON.txt").write_text(
@@ -567,15 +585,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
 
-    print("\nStep 4: Fetching bundled CPython (windows + linux)...")
+    print("\nStep 4: Fetching bundled CPython (windows + linux + macOS)...")
     py_assets = []
-    for pack_os, dest_name in (("windows", "windows"), ("linux", "linux")):
+    for pack_os, dest_name in pack_pythons:
         py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
 
-    print("\nStep 5: Fetching OpenCode CLI (windows + linux)...")
+    print("\nStep 5: Fetching OpenCode CLI (windows + linux + macOS)...")
     assets = []
-    for pack_os, pack_arch in (("windows", "x64"), ("linux", "x64")):
-        assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin"))
+    for pack_os, pack_arch, dest_name in pack_opencodes:
+        assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin" / dest_name))
 
     marker = (
         "opencode-manager offline distribution\n"

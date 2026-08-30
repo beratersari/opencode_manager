@@ -8,11 +8,11 @@ __pycache__/
 venv/
 dist/
 build/
-logs/
-.temp/
-.serve/
-jobs/
-queue.json
+/logs/
+/.temp/
+/.serve/
+/jobs/
+/queue.json
 *.log
 web/node_modules/
 web/dist/

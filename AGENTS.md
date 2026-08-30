@@ -119,7 +119,10 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   hard-delete the clone path again and log whether it is gone.
 - Track every git child PID on `job.extra_pids` while it is live.
   `ls-remote` matches `refs/heads/{branch}` exactly. After clone,
-  origin has no userinfo and keeps `host:port`.
+  origin has no userinfo and keeps `host:port`. Scrub the stored
+  `remote.origin.url` — never `git remote get-url` under the PAT env
+  (`insteadOf` rewrites get-url to `oauth2:PAT@host` even when disk is
+  already clean).
 
 ### OpenCode
 

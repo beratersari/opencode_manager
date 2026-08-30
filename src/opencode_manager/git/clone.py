@@ -208,6 +208,28 @@ def clone_repo(
         )
 
 
+def _stored_origin_url(
+    dest: Path,
+    env: dict,
+    *,
+    timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> str:
+    """Raw `remote.origin.url`. Never `git remote get-url` — insteadOf rewrites that."""
+    result = _run_git(
+        ["config", "--local", "--get", "remote.origin.url"],
+        env=env,
+        cwd=dest,
+        timeout=timeout,
+        job=job,
+        store=store,
+        should_stop=should_stop,
+    )
+    return (result.stdout or "").strip()
+
+
 def _scrub_origin(
     dest: Path,
     env: dict,
@@ -217,38 +239,20 @@ def _scrub_origin(
     store: Optional["JobStore"] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
-    result = _run_git(
-        ["remote", "get-url", "origin"],
-        env=env,
-        cwd=dest,
-        timeout=timeout,
-        job=job,
-        store=store,
-        should_stop=should_stop,
-    )
-    url = (result.stdout or "").strip()
+    # Isolated GitLab PAT env sets url.<oauth2:PAT@host>/.insteadOf. `git remote
+    # get-url` expands that rewrite, so a clean stored origin looks like it
+    # still has userinfo. The stored config value is what clone left on disk.
+    git_kw = dict(env=env, timeout=timeout, job=job, store=store, should_stop=should_stop)
+    url = _stored_origin_url(dest, **git_kw)
     if origin_has_userinfo(url):
         clean = public_git_url(url)
         logger.info("scrub origin userinfo -> %s", redact(clean))
         _run_git(
             ["remote", "set-url", "origin", clean],
-            env=env,
             cwd=dest,
-            timeout=timeout,
-            job=job,
-            store=store,
-            should_stop=should_stop,
+            **git_kw,
         )
-        check = _run_git(
-            ["remote", "get-url", "origin"],
-            env=env,
-            cwd=dest,
-            timeout=timeout,
-            job=job,
-            store=store,
-            should_stop=should_stop,
-        )
-        final = (check.stdout or "").strip()
+        final = _stored_origin_url(dest, **git_kw)
         if origin_has_userinfo(final):
             raise GitError("origin still has userinfo after scrub")
     else:

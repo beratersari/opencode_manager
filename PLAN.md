@@ -679,7 +679,9 @@ For every git child of a job:
 - no GUI askpass / no `DISPLAY`
 - PAT **not** on `git` argv (so it does not appear in `ps`)
 - rewrite via `GIT_CONFIG_*` insteadOf + askpass / `http.extraHeader`
-- after clone, origin URL scrubbed of any userinfo
+- after clone, origin URL scrubbed of any userinfo. The source of
+  truth is stored `remote.origin.url`, not `git remote get-url`
+  (GitLab PAT `insteadOf` rewrites get-url to `oauth2:PAT@host`)
 - PAT redacted from every log and every callback
 - never fall back to the machine credential store if the PAT is wrong —
   fail with a clear “auth failed” error
@@ -1239,7 +1241,7 @@ build them).
 - [ ] Missing remote branch → inbound 202 + callback 404.
 - [ ] Kill-then-hard-delete even when files are locked (retry).
 - [ ] `ls-remote` matches `refs/heads/{branch}` exactly (`dev` ≠ `develop`).
-- [ ] Origin scrub keeps `host:port` and fails if userinfo remains.
+- [ ] Origin scrub keeps `host:port` and fails if **stored** userinfo remains (`git config remote.origin.url`, not `git remote get-url` under insteadOf).
 - [ ] Git child PIDs are recorded on the job and killed on shutdown / job-end.
 - [ ] Boot kills leftover recorded `serve_pid` / `extra_pids` and reaps cwd/argv under `work_dir` on Windows and Linux.
 - [ ] Shutdown joins workers after kill + callback 500 + clone delete; later `POST /jobs` is 503.

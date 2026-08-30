@@ -72,14 +72,24 @@ def test_supported_python_detects_pydantic_core(tmp_path: Path) -> None:
 
 def test_three_platform_packs() -> None:
     mod = _load()
-    assert set(mod.PACKS) == {"windows", "linux", "darwin"}
+    assert set(mod.PACKS) == {"windows", "linux", "darwin", "winlinux"}
     assert mod.PACKS["windows"]["suffix"] == "windows-x64"
     assert mod.PACKS["linux"]["suffix"] == "linux-x64"
     assert mod.PACKS["darwin"]["suffix"] == "darwin"
+    assert mod.PACKS["winlinux"]["suffix"] == "windows-linux"
     assert mod.wheel_for_pack("foo-1.0-py3-none-any.whl", "windows")
     assert mod.wheel_for_pack("foo-1.0-cp312-cp312-win_amd64.whl", "windows")
     assert not mod.wheel_for_pack("foo-1.0-cp312-cp312-win_amd64.whl", "linux")
     assert mod.wheel_for_pack("foo-1.0-cp312-cp312-macosx_11_0_arm64.whl", "darwin")
+    assert mod.wheel_for_pack("foo-1.0-cp312-cp312-win_amd64.whl", "winlinux")
+    assert mod.wheel_for_pack("foo-1.0-cp312-cp312-manylinux2014_x86_64.whl", "winlinux")
+    assert not mod.wheel_for_pack("foo-1.0-cp312-cp312-macosx_11_0_arm64.whl", "winlinux")
+
+
+def test_zip_does_not_stage_agents_folder() -> None:
+    mod = _load()
+    assert "agents" not in mod.COPY_DIRS
+    assert "agents" in mod.SKIP_DIR_NAMES
 
 
 def test_install_sh_picks_os_specific_python() -> None:

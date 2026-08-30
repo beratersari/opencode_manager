@@ -36,6 +36,7 @@ SKIP_DIR_NAMES = {
     ".git",
     ".egg-info",
     "opencode_manager.egg-info",
+    "agents",
 }
 
 COPY_FILES = (
@@ -55,7 +56,6 @@ COPY_DIRS = (
     "scripts",
     "tests",
     "tester",
-    "agents",
     "packaging",
 )
 
@@ -183,7 +183,7 @@ WHEEL_PLATFORMS = {
     "darwin-x64": "macosx_11_0_x86_64",
 }
 
-# Three CI zips: Windows, Linux, macOS (arm64 + x64 in the darwin zip).
+# Per-OS zips plus a combined Windows+Linux zip.
 PACKS: dict[str, dict[str, object]] = {
     "windows": {
         "suffix": "windows-x64",
@@ -202,6 +202,12 @@ PACKS: dict[str, dict[str, object]] = {
         "wheels": ("darwin-arm64", "darwin-x64"),
         "pythons": (("darwin-arm64", "darwin-arm64"), ("darwin-x64", "darwin-x64")),
         "opencodes": (("darwin", "arm64", "darwin-arm64"), ("darwin", "x64", "darwin-x64")),
+    },
+    "winlinux": {
+        "suffix": "windows-linux",
+        "wheels": ("windows", "linux"),
+        "pythons": (("windows", "windows"), ("linux", "linux")),
+        "opencodes": (("windows", "x64", "windows"), ("linux", "x64", "linux")),
     },
 }
 
@@ -474,6 +480,8 @@ def wheel_for_pack(name: str, pack: str) -> bool:
         return "manylinux" in n or "linux_x86_64" in n or "musllinux" in n
     if pack == "darwin":
         return "macosx" in n
+    if pack == "winlinux":
+        return wheel_for_pack(name, "windows") or wheel_for_pack(name, "linux")
     return False
 
 
@@ -561,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
     print("========================================")
     print(f"Repo     : {root}")
     print(f"Host     : {os_name}-{arch}")
-    print(f"Zips     : windows-x64, linux-x64, darwin (arm64+x64)")
+    print(f"Zips     : windows-x64, linux-x64, darwin, windows-linux")
     print(f"Version  : {version}")
     print(f"OpenCode : {ver.get('OPENCODE_VERSION')}")
     print(f"Wheels   : {', '.join(wheel_versions)}")
@@ -575,31 +583,43 @@ def main(argv: list[str] | None = None) -> int:
         cache = root / "vendor"
         print(f"\nIn-place: host pack only ({host_pack})")
     else:
-        pack_ids = ("windows", "linux", "darwin")
+        pack_ids = ("windows", "linux", "darwin", "winlinux")
         cache = (Path(args.out_dir).resolve() if args.out_dir else root / "dist") / "_vendor_cache"
 
     wheel_src = cache / "python-wheels" if not args.in_place else cache / "python-wheels"
     print("\nStep 2: Downloading Python wheels...")
-    wheel_plats = []
+    wheel_plats: list[str] = []
+    seen_w: set[str] = set()
     for pid in pack_ids:
-        wheel_plats.extend(list(PACKS[pid]["wheels"]))  # type: ignore[arg-type]
+        for w in PACKS[pid]["wheels"]:  # type: ignore[union-attr]
+            if w not in seen_w:
+                seen_w.add(w)
+                wheel_plats.append(w)
     pip_download_wheels(reqs, wheel_src, wheel_versions, wheel_plats)
     supported = supported_python_versions(wheel_src, wheel_versions)
 
     print("\nStep 3: Fetching bundled CPython...")
     py_assets: list[str] = []
-    pythons_needed = []
+    pythons_needed: list[tuple[str, str]] = []
+    seen_py: set[str] = set()
     for pid in pack_ids:
-        pythons_needed.extend(list(PACKS[pid]["pythons"]))  # type: ignore[arg-type]
+        for pack_os, dest_name in PACKS[pid]["pythons"]:  # type: ignore[misc]
+            if dest_name not in seen_py:
+                seen_py.add(dest_name)
+                pythons_needed.append((pack_os, dest_name))
     py_root = cache / "python"
     for pack_os, dest_name in pythons_needed:
         py_assets.append(fetch_standalone_python(ver, pack_os, py_root / dest_name))
 
     print("\nStep 4: Fetching OpenCode CLI...")
     oc_assets: list[str] = []
-    oc_needed = []
+    oc_needed: list[tuple[str, str, str]] = []
+    seen_oc: set[str] = set()
     for pid in pack_ids:
-        oc_needed.extend(list(PACKS[pid]["opencodes"]))  # type: ignore[arg-type]
+        for pack_os, pack_arch, dest_name in PACKS[pid]["opencodes"]:  # type: ignore[misc]
+            if dest_name not in seen_oc:
+                seen_oc.add(dest_name)
+                oc_needed.append((pack_os, pack_arch, dest_name))
     oc_root = cache / "bin"
     for pack_os, pack_arch, dest_name in oc_needed:
         oc_assets.append(fetch_opencode(ver, pack_os, pack_arch, oc_root / dest_name))

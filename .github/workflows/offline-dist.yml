@@ -51,7 +51,7 @@ jobs:
           OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: python packaging/build_dist.py --out-dir dist --dist-name "${{ steps.ver.outputs.dist_name }}"
 
-      - name: Assert three zip payloads
+      - name: Assert zip payloads
         run: |
           set -euo pipefail
           prefix="${{ steps.ver.outputs.dist_name }}"
@@ -59,7 +59,8 @@ jobs:
           NEED[windows-x64]="vendor/python/windows/python.exe vendor/bin/windows/opencode.exe"
           NEED[linux-x64]="vendor/python/linux/bin/python3 vendor/bin/linux/opencode"
           NEED[darwin]="vendor/python/darwin-arm64/bin/python3 vendor/python/darwin-x64/bin/python3 vendor/bin/darwin-arm64/opencode vendor/bin/darwin-x64/opencode"
-          for suffix in windows-x64 linux-x64 darwin; do
+          NEED[windows-linux]="vendor/python/windows/python.exe vendor/python/linux/bin/python3 vendor/bin/windows/opencode.exe vendor/bin/linux/opencode"
+          for suffix in windows-x64 linux-x64 darwin windows-linux; do
             zip="dist/${prefix}-${suffix}.zip"
             stage="dist/stage/${prefix}-${suffix}"
             if [ ! -f "$zip" ]; then
@@ -77,7 +78,10 @@ jobs:
               echo "web/node_modules must not be in $suffix"
               exit 1
             fi
-            # Cross-pack binaries must not leak into the wrong zip
+            if [ -d "$stage/agents" ]; then
+              echo "agents/ must not be in $suffix"
+              exit 1
+            fi
             if [ "$suffix" = "windows-x64" ] && [ -e "$stage/vendor/python/linux" ]; then
               echo "windows zip must not include linux python"
               exit 1
@@ -90,14 +94,18 @@ jobs:
               echo "darwin zip must not include linux python"
               exit 1
             fi
+            if [ "$suffix" = "windows-linux" ] && [ -e "$stage/vendor/python/darwin-arm64" ]; then
+              echo "windows-linux zip must not include darwin python"
+              exit 1
+            fi
           done
           count=$(ls -1 dist/${prefix}-*.zip | wc -l)
-          if [ "$count" -ne 3 ]; then
-            echo "Expected 3 zips, found $count"
+          if [ "$count" -ne 4 ]; then
+            echo "Expected 4 zips, found $count"
             ls -l dist/*.zip
             exit 1
           fi
-          echo "Three-zip payload OK"
+          echo "Four-zip payload OK"
 
       - name: Upload Windows zip
         uses: actions/upload-artifact@v4
@@ -123,6 +131,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload Windows+Linux zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-windows-linux
+          path: dist/${{ steps.ver.outputs.dist_name }}-windows-linux.zip
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -131,16 +147,18 @@ jobs:
             dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip
             dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
             dist/${{ steps.ver.outputs.dist_name }}-darwin.zip
+            dist/${{ steps.ver.outputs.dist_name }}-windows-linux.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
             ## Offline installer
 
-            Three zips — download the one for your OS:
+            Download the zip for your OS (or the combined Windows+Linux zip):
 
             - `${{ steps.ver.outputs.dist_name }}-windows-x64.zip`
             - `${{ steps.ver.outputs.dist_name }}-linux-x64.zip`
             - `${{ steps.ver.outputs.dist_name }}-darwin.zip` (Apple Silicon + Intel)
+            - `${{ steps.ver.outputs.dist_name }}-windows-linux.zip` (Windows + Linux together)
 
             1. Extract once. Install Git. Python is in the zip (`vendor/python/`).
             2. Windows: `install.bat` then `install-opencode.bat`

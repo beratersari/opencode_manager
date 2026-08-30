@@ -131,6 +131,7 @@ for your OS:
 - `opencode-manager-<version>-windows-x64.zip`
 - `opencode-manager-<version>-linux-x64.zip`
 - `opencode-manager-<version>-darwin.zip` (Apple Silicon + Intel)
+- `opencode-manager-<version>-windows-linux.zip` (Windows + Linux together)
 
 Each zip has that OS’s bundled CPython, matching wheels, OpenCode CLI,
 and `web/dist`. Extract it. Install Git. Then:

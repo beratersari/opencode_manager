@@ -277,9 +277,9 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     delete it, then copy `vendor/bin` from scratch. Run the helper
     with the bundled Python, not PATH.
 - CI (`packaging/build_dist.py`, workflow **Offline Distribution**)
-  produces **one** zip for Windows and Linux: bundled CPython for
-  both, matching wheels, `vendor/bin/opencode.exe` +
-  `vendor/bin/opencode`, and `web/dist`.
+  produces **three** zips: `*-windows-x64.zip`, `*-linux-x64.zip`,
+  `*-darwin.zip`. Each has that OS’s bundled CPython, matching
+  wheels, OpenCode CLI, and `web/dist`.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
 - Do not vendor Git, Codex, `glab`, portable Node, or

@@ -916,12 +916,10 @@ Clone the repo for reference only. Do not import it as a dependency.
 - jobs-tab SPA look: React + Vite + Tailwind + Geist, Jobs list + job
   detail tabs, chat transcript UI, `JobStore` one-JSON-per-job.
   **GET-only** — strip every write control.
-- offline zip shape: CI-packed bundled CPython
-  (`vendor/python/windows/python.exe` +
-  `vendor/python/linux/bin/python3`), matching
-  `vendor/python-wheels`, prebuilt `web/dist`, vendored OpenCode CLI.
-  Target `install.*` creates `.venv` with the bundled interpreter
-  (`--no-index`).
+- offline zip shape: **three** CI zips (Windows, Linux, macOS). Each
+  has that OS’s bundled CPython, matching wheels, prebuilt
+  `web/dist`, and OpenCode CLI. Target `install.*` creates `.venv`
+  with the bundled interpreter (`--no-index`).
 
 **Do not copy**
 

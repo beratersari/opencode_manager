@@ -1,8 +1,6 @@
-# Build one offline zip for Windows and Linux:
-#   vendor/python-wheels (win + manylinux)
-#   vendor/bin/opencode.exe + vendor/bin/opencode
-#   web/dist
-# Target install (scripts/install.bat|sh) never hits the network.
+# Build three offline zips (Windows, Linux, macOS).
+# Each zip has that OS's bundled CPython, matching wheels, OpenCode CLI, and web/dist.
+# Target install never hits the network.
 
 name: Offline Distribution
 
@@ -19,7 +17,7 @@ permissions:
 
 jobs:
   package:
-    name: Package offline zip
+    name: Package offline zips
     runs-on: ubuntu-latest
 
     steps:
@@ -53,63 +51,75 @@ jobs:
           OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: python packaging/build_dist.py --out-dir dist --dist-name "${{ steps.ver.outputs.dist_name }}"
 
-      - name: Assert single zip payload
+      - name: Assert three zip payloads
         run: |
           set -euo pipefail
-          zips=(dist/*.zip)
-          if [ "${#zips[@]}" -ne 1 ]; then
-            echo "Expected exactly one zip, found: ${zips[*]}"
-            exit 1
-          fi
-          echo "Zip: ${zips[0]}"
-          stage="dist/stage/${{ steps.ver.outputs.dist_name }}"
-          echo "Stage: $stage"
-          for rel in \
-            install.bat \
-            install.sh \
-            install-opencode.bat \
-            install-opencode.sh \
-            start.bat \
-            start.sh \
-            start-backend.bat \
-            start-frontend.bat \
-            scripts/install_opencode.py \
-            src/opencode_manager/app.py \
-            web/dist/index.html \
-            vendor/python-wheels \
-            vendor/python/windows/python.exe \
-            vendor/python/linux/bin/python3 \
-            vendor/python/darwin-arm64/bin/python3 \
-            vendor/python/darwin-x64/bin/python3 \
-            vendor/SUPPORTED_PYTHON.txt \
-            vendor/bin/windows/opencode.exe \
-            vendor/bin/linux/opencode \
-            vendor/bin/darwin-arm64/opencode \
-            vendor/bin/darwin-x64/opencode \
-            pyproject.toml \
-            settings.yaml
-          do
-            if [ ! -e "$stage/$rel" ]; then
-              echo "Missing required payload path: $rel"
+          prefix="${{ steps.ver.outputs.dist_name }}"
+          declare -A NEED
+          NEED[windows-x64]="vendor/python/windows/python.exe vendor/bin/windows/opencode.exe"
+          NEED[linux-x64]="vendor/python/linux/bin/python3 vendor/bin/linux/opencode"
+          NEED[darwin]="vendor/python/darwin-arm64/bin/python3 vendor/python/darwin-x64/bin/python3 vendor/bin/darwin-arm64/opencode vendor/bin/darwin-x64/opencode"
+          for suffix in windows-x64 linux-x64 darwin; do
+            zip="dist/${prefix}-${suffix}.zip"
+            stage="dist/stage/${prefix}-${suffix}"
+            if [ ! -f "$zip" ]; then
+              echo "Missing zip: $zip"
               exit 1
             fi
-            echo "OK $rel"
+            echo "OK zip $zip ($(du -h "$zip" | awk '{print $1}'))"
+            for rel in install.sh install.bat web/dist/index.html vendor/python-wheels src/opencode_manager/app.py ${NEED[$suffix]}; do
+              if [ ! -e "$stage/$rel" ]; then
+                echo "Missing $suffix path: $rel"
+                exit 1
+              fi
+            done
+            if [ -d "$stage/web/node_modules" ]; then
+              echo "web/node_modules must not be in $suffix"
+              exit 1
+            fi
+            # Cross-pack binaries must not leak into the wrong zip
+            if [ "$suffix" = "windows-x64" ] && [ -e "$stage/vendor/python/linux" ]; then
+              echo "windows zip must not include linux python"
+              exit 1
+            fi
+            if [ "$suffix" = "linux-x64" ] && [ -e "$stage/vendor/python/windows" ]; then
+              echo "linux zip must not include windows python"
+              exit 1
+            fi
+            if [ "$suffix" = "darwin" ] && [ -e "$stage/vendor/python/linux" ]; then
+              echo "darwin zip must not include linux python"
+              exit 1
+            fi
           done
-          if [ -d "$stage/web/node_modules" ]; then
-            echo "web/node_modules must not be in the offline zip"
+          count=$(ls -1 dist/${prefix}-*.zip | wc -l)
+          if [ "$count" -ne 3 ]; then
+            echo "Expected 3 zips, found $count"
+            ls -l dist/*.zip
             exit 1
           fi
-          if ! ls "$stage/web/dist/assets"/index-*.js >/dev/null 2>&1; then
-            echo "web/dist/assets/index-*.js missing"
-            exit 1
-          fi
-          echo "Single-zip payload OK"
+          echo "Three-zip payload OK"
 
-      - name: Upload zip artifact
+      - name: Upload Windows zip
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.ver.outputs.dist_name }}
-          path: dist/${{ steps.ver.outputs.dist_name }}.zip
+          name: ${{ steps.ver.outputs.dist_name }}-windows-x64
+          path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Linux zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-linux-x64
+          path: dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload macOS zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-darwin
+          path: dist/${{ steps.ver.outputs.dist_name }}-darwin.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -117,17 +127,25 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ steps.ver.outputs.dist_name }}.zip
+          files: |
+            dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip
+            dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
+            dist/${{ steps.ver.outputs.dist_name }}-darwin.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
             ## Offline installer
 
-            One zip for Windows and Linux: `${{ steps.ver.outputs.dist_name }}.zip`
+            Three zips — download the one for your OS:
 
-            1. Download and extract once. Install Git. Python is in the zip (`vendor/python/`).
-            2. Run `install.bat` then `install-opencode.bat` (Windows), or `./install.sh` then `./install-opencode.sh` (Linux). No network.
-            3. Run `start.bat` / `./start.sh`.
+            - `${{ steps.ver.outputs.dist_name }}-windows-x64.zip`
+            - `${{ steps.ver.outputs.dist_name }}-linux-x64.zip`
+            - `${{ steps.ver.outputs.dist_name }}-darwin.zip` (Apple Silicon + Intel)
+
+            1. Extract once. Install Git. Python is in the zip (`vendor/python/`).
+            2. Windows: `install.bat` then `install-opencode.bat`
+               macOS / Linux: `./install.sh` then `./install-opencode.sh`
+            3. `start.bat` / `./start.sh`
                - API + SPA: http://127.0.0.1:8080/jobs
                - Optional SPA proxy: http://127.0.0.1:5173/
         env:

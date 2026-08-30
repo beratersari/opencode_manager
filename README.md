@@ -125,14 +125,15 @@ listen is `0.0.0.0:8080` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
-CI workflow **Offline Distribution** builds **one** zip (Windows, Linux, and macOS) with:
+CI workflow **Offline Distribution** builds **three** zips. Download the one
+for your OS:
 
-- `vendor/python/windows/python.exe`, `vendor/python/linux/bin/python3`, `vendor/python/darwin-arm64/bin/python3` — bundled CPython used to create `.venv`
-- `vendor/python-wheels` — pip packages matching that interpreter
-- `vendor/bin/opencode.exe` and `vendor/bin/opencode` — OpenCode CLI (Windows + Linux)
-- `web/dist` — prebuilt GET-only dashboard (no Node on the target)
+- `opencode-manager-<version>-windows-x64.zip`
+- `opencode-manager-<version>-linux-x64.zip`
+- `opencode-manager-<version>-darwin.zip` (Apple Silicon + Intel)
 
-Extract it. Install Git. Then:
+Each zip has that OS’s bundled CPython, matching wheels, OpenCode CLI,
+and `web/dist`. Extract it. Install Git. Then:
 
 ```bash
 # Windows

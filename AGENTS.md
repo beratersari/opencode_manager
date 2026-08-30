@@ -265,20 +265,24 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 ### Offline install
 
 - Target installers never hit the network.
-  - `install.bat` / `install.sh` — manager only (venv +
-    `vendor/python-wheels` + check `web/dist`). Fail if those are
-    missing. One installer; do not split backend vs frontend.
+  - `install.bat` / `install.sh` — manager only. Create `.venv` with
+    the bundled interpreter (`vendor/python/windows/python.exe` or
+    `vendor/python/linux/bin/python3`), then install from
+    `vendor/python-wheels` and check `web/dist`. Do not use a
+    system Python. Recreate `.venv` from scratch each install.
   - `install-opencode.bat` / `install-opencode.sh` — OpenCode CLI
     only. Install root is `<user>/.opencode` (Windows:
     `%USERPROFILE%\.opencode`, not AppData). Detect that folder,
-    delete it, then copy `vendor/bin` from scratch.
+    delete it, then copy `vendor/bin` from scratch. Run the helper
+    with the bundled Python, not PATH.
 - CI (`packaging/build_dist.py`, workflow **Offline Distribution**)
-  produces **one** zip for Windows and Linux: wheels for both,
-  `vendor/bin/opencode.exe` + `vendor/bin/opencode`, and `web/dist`.
+  produces **one** zip for Windows and Linux: bundled CPython for
+  both, matching wheels, `vendor/bin/opencode.exe` +
+  `vendor/bin/opencode`, and `web/dist`.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
-- Do not vendor Git or CPython. Do not vendor Codex, `glab`, portable
-  Node, or oh-my-opencode.
+- Do not vendor Git, Codex, `glab`, portable Node, or
+  oh-my-opencode.
 
 ### Dashboard (GET only)
 

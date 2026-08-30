@@ -117,21 +117,22 @@ curl -sS 'http://127.0.0.1:8080/api/jobs/job_xxxxxxxx/logs'
 
 ## Run
 
-Needs Python 3.11+, `git`, and the **offline zip** (or a source tree after
-`packaging/build_dist.py --in-place`). Set **one** `data_dir` (clones in
-`.temp/`, logs in `logs/`, history in `jobs/`). Default listen is
-`0.0.0.0:8080` in `settings.yaml`.
+Needs `git` and the **offline zip** (or a source tree after
+`packaging/build_dist.py --in-place`). Python is **in the zip** — the
+installer does not use a system interpreter. Set **one** `data_dir`
+(clones in `.temp/`, logs in `logs/`, history in `jobs/`). Default
+listen is `0.0.0.0:8080` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
 CI workflow **Offline Distribution** builds **one** zip (Windows + Linux) with:
 
-- `vendor/python-wheels` — pip packages for the manager
+- `vendor/python/windows/python.exe` and `vendor/python/linux/bin/python3` — bundled CPython used to create `.venv`
+- `vendor/python-wheels` — pip packages matching that interpreter
 - `vendor/bin/opencode.exe` and `vendor/bin/opencode` — OpenCode CLI (Windows + Linux)
 - `web/dist` — prebuilt GET-only dashboard (no Node on the target)
 
-Extract it. Install a supported Python (see `vendor/SUPPORTED_PYTHON.txt`)
-and Git. Then:
+Extract it. Install Git. Then:
 
 ```bash
 # Windows
@@ -145,8 +146,9 @@ start.bat
 ./start.sh
 ```
 
-`install.bat` / `install.sh` install the manager only (venv + wheels +
-prebuilt SPA). They never hit PyPI or npm. OpenCode is a separate
+`install.bat` / `install.sh` install the manager only: they create
+`.venv` with the bundled `python.exe` / `python3`, then install wheels
+and check the prebuilt SPA. They never hit PyPI or npm. OpenCode is a separate
 installer: `install-opencode.*` deletes `<user>/.opencode` (Windows:
 `%USERPROFILE%\.opencode`) and copies `vendor/bin` from scratch.
 `start-frontend` is a Python SPA proxy on `:5173` (not Vite). The manager

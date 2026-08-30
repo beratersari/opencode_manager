@@ -916,8 +916,12 @@ Clone the repo for reference only. Do not import it as a dependency.
 - jobs-tab SPA look: React + Vite + Tailwind + Geist, Jobs list + job
   detail tabs, chat transcript UI, `JobStore` one-JSON-per-job.
   **GET-only** — strip every write control.
-- offline zip shape: CI-packed `vendor/python-wheels`, prebuilt
-  `web/dist`, vendored OpenCode CLI. Target `install.*` is `--no-index`.
+- offline zip shape: CI-packed bundled CPython
+  (`vendor/python/windows/python.exe` +
+  `vendor/python/linux/bin/python3`), matching
+  `vendor/python-wheels`, prebuilt `web/dist`, vendored OpenCode CLI.
+  Target `install.*` creates `.venv` with the bundled interpreter
+  (`--no-index`).
 
 **Do not copy**
 
@@ -973,7 +977,7 @@ opencode_manager/
   web/dist/             # CI-built SPA; no Node on the target
   scripts/              # offline install + start (Windows .bat, Linux .sh)
   packaging/            # versions.env + build_dist.py (needs network)
-  vendor/               # CI zip only: python-wheels + OpenCode bin
+  vendor/               # CI zip only: bundled CPython + wheels + OpenCode bin
   logs/                 # app log only: logs/app.log (project root)
 # clones default:  Windows C:\osm\.temp   Linux /var/lib/osm/.temp
 # job logs default: Windows C:\osm\logs    Linux /var/lib/osm/logs

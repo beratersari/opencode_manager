@@ -46,7 +46,8 @@ class Manager:
 
     def boot(self) -> None:
         logger.info(
-            "boot start work_dir=%s job_log_dir=%s job_store_dir=%s max_concurrent=%s",
+            "boot start data_dir=%s work_dir=%s job_log_dir=%s job_store_dir=%s max_concurrent=%s",
+            self.settings.data_dir,
             self.settings.work_dir,
             self.settings.job_log_dir,
             self.settings.job_store_dir,
@@ -138,7 +139,16 @@ class Manager:
             )
         err = validate_request_fields(body)
         if err:
-            logger.warning("reject POST /jobs 400: %s", err)
+            keys = sorted(str(k) for k in body.keys() if str(k) != "PAT")
+            logger.warning(
+                "reject POST /jobs 400: %s keys=%s jira_id=%s model=%s agent=%s branch=%s",
+                err,
+                keys,
+                body.get("jira_id"),
+                body.get("model"),
+                body.get("agent_mode"),
+                body.get("source_branch"),
+            )
             return 400, Envelope(
                 text=err,
                 session_id="",

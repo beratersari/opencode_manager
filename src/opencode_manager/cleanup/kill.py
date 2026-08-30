@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator, List, Optional, Set
 
-from opencode_manager.log import get_logger
+from opencode_manager.log import get_logger, log_command, log_command_result
 
 logger = get_logger()
 
@@ -28,19 +28,29 @@ def kill_pid(pid: Optional[int]) -> None:
     if not pid or pid == os.getpid():
         return
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True,
-            check=False,
+        cmd = ["taskkill", "/F", "/T", "/PID", str(pid)]
+        log_command(logger, cmd)
+        result = subprocess.run(cmd, capture_output=True, check=False, text=True)
+        log_command_result(
+            logger,
+            cmd,
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            pid=pid,
         )
         return
+    logger.info("command argv=kill -9 -- %s (process group SIGKILL)", pid)
     try:
         os.killpg(int(pid), signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
+        logger.info("command ok killpg SIGKILL pid=%s", pid)
+    except (ProcessLookupError, PermissionError, OSError) as exc:
+        logger.info("killpg pid=%s failed (%s); trying kill", pid, type(exc).__name__)
         try:
             os.kill(int(pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
+            logger.info("command ok kill SIGKILL pid=%s", pid)
+        except (ProcessLookupError, PermissionError, OSError) as exc2:
+            logger.info("kill pid=%s already gone or denied (%s)", pid, type(exc2).__name__)
 
 
 def kill_job_tree(pids: Iterable[Optional[int]]) -> None:
@@ -153,21 +163,25 @@ def _iter_windows_processes() -> Iterator[ProcInfo]:
 
 def _windows_process_rows() -> List[dict]:
     """Best-effort pid + command line. Isolated so tests can stub it."""
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | "
+        "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+    ]
     try:
+        log_command(logger, cmd, timeout=30)
         result = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Get-CimInstance Win32_Process | "
-                "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+        log_command_result(logger, cmd, returncode=result.returncode, stderr=result.stderr)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.error("command FAIL argv=%s err=%s", " ".join(cmd[:3]), exc)
         return []
     text = (result.stdout or "").strip()
     if not text:
@@ -279,15 +293,19 @@ def _windows_cwd(pid: int) -> Optional[str]:
 
 def _iter_ps_processes() -> Iterator[ProcInfo]:
     """macOS / fallback when /proc is missing: pid + command line via `ps`."""
+    cmd = ["ps", "-ax", "-o", "pid=,command="]
     try:
+        log_command(logger, cmd, timeout=15)
         result = subprocess.run(
-            ["ps", "-ax", "-o", "pid=,command="],
+            cmd,
             capture_output=True,
             text=True,
             timeout=15,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+        log_command_result(logger, cmd, returncode=result.returncode, stderr=result.stderr)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.error("command FAIL argv=%s err=%s", " ".join(cmd), exc)
         return
     for line in (result.stdout or "").splitlines():
         text = line.strip()

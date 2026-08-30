@@ -12,7 +12,7 @@ from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.dashboard.store import JobStore
 from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
 from opencode_manager.git.detect import classify_host
-from opencode_manager.log import get_logger
+from opencode_manager.log import clip, get_logger, log_fail
 from opencode_manager.log_context import bind, clear
 from opencode_manager.models import Envelope, JobRecord, utc_now
 from opencode_manager.opencode.retry import JobFailed, run_opencode_job
@@ -61,6 +61,7 @@ class OpenCodeRunner:
             if dest.exists():
                 logger.info("leftover clone exists; hard-delete before clone clone_path=%s", dest)
                 if not _remove_clone(dest, reason="before-clone"):
+                    log_fail(logger, "leftover clone could not be deleted", clone_path=dest)
                     return Terminal(500, f"could not remove leftover clone at {dest}")
             logger.info("ls-remote check for source_branch=%s", job.source_branch)
             if not ls_remote_has_branch(
@@ -72,7 +73,11 @@ class OpenCodeRunner:
                 store=self.store,
                 should_stop=should_stop,
             ):
-                logger.warning("source_branch missing on remote: %s", job.source_branch)
+                logger.warning(
+                    "source_branch missing on remote: %s repo=%s",
+                    job.source_branch,
+                    job.repo_url,
+                )
                 return Terminal(404, f"source_branch {job.source_branch!r} does not exist on the remote")
             if should_stop():
                 return Terminal(500, "manager shutting down")
@@ -99,15 +104,33 @@ class OpenCodeRunner:
             logger.info("OpenCode phase done status=%s text_len=%s", result.status_code, len(result.text or ""))
             return Terminal(result.status_code, result.text)
         except GitError as exc:
-            logger.error("git failed missing_branch=%s err=%s", exc.missing_branch, exc)
+            log_fail(
+                logger,
+                "git failed",
+                missing_branch=exc.missing_branch,
+                err=exc,
+                clone_path=dest,
+                branch=job.source_branch,
+                repo=job.repo_url,
+            )
             if exc.missing_branch:
                 return Terminal(404, str(exc))
             return Terminal(500, f"git failed: {exc}")
         except JobFailed as exc:
-            logger.error("OpenCode job failed status=%s %s", exc.status_code, exc.message)
+            log_fail(
+                logger,
+                "OpenCode job failed",
+                status=exc.status_code,
+                err=exc.message,
+                session=job.session_id,
+                attempt=job.attempt,
+                retry_count=job.retry_count,
+                text=clip(job.text, 240),
+            )
             return Terminal(exc.status_code, exc.message)
         except Exception as exc:  # noqa: BLE001
             logger.exception("worker crashed")
+            log_fail(logger, "worker crashed", err=exc, clone_path=dest, session=job.session_id)
             return Terminal(500, f"worker crashed: {exc}")
         finally:
             logger.info(

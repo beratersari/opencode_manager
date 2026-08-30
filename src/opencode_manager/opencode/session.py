@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
-from opencode_manager.log import get_logger
+from opencode_manager.log import clip, get_logger, log_fail, log_http
 from opencode_manager.models import parse_model
 
 logger = get_logger()
@@ -330,12 +330,28 @@ class OpenCodeClient:
         return out
 
     def get_session(self, session_id: str) -> httpx.Response:
-        return self.http.get(f"/session/{session_id}", headers=self.headers, timeout=15.0)
+        path = f"/session/{session_id}"
+        try:
+            response = self.http.get(path, headers=self.headers, timeout=15.0)
+        except Exception as exc:  # noqa: BLE001
+            log_http(logger, "GET", path, err=exc, ok=False)
+            raise
+        log_http(logger, "GET", path, status=response.status_code, body=response.text if response.status_code >= 400 else None)
+        return response
 
     def create_session(self, title: str) -> str:
-        response = self.http.post("/session", json={"title": title}, headers=self.headers, timeout=30.0)
-        response.raise_for_status()
-        return str(_unwrap_session(response.json())["id"])
+        logger.info("POST /session title=%s", clip(title, 120))
+        try:
+            response = self.http.post("/session", json={"title": title}, headers=self.headers, timeout=30.0)
+        except Exception as exc:  # noqa: BLE001
+            log_http(logger, "POST", "/session", err=exc, ok=False)
+            raise
+        if response.status_code >= 400:
+            log_http(logger, "POST", "/session", status=response.status_code, body=response.text)
+            response.raise_for_status()
+        sid = str(_unwrap_session(response.json())["id"])
+        log_http(logger, "POST", "/session", status=response.status_code)
+        return sid
 
     def resume_or_create(self, inbound: Optional[str], title: str) -> Tuple[str, bool]:
         """Return (session_id, created_new)."""
@@ -364,13 +380,20 @@ class OpenCodeClient:
         return {}
 
     def list_messages(self, session_id: str) -> List[Dict[str, Any]]:
-        response = self.http.get(
-            f"/session/{session_id}/message",
-            params={"limit": 400},
-            headers=self.headers,
-            timeout=30.0,
-        )
-        response.raise_for_status()
+        path = f"/session/{session_id}/message"
+        try:
+            response = self.http.get(
+                path,
+                params={"limit": 400},
+                headers=self.headers,
+                timeout=30.0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log_http(logger, "GET", path, params={"limit": 400}, err=exc, ok=False)
+            raise
+        if response.status_code >= 400:
+            log_http(logger, "GET", path, status=response.status_code, body=response.text, params={"limit": 400})
+            response.raise_for_status()
         return _coerce_messages(response.json())
 
     def post_message(
@@ -397,10 +420,26 @@ class OpenCodeClient:
                 timeout=20.0,
             )
             if response.status_code < 400:
-                logger.info("user message accepted via prompt_async HTTP %s", response.status_code)
+                log_http(logger, "POST", f"/session/{session_id}/prompt_async", status=response.status_code)
+                logger.info(
+                    "user message accepted via prompt_async HTTP %s model=%s/%s agent=%s chars=%s",
+                    response.status_code,
+                    provider,
+                    model_id,
+                    agent,
+                    len(text),
+                )
                 return
+            log_http(
+                logger,
+                "POST",
+                f"/session/{session_id}/prompt_async",
+                status=response.status_code,
+                body=response.text,
+            )
             logger.info("prompt_async -> HTTP %s; falling back to /message", response.status_code)
         except Exception as exc:  # noqa: BLE001
+            log_http(logger, "POST", f"/session/{session_id}/prompt_async", err=exc, ok=False)
             logger.info("prompt_async failed (%s); falling back to /message", exc)
 
         fail: list[str] = []
@@ -415,13 +454,20 @@ class OpenCodeClient:
                         headers=self.headers,
                     )
                     if response.status_code >= 400:
-                        fail.append(f"HTTP {response.status_code}")
-                        logger.info("user message /message -> HTTP %s", response.status_code)
+                        fail.append(f"HTTP {response.status_code} {clip(response.text, 200)}")
+                        log_http(
+                            logger,
+                            "POST",
+                            f"/session/{session_id}/message",
+                            status=response.status_code,
+                            body=response.text,
+                        )
                     else:
+                        log_http(logger, "POST", f"/session/{session_id}/message", status=response.status_code)
                         logger.info("user message accepted via /message HTTP %s", response.status_code)
             except Exception as exc:  # noqa: BLE001
                 fail.append(str(exc))
-                logger.info("user message /message failed: %s", exc)
+                log_http(logger, "POST", f"/session/{session_id}/message", err=exc, ok=False)
 
         thread = threading.Thread(target=_send, name="osm-message", daemon=True)
         thread.start()
@@ -458,10 +504,12 @@ class OpenCodeClient:
         raise RuntimeError("user message POST was not accepted by OpenCode")
 
     def abort(self, session_id: str) -> None:
+        path = f"/session/{session_id}/abort"
         try:
-            self.http.post(f"/session/{session_id}/abort", headers=self.headers, timeout=15.0)
-        except Exception:
-            pass
+            response = self.http.post(path, headers=self.headers, timeout=15.0)
+            log_http(logger, "POST", path, status=response.status_code, body=response.text if response.status_code >= 400 else None)
+        except Exception as exc:  # noqa: BLE001
+            log_fail(logger, "abort session failed", session_id=session_id, err=exc)
 
 
 def _part_text(value: Any) -> str:

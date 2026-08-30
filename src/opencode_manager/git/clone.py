@@ -10,7 +10,15 @@ from urllib.parse import urlparse, urlunparse
 
 from opencode_manager.cleanup.kill import kill_pid
 from opencode_manager.git.auth import argv_helper_off, isolated_git_env
-from opencode_manager.log import get_logger, redact
+from opencode_manager.log import (
+    clip,
+    fmt_cmd,
+    get_logger,
+    log_command,
+    log_command_result,
+    log_fail,
+    redact,
+)
 
 if TYPE_CHECKING:
     from opencode_manager.dashboard.store import JobStore
@@ -95,7 +103,9 @@ def _run_git(
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> subprocess.CompletedProcess:
     cmd = ["git", *argv_helper_off(), *args]
-    logger.info("git run timeout=%ss cwd=%s -- %s", timeout, cwd or ".", redact(" ".join(args)))
+    work = cwd or "."
+    logger.info("git run timeout=%ss cwd=%s -- %s", timeout, work, redact(" ".join(args)))
+    log_command(logger, cmd, cwd=work, timeout=timeout)
     if should_stop and should_stop():
         raise GitError("manager shutting down")
     try:
@@ -109,10 +119,12 @@ def _run_git(
             start_new_session=True,
         )
     except subprocess.TimeoutExpired as exc:
-        logger.error("git timeout after %ss -- %s", timeout, redact(" ".join(args)))
+        log_fail(logger, "git timeout before start", timeout=timeout, argv=fmt_cmd(cmd), cwd=work)
         raise GitError(f"git timed out after {timeout}s") from exc
     except OSError as exc:
+        log_fail(logger, "git failed to start", err=exc, argv=fmt_cmd(cmd), cwd=work, timeout=timeout)
         raise GitError(f"git failed to start: {exc}") from exc
+    logger.info("git spawned pid=%s argv=%s", proc.pid, fmt_cmd(cmd))
     _track_pid(job, proc.pid, store)
     try:
         if should_stop and should_stop():
@@ -121,7 +133,14 @@ def _run_git(
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as exc:
-            logger.error("git timeout after %ss -- %s", timeout, redact(" ".join(args)))
+            log_fail(
+                logger,
+                "git timeout",
+                timeout=timeout,
+                pid=proc.pid,
+                argv=fmt_cmd(cmd),
+                cwd=work,
+            )
             kill_pid(proc.pid)
             try:
                 proc.communicate(timeout=5)
@@ -131,13 +150,23 @@ def _run_git(
     finally:
         _untrack_pid(job, proc.pid, store)
     result = subprocess.CompletedProcess(cmd, proc.returncode or 0, stdout or "", stderr or "")
+    log_command_result(
+        logger,
+        cmd,
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        cwd=work,
+        timeout=timeout,
+        pid=proc.pid,
+    )
     if result.returncode != 0:
         err = redact((result.stderr or result.stdout or "").strip())
-        logger.error("git exit=%s stderr=%s", result.returncode, err[-800:])
+        logger.error("git exit=%s stderr=%s", result.returncode, clip(err, 800))
         raise GitError(f"git failed ({result.returncode}): {err[-800:]}")
     out = redact((result.stdout or "").strip())
     if out:
-        logger.info("git ok stdout=%s", out[-400:])
+        logger.info("git ok stdout=%s", clip(out, 400))
     else:
         logger.info("git ok exit=0")
     return result
@@ -154,6 +183,12 @@ def ls_remote_has_branch(
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> bool:
     logger.info("ls-remote --heads %s refs/heads/%s", redact(repo_url), branch)
+    logger.info(
+        "git params op=ls-remote branch=%s pat_set=%s timeout=%ss",
+        branch,
+        bool((pat or "").strip()),
+        timeout,
+    )
     env = isolated_git_env(repo_url, pat)
     result = _run_git(
         ["ls-remote", "--heads", repo_url, f"refs/heads/{branch}"],
@@ -179,6 +214,14 @@ def clone_repo(
     store: Optional["JobStore"] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
+    logger.info(
+        "git params op=clone dest=%s branch=%s pat_set=%s timeout=%ss repo=%s",
+        dest,
+        source_branch,
+        bool((pat or "").strip()),
+        timeout,
+        redact(repo_url),
+    )
     env = isolated_git_env(repo_url, pat)
     dest.parent.mkdir(parents=True, exist_ok=True)
     git_kw = dict(job=job, store=store, should_stop=should_stop)

@@ -63,6 +63,7 @@ export type ChatMessage = {
   session_id: string
   role: string
   finish?: string | null
+  created_at?: unknown
   parts: ChatPart[]
 }
 

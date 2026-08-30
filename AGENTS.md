@@ -237,7 +237,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   `/var/lib/osm/logs/…`. One file per job. `job_id` and `jira_id`
   also stay on each line.
 - Tag every line with `job_id` and `jira_id` (contextvars).
-- Never log the PAT or a URL that still has userinfo.
+- Never log the PAT or a URL that still has userinfo. Redact
+  `user:pass@`, Azure-style `user@` (PAT as username), and `:pass@`.
+  Inbound `POST /jobs` logs the redacted `repo_url` only — never the
+  `PAT` field.
 - Create `work_dir`, `job_log_dir`, and `job_store_dir` on startup if missing.
 
 ### Dashboard (GET only)

@@ -682,7 +682,8 @@ For every git child of a job:
 - after clone, origin URL scrubbed of any userinfo. The source of
   truth is stored `remote.origin.url`, not `git remote get-url`
   (GitLab PAT `insteadOf` rewrites get-url to `oauth2:PAT@host`)
-- PAT redacted from every log and every callback
+- PAT redacted from every log and every callback, including
+  username-only Azure `https://PAT@host/…` and `:PAT@`
 - never fall back to the machine credential store if the PAT is wrong —
   fail with a clear “auth failed” error
 
@@ -854,6 +855,8 @@ state transition, each outer retry, kill counts, delete attempts, every
 callback attempt and HTTP status.
 
 Never log the PAT, never log a URL that still has userinfo.
+Redact `user:pass@`, `user@`, and `:pass@`. Inbound `POST /jobs`
+logs a redacted `repo_url` only.
 
 Use contextvars so concurrent jobs do not mix ids (virtual_developer
 `log_context.py`).

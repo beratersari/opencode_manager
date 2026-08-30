@@ -13,6 +13,8 @@ from typing import Optional
 from opencode_manager import log_context
 
 _SECRET_USERINFO = re.compile(r"(://)([^/\s:@]+):([^@/\s]+)@")
+_SECRET_PASS_ONLY = re.compile(r"(://):([^@/\s]+)@")
+_SECRET_USER_ONLY = re.compile(r"(://)([^/\s:@]+)@")
 _LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -25,7 +27,10 @@ _LEVELS = {
 def redact(text: str) -> str:
     if not text:
         return text
-    return _SECRET_USERINFO.sub(r"\1***:***@", text)
+    # user:pass@ first, then :pass@, then Azure-style user@ (PAT as username).
+    text = _SECRET_USERINFO.sub(r"\1***:***@", text)
+    text = _SECRET_PASS_ONLY.sub(r"\1:***@", text)
+    return _SECRET_USER_ONLY.sub(r"\1***@", text)
 
 
 def _safe_id(value: str) -> str:

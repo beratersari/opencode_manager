@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from opencode_manager import __version__
 from opencode_manager.dashboard.chat import job_chat_payload
-from opencode_manager.log import get_logger, read_job_log_lines
+from opencode_manager.log import get_logger, read_job_log_lines, redact
 from opencode_manager.manager import Manager
 from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
 
@@ -38,7 +38,7 @@ async def post_jobs(request: Request) -> JSONResponse:
         body.get("agent_mode"),
         body.get("model"),
         body.get("source_branch"),
-        body.get("repo_url"),
+        redact(str(body.get("repo_url") or "")),
         body.get("session_id") or "",
     )
     status, envelope = manager.submit(body)

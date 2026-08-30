@@ -79,6 +79,13 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Queue search honors `jira_id` | `test_queue_jira_filter` |
 | Finished-job `/chat` does not mix later turns from a shared `ses_*` | `test_chat_api_does_not_mix_later_session_turns` |
 
+## Logs
+
+| Condition | Test |
+|---|---|
+| Azure `https://PAT@host/…` is not written to `app.log` | `test_azure_username_pat_url_is_redacted_in_app_log` |
+| `oauth2:PAT@` and `:PAT@` userinfo are redacted in `app.log` | `test_gitlab_oauth2_and_colon_userinfo_redacted_in_app_log` |
+
 ## Job-end kill + delete (every terminal path)
 
 Fake (mocked git / OpenCode) and real (OS children + `file://` git) matrices
@@ -90,5 +97,5 @@ keeps the clone.
 Run:
 
 ```
-pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py tests/test_job_chat_isolation_e2e.py
+pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py tests/test_job_chat_isolation_e2e.py tests/test_inbound_log_redact_e2e.py
 ```

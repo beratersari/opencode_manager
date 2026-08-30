@@ -112,14 +112,19 @@ export function JobDetailPage() {
   )
 }
 
+function isTerminalSuccess(job: JobItem): boolean {
+  return !job.live && (job.status || '').toLowerCase() === 'success'
+}
+
 function Overview({ job }: { job: JobItem }) {
   const attempts = job.attempts || []
+  const showResult = isTerminalSuccess(job) && Boolean(job.text)
   return (
     <div className="space-y-6 text-sm">
-      {job.text && (
+      {showResult && (
         <div>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Result</div>
-          <MarkdownBody text={job.text} />
+          <MarkdownBody text={job.text || ''} />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

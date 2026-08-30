@@ -80,6 +80,70 @@ describe('JobDetailPage', () => {
     expect(screen.queryByText('AAA-1')).toBeNull()
   })
 
+  it('does not show Result from last assistant text while the job is live', async () => {
+    fetchJob.mockResolvedValue({
+      job: {
+        ...jobA,
+        job_id: 'job_run',
+        jira_id: 'RUN-1',
+        status: 'running',
+        live: true,
+        text: 'partial last assistant message',
+      },
+      system_logs: [],
+    })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+
+    renderAt('job_run')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'job_run' })).toBeTruthy()
+    })
+    expect(screen.queryByText('Result')).toBeNull()
+    expect(screen.queryByText('partial last assistant message')).toBeNull()
+  })
+
+  it('shows Result only after a successful finish', async () => {
+    fetchJob.mockResolvedValue({
+      job: { ...jobA, text: 'final assistant answer' },
+      system_logs: [],
+    })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+
+    renderAt('job_aaa')
+    await waitFor(() => {
+      expect(screen.getByText('Result')).toBeTruthy()
+    })
+    expect(screen.getByText('final assistant answer')).toBeTruthy()
+  })
+
+  it('does not treat a finished error as Result', async () => {
+    fetchJob.mockResolvedValue({
+      job: {
+        ...jobA,
+        job_id: 'job_err',
+        status: 'error',
+        live: false,
+        text: 'attempt 1 ended: hang',
+        error_message: 'attempt 1 ended: hang',
+      },
+      system_logs: [],
+    })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+
+    renderAt('job_err')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'job_err' })).toBeTruthy()
+    })
+    expect(screen.queryByText('Result')).toBeNull()
+    expect(screen.getByText('attempt 1 ended: hang')).toBeTruthy()
+  })
+
   it('shows the job that matches the route', async () => {
     fetchJob.mockImplementation(async (id: string) => ({
       job: id === 'job_bbb' ? jobB : jobA,

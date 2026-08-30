@@ -86,6 +86,53 @@ def load_session_messages_from_db(
     return []
 
 
+def _merge_tool_outputs(
+    snapshot: List[Dict[str, Any]], db_messages: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Fill empty tool outputs on this job's messages only. Never append later turns."""
+    by_id = {str(item.get("id") or ""): item for item in db_messages if item.get("id")}
+    merged: List[Dict[str, Any]] = []
+    for message in snapshot:
+        donor = by_id.get(str(message.get("id") or ""))
+        if not donor:
+            merged.append(message)
+            continue
+        parts_out: List[Dict[str, Any]] = []
+        snap_parts = list(message.get("parts") or [])
+        db_parts = [p for p in (donor.get("parts") or []) if isinstance(p, dict)]
+        for index, part in enumerate(snap_parts):
+            if not isinstance(part, dict):
+                parts_out.append(part)
+                continue
+            kind = str(part.get("type") or "").lower()
+            is_tool = kind == "tool" or bool(part.get("tool"))
+            if is_tool and not str(part.get("output") or "").strip():
+                match = db_parts[index] if index < len(db_parts) else None
+                tool = part.get("tool")
+                if tool:
+                    named = [
+                        p
+                        for p in db_parts
+                        if p.get("tool") == tool and str(p.get("output") or "").strip()
+                    ]
+                    if named:
+                        match = named[0]
+                if match and str(match.get("output") or "").strip():
+                    filled = dict(part)
+                    filled["output"] = match["output"]
+                    if match.get("status"):
+                        filled["status"] = match["status"]
+                    if match.get("input") is not None:
+                        filled["input"] = match["input"]
+                    parts_out.append(filled)
+                    continue
+            parts_out.append(part)
+        item = dict(message)
+        item["parts"] = parts_out
+        merged.append(item)
+    return merged
+
+
 def job_chat_payload(job: JobRecord) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = list(job.chat_snapshot or [])
     if job.live and job.serve_base_url and job.session_id and job.clone_path:
@@ -96,11 +143,14 @@ def job_chat_payload(job: JobRecord) -> Dict[str, Any]:
             finally:
                 client.close()
         except Exception:
-            pass
-    if job.session_id and (not messages or _tools_missing_output(messages)):
+            messages = list(job.chat_snapshot or [])
+    # Finished jobs use this job's snapshot. The global opencode.db is keyed
+    # by session_id; later jobs reuse the same ses_* / clone path, so replacing
+    # the transcript from the db mixes another run into this job_id.
+    if job.session_id and messages and _tools_missing_output(messages):
         raw = load_session_messages_from_db(job.session_id)
         if raw:
-            messages = snapshot_chat(raw, job.session_id)
+            messages = _merge_tool_outputs(messages, snapshot_chat(raw, job.session_id))
     return {
         "job_id": job.job_id,
         "session_ids": [job.session_id] if job.session_id else [],

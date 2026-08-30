@@ -1318,7 +1318,7 @@ Windows).
 |---|---|
 | **Details** | History row: ids, status, live, `agent_mode`, `model`, `session_id`, redacted `repo_url`, `source_branch`, `clone_path`, serve pid/port if live, timeout / retry_count / attempt n of m, timestamps, elapsed, error, callback `status_code`, last assistant **text** (the product). **Attempts table** like VD `retry_attempts`: number, kind (hang / timeout / incomplete / serve-dead / create-fail), prompt id sent, error, `session_id`, time. |
 | **Prompt** | Exact user messages we POSTed: `ORIGINAL` plus `UNATTENDED_NUDGE` / `COMPACT_LOOP_NUDGE` / `HANG_RESUME` / `INCOMPLETE_RESUME` (id, text, time). |
-| **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve. After serve is dead: persisted snapshot. Never require the clone to still exist. No Codex path. |
+| **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve. After serve is dead: **this job’s** persisted snapshot (never replace from global `opencode.db` by shared `session_id` — later tickets reuse the same `ses_*`). Missing tool output on existing snapshot ids may be filled from the db. Never require the clone to still exist. No Codex path. |
 | **Logs** | `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` |
 
 No Stop / Delete / Report. Refresh + live WS only.

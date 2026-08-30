@@ -77,6 +77,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Error/Completed filters paginate the filtered set, not page-then-filter | `test_jobs_filter_paginates_filtered_set` |
 | Queue search honors `jira_id` | `test_queue_jira_filter` |
+| Finished-job `/chat` does not mix later turns from a shared `ses_*` | `test_chat_api_does_not_mix_later_session_turns` |
 
 ## Job-end kill + delete (every terminal path)
 
@@ -89,5 +90,5 @@ keeps the clone.
 Run:
 
 ```
-pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py
+pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py tests/test_job_chat_isolation_e2e.py
 ```

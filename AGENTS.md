@@ -251,8 +251,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   queued.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
   (live serve or snapshot), per-job log lines for that
-  `job_id`. Chat must work after the clone is gone. Navigating to an
-  unknown id must not keep the previous job on screen.
+  `job_id`. Chat must work after the clone is gone. After the serve
+  is dead, `/api/jobs/:id/chat` is **this job’s snapshot** — do not
+  replace it from global `opencode.db` by `session_id` (later jobs
+  reuse the same `ses_*` / clone path). Filling missing tool
+  `output` on snapshot message ids is ok; never append later turns.
+  Navigating to an unknown id must not keep the previous job on screen.
 - Jobs list filters (All / In flight / Error / Completed) run on
   the server (`GET /api/jobs?filter=` + `jira_id` + page) so page
   25 is the filtered set. Queue is `GET /api/queue?jira_id=`.

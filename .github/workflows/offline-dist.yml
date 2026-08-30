@@ -1,0 +1,128 @@
+# Build one offline zip for Windows and Linux:
+#   vendor/python-wheels (win + manylinux)
+#   vendor/bin/opencode.exe + vendor/bin/opencode
+#   web/dist
+# Target install (scripts/install.bat|sh) never hits the network.
+
+name: Offline Distribution
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package offline zip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Product version
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            v="${{ github.ref_name }}"
+            v="${v#v}"
+          else
+            v="$(tr -d '[:space:]' < VERSION)-g${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "dist_name=opencode-manager-$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build distribution
+        env:
+          OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: python packaging/build_dist.py --out-dir dist --dist-name "${{ steps.ver.outputs.dist_name }}"
+
+      - name: Assert single zip payload
+        run: |
+          set -euo pipefail
+          zips=(dist/*.zip)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "Expected exactly one zip, found: ${zips[*]}"
+            exit 1
+          fi
+          echo "Zip: ${zips[0]}"
+          stage="dist/stage/${{ steps.ver.outputs.dist_name }}"
+          echo "Stage: $stage"
+          for rel in \
+            install.bat \
+            install.sh \
+            install-opencode.bat \
+            install-opencode.sh \
+            start.bat \
+            start.sh \
+            start-backend.bat \
+            start-frontend.bat \
+            scripts/install_opencode.py \
+            src/opencode_manager/app.py \
+            web/dist/index.html \
+            vendor/python-wheels \
+            vendor/SUPPORTED_PYTHON.txt \
+            vendor/bin/opencode.exe \
+            vendor/bin/opencode \
+            pyproject.toml \
+            settings.yaml
+          do
+            if [ ! -e "$stage/$rel" ]; then
+              echo "Missing required payload path: $rel"
+              exit 1
+            fi
+            echo "OK $rel"
+          done
+          if [ -d "$stage/web/node_modules" ]; then
+            echo "web/node_modules must not be in the offline zip"
+            exit 1
+          fi
+          if ! ls "$stage/web/dist/assets"/index-*.js >/dev/null 2>&1; then
+            echo "web/dist/assets/index-*.js missing"
+            exit 1
+          fi
+          echo "Single-zip payload OK"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}
+          path: dist/${{ steps.ver.outputs.dist_name }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ steps.ver.outputs.dist_name }}.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## Offline installer
+
+            One zip for Windows and Linux: `${{ steps.ver.outputs.dist_name }}.zip`
+
+            1. Download and extract once. Install a supported Python (see `vendor/SUPPORTED_PYTHON.txt`) and Git.
+            2. Run `install.bat` then `install-opencode.bat` (Windows), or `./install.sh` then `./install-opencode.sh` (Linux). No network.
+            3. Run `start.bat` / `./start.sh`.
+               - API + SPA: http://127.0.0.1:8080/jobs
+               - Optional SPA proxy: http://127.0.0.1:5173/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

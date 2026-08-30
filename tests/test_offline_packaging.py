@@ -70,11 +70,16 @@ def test_supported_python_detects_pydantic_core(tmp_path: Path) -> None:
     assert supported == ["3.12"]
 
 
-def test_default_dist_name_has_no_os_suffix() -> None:
-    root = Path(__file__).resolve().parents[1]
-    src = (root / "packaging" / "build_dist.py").read_text(encoding="utf-8")
-    assert 'opencode-manager-{version}' in src
-    assert "opencode-manager-{os_name}" not in src
+def test_three_platform_packs() -> None:
+    mod = _load()
+    assert set(mod.PACKS) == {"windows", "linux", "darwin"}
+    assert mod.PACKS["windows"]["suffix"] == "windows-x64"
+    assert mod.PACKS["linux"]["suffix"] == "linux-x64"
+    assert mod.PACKS["darwin"]["suffix"] == "darwin"
+    assert mod.wheel_for_pack("foo-1.0-py3-none-any.whl", "windows")
+    assert mod.wheel_for_pack("foo-1.0-cp312-cp312-win_amd64.whl", "windows")
+    assert not mod.wheel_for_pack("foo-1.0-cp312-cp312-win_amd64.whl", "linux")
+    assert mod.wheel_for_pack("foo-1.0-cp312-cp312-macosx_11_0_arm64.whl", "darwin")
 
 
 def test_install_sh_picks_os_specific_python() -> None:

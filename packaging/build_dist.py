@@ -183,6 +183,28 @@ WHEEL_PLATFORMS = {
     "darwin-x64": "macosx_11_0_x86_64",
 }
 
+# Three CI zips: Windows, Linux, macOS (arm64 + x64 in the darwin zip).
+PACKS: dict[str, dict[str, object]] = {
+    "windows": {
+        "suffix": "windows-x64",
+        "wheels": ("windows",),
+        "pythons": (("windows", "windows"),),
+        "opencodes": (("windows", "x64", "windows"),),
+    },
+    "linux": {
+        "suffix": "linux-x64",
+        "wheels": ("linux",),
+        "pythons": (("linux", "linux"),),
+        "opencodes": (("linux", "x64", "linux"),),
+    },
+    "darwin": {
+        "suffix": "darwin",
+        "wheels": ("darwin-arm64", "darwin-x64"),
+        "pythons": (("darwin-arm64", "darwin-arm64"), ("darwin-x64", "darwin-x64")),
+        "opencodes": (("darwin", "arm64", "darwin-arm64"), ("darwin", "x64", "darwin-x64")),
+    },
+}
+
 
 def pip_download_wheels(
     reqs: list[str],
@@ -442,6 +464,31 @@ def stage_app(root: Path, payload: Path) -> None:
             print(f"  + {launcher} (zip root)")
 
 
+def wheel_for_pack(name: str, pack: str) -> bool:
+    n = name.lower()
+    if "py3-none-any" in n or "py2.py3-none-any" in n:
+        return True
+    if pack == "windows":
+        return "win_amd64" in n or "win32" in n
+    if pack == "linux":
+        return "manylinux" in n or "linux_x86_64" in n or "musllinux" in n
+    if pack == "darwin":
+        return "macosx" in n
+    return False
+
+
+def copy_wheels_for_pack(src: Path, dest: Path, pack: str) -> int:
+    dest.mkdir(parents=True, exist_ok=True)
+    count = 0
+    if not src.is_dir():
+        return 0
+    for whl in src.iterdir():
+        if whl.is_file() and wheel_for_pack(whl.name, pack):
+            shutil.copy2(whl, dest / whl.name)
+            count += 1
+    return count
+
+
 def copy_spa(spa: Path, payload: Path) -> None:
     dest = payload / "web" / "dist"
     if dest.exists():
@@ -495,33 +542,26 @@ def main(argv: list[str] | None = None) -> int:
     ver = read_versions(root / "packaging" / "versions.env")
     os_name, arch = host_platform()
     version = os.environ.get("OSM_PRODUCT_VERSION") or product_version(root)
-    dist_name = args.dist_name or f"opencode-manager-{version}"
-    pack_platforms = ["windows", "linux", "darwin-arm64", "darwin-x64"]
-    pack_pythons = (
-        ("windows", "windows"),
-        ("linux", "linux"),
-        ("darwin-arm64", "darwin-arm64"),
-        ("darwin-x64", "darwin-x64"),
-    )
-    pack_opencodes = (
-        ("windows", "x64", "windows"),
-        ("linux", "x64", "linux"),
-        ("darwin", "arm64", "darwin-arm64"),
-        ("darwin", "x64", "darwin-x64"),
-    )
+    prefix = args.dist_name or f"opencode-manager-{version}"
     reqs = runtime_requirements(root)
     wheel_versions = [
         x.strip()
         for x in (ver.get("PYTHON_WHEEL_VERSIONS") or "3.12").split(",")
         if x.strip()
     ]
+    if os_name == "windows":
+        host_pack = "windows"
+    elif os_name == "linux":
+        host_pack = "linux"
+    else:
+        host_pack = "darwin"
 
     print("========================================")
     print("  OpenCode Session Manager - offline dist")
     print("========================================")
     print(f"Repo     : {root}")
     print(f"Host     : {os_name}-{arch}")
-    print(f"Zip      : one archive (windows + linux + macOS)")
+    print(f"Zips     : windows-x64, linux-x64, darwin (arm64+x64)")
     print(f"Version  : {version}")
     print(f"OpenCode : {ver.get('OPENCODE_VERSION')}")
     print(f"Wheels   : {', '.join(wheel_versions)}")
@@ -531,88 +571,114 @@ def main(argv: list[str] | None = None) -> int:
     spa = build_spa(root)
 
     if args.in_place:
-        vendor = root / "vendor"
-        wheels = vendor / "python-wheels"
-        print("\nStep 2: Downloading Python wheels into vendor/...")
-        pip_download_wheels(reqs, wheels, wheel_versions, pack_platforms)
-        supported = supported_python_versions(wheels, wheel_versions)
-        (vendor / "SUPPORTED_PYTHON.txt").write_text(
+        pack_ids = (host_pack,)
+        cache = root / "vendor"
+        print(f"\nIn-place: host pack only ({host_pack})")
+    else:
+        pack_ids = ("windows", "linux", "darwin")
+        cache = (Path(args.out_dir).resolve() if args.out_dir else root / "dist") / "_vendor_cache"
+
+    wheel_src = cache / "python-wheels" if not args.in_place else cache / "python-wheels"
+    print("\nStep 2: Downloading Python wheels...")
+    wheel_plats = []
+    for pid in pack_ids:
+        wheel_plats.extend(list(PACKS[pid]["wheels"]))  # type: ignore[arg-type]
+    pip_download_wheels(reqs, wheel_src, wheel_versions, wheel_plats)
+    supported = supported_python_versions(wheel_src, wheel_versions)
+
+    print("\nStep 3: Fetching bundled CPython...")
+    py_assets: list[str] = []
+    pythons_needed = []
+    for pid in pack_ids:
+        pythons_needed.extend(list(PACKS[pid]["pythons"]))  # type: ignore[arg-type]
+    py_root = cache / "python"
+    for pack_os, dest_name in pythons_needed:
+        py_assets.append(fetch_standalone_python(ver, pack_os, py_root / dest_name))
+
+    print("\nStep 4: Fetching OpenCode CLI...")
+    oc_assets: list[str] = []
+    oc_needed = []
+    for pid in pack_ids:
+        oc_needed.extend(list(PACKS[pid]["opencodes"]))  # type: ignore[arg-type]
+    oc_root = cache / "bin"
+    for pack_os, pack_arch, dest_name in oc_needed:
+        oc_assets.append(fetch_opencode(ver, pack_os, pack_arch, oc_root / dest_name))
+
+    if args.in_place:
+        (cache / "SUPPORTED_PYTHON.txt").write_text(
             "# Python minors with a complete offline wheel set\n" + "\n".join(supported) + "\n",
             encoding="utf-8",
         )
-        (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
-        print("\nStep 3: Fetching bundled CPython (windows + linux + macOS)...")
-        py_assets = []
-        for pack_os, dest_name in pack_pythons:
-            py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
-        print("\nStep 4: Fetching OpenCode CLI into vendor/bin...")
-        assets = []
-        for pack_os, pack_arch, dest_name in pack_opencodes:
-            assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin" / dest_name))
-        (vendor / "DIST_VERSION.txt").write_text(
-            f"in-place vendor\nProductVersion={version}\nOpenCode={ver.get('OPENCODE_VERSION')}\n"
-            f"OpenCodeAsset={','.join(assets)}\n"
+        (cache / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
+        (cache / "DIST_VERSION.txt").write_text(
+            f"in-place vendor pack={host_pack}\nProductVersion={version}\n"
+            f"OpenCode={ver.get('OPENCODE_VERSION')}\n"
+            f"OpenCodeAsset={','.join(oc_assets)}\n"
             f"PythonStandalone={','.join(py_assets)}\n"
             f"PythonWheels={','.join(supported)}\n",
             encoding="utf-8",
         )
         print("\n[OK] In-place vendor ready.")
-        print(f"  {wheels}")
-        print(f"  {vendor / 'python'}")
-        print(f"  {vendor / 'bin'}")
+        print(f"  {wheel_src}")
+        print(f"  {py_root}")
+        print(f"  {oc_root}")
         print("  web/dist")
         print("Run scripts/install.sh (or scripts\\install.bat).")
         return 0
 
     out_dir = Path(args.out_dir).resolve() if args.out_dir else root / "dist"
-    stage = out_dir / "stage" / dist_name
-    if stage.exists():
-        shutil.rmtree(stage)
-    stage.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for pid in pack_ids:
+        spec = PACKS[pid]
+        suffix = str(spec["suffix"])
+        name = f"{prefix}-{suffix}"
+        payload = out_dir / "stage" / name
+        if payload.exists():
+            shutil.rmtree(payload)
+        print(f"\nStep 5: Staging {name}...")
+        stage_app(root, payload)
+        copy_spa(spa, payload)
+        vendor = payload / "vendor"
+        n_wheels = copy_wheels_for_pack(wheel_src, vendor / "python-wheels", pid)
+        print(f"  wheels copied for {pid}: {n_wheels}")
+        for pack_os, dest_name in spec["pythons"]:  # type: ignore[misc]
+            src_py = py_root / dest_name
+            dest_py = vendor / "python" / dest_name
+            if dest_py.exists():
+                shutil.rmtree(dest_py)
+            shutil.copytree(src_py, dest_py)
+            print(f"  + python/{dest_name}")
+        for _os, _arch, dest_name in spec["opencodes"]:  # type: ignore[misc]
+            src_oc = oc_root / dest_name
+            dest_oc = vendor / "bin" / dest_name
+            if dest_oc.exists():
+                shutil.rmtree(dest_oc)
+            shutil.copytree(src_oc, dest_oc)
+            print(f"  + bin/{dest_name}")
+        (vendor / "SUPPORTED_PYTHON.txt").write_text(
+            "# Python minors with a complete offline wheel set\n" + "\n".join(supported) + "\n",
+            encoding="utf-8",
+        )
+        (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
+        (payload / "DIST_VERSION.txt").write_text(
+            "opencode-manager offline distribution\n"
+            f"ProductVersion={version}\n"
+            f"Pack={pid}\n"
+            f"DistName={name}\n"
+            f"OpenCode={ver.get('OPENCODE_VERSION')}\n"
+            f"PythonWheels={','.join(supported)}\n"
+            "Bundled CPython creates .venv. No Node.\n",
+            encoding="utf-8",
+        )
+        (payload / "VERSION").write_text(version + "\n", encoding="utf-8")
+        zip_path = out_dir / f"{name}.zip"
+        print(f"  Writing {zip_path.name}...")
+        write_zip(payload, zip_path)
+        written.append(zip_path)
 
-    print("\nStep 2: Staging application files...")
-    stage_app(root, stage)
-    copy_spa(spa, stage)
-
-    vendor = stage / "vendor"
-    wheels = vendor / "python-wheels"
-    print("\nStep 3: Downloading Python wheels (windows + linux + macOS)...")
-    pip_download_wheels(reqs, wheels, wheel_versions, pack_platforms)
-    supported = supported_python_versions(wheels, wheel_versions)
-    (vendor / "SUPPORTED_PYTHON.txt").write_text(
-        "# Python minors with a complete offline wheel set\n" + "\n".join(supported) + "\n",
-        encoding="utf-8",
-    )
-    (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
-
-    print("\nStep 4: Fetching bundled CPython (windows + linux + macOS)...")
-    py_assets = []
-    for pack_os, dest_name in pack_pythons:
-        py_assets.append(fetch_standalone_python(ver, pack_os, vendor / "python" / dest_name))
-
-    print("\nStep 5: Fetching OpenCode CLI (windows + linux + macOS)...")
-    assets = []
-    for pack_os, pack_arch, dest_name in pack_opencodes:
-        assets.append(fetch_opencode(ver, pack_os, pack_arch, vendor / "bin" / dest_name))
-
-    marker = (
-        "opencode-manager offline distribution\n"
-        f"ProductVersion={version}\n"
-        f"DistName={dist_name}\n"
-        f"OpenCode={ver.get('OPENCODE_VERSION')}\n"
-        f"OpenCodeAsset={','.join(assets)}\n"
-        f"PythonStandalone={','.join(py_assets)}\n"
-        f"PythonWheels={','.join(supported)}\n"
-        "Single zip: Windows + Linux. Bundled CPython creates .venv. No Node.\n"
-    )
-    (stage / "DIST_VERSION.txt").write_text(marker, encoding="utf-8")
-    (stage / "VERSION").write_text(version + "\n", encoding="utf-8")
-
-    zip_path = out_dir / f"{dist_name}.zip"
-    print("\nStep 6: Writing zip...")
-    write_zip(stage, zip_path)
-    print("\n[OK] Offline zip ready.")
-    print(f"  {zip_path}")
+    print("\n[OK] Offline zips ready.")
+    for path in written:
+        print(f"  {path}")
     return 0
 
 

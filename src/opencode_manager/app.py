@@ -25,8 +25,8 @@ def create_app(
     settings = settings or load_settings()
     settings.ensure_dirs()
     setup_logging(
-        project_root=settings.project_root,
         job_log_dir=settings.job_log_dir,
+        app_log=settings.app_log_path,
         level=settings.log_level,
     )
     manager = Manager(settings, runner=runner)

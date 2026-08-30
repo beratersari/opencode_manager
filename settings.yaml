@@ -1,21 +1,29 @@
+# Bind address. 0.0.0.0 = all interfaces; 127.0.0.1 = this machine only.
 listen_host: 0.0.0.0
+# Inbound HTTP port (POST /jobs, dashboard, /api).
 listen_port: 8080
+# How many OpenCode jobs may run at once. Extra tickets queue.
 max_concurrent_jobs: 2
+# Seconds to wait for one callback HTTP POST.
 callback_timeout_seconds: 15
+# How many times to retry a failed callback (5xx / network).
 callback_retry_count: 3
+# If non-empty, callback_url host must be in this list. [] = any http(s).
 callback_allowed_hosts: []
-# Two roots: app log is always {project_root}/logs/app.log.
-# Job logs / clones / history are outside the repo (PLAN §9–§10).
-# Windows: C:\osm\.temp  C:\osm\logs  C:\osm\jobs
-work_dir: /var/lib/osm/.temp
-job_log_dir: /var/lib/osm/logs
-job_store_dir: /var/lib/osm/jobs
-queue_path: /var/lib/osm/queue.json
+# One root for everything OSM writes:
+#   .temp/ clones, .serve/ serve logs, logs/, jobs/, queue.json
+# Windows default: C:\osm
+data_dir: /var/lib/osm
+# Minimum log level: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 log_level: INFO
+# OpenCode CLI (PATH name or absolute path).
 opencode_bin: opencode
+# Seconds with no first assistant answer (busy, not compacting) before hang retry.
 hang_timeout_seconds: 180
+# Seconds allowed for git clone / ls-remote.
 git_clone_timeout_seconds: 300
+# First outer-retry backoff, seconds.
 retry_backoff_seconds: 2
+# Cap on exponential backoff between OpenCode attempts, seconds.
 retry_backoff_cap_seconds: 30
 # Optional overlay (gitignored): settings.local.yaml
-

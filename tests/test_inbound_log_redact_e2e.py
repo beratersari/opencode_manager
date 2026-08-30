@@ -31,7 +31,7 @@ def _body(repo_url: str, **overrides) -> dict:
 
 
 def _read_app_log(settings: Settings) -> str:
-    path = settings.project_root / "logs" / "app.log"
+    path = settings.app_log_path
     assert path.is_file(), f"missing {path}"
     return path.read_text(encoding="utf-8")
 

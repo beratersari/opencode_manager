@@ -12,22 +12,10 @@ import yaml
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _default_work_dir() -> Path:
+def _default_data_dir() -> Path:
     if os.name == "nt":
-        return Path(r"C:\osm\.temp")
-    return Path("/var/lib/osm/.temp")
-
-
-def _default_job_log_dir() -> Path:
-    if os.name == "nt":
-        return Path(r"C:\osm\logs")
-    return Path("/var/lib/osm/logs")
-
-
-def _default_job_store_dir() -> Path:
-    if os.name == "nt":
-        return Path(r"C:\osm\jobs")
-    return Path("/var/lib/osm/jobs")
+        return Path(r"C:\osm")
+    return Path("/var/lib/osm")
 
 
 @dataclass
@@ -38,10 +26,13 @@ class Settings:
     callback_timeout_seconds: float = 15.0
     callback_retry_count: int = 3
     callback_allowed_hosts: List[str] = field(default_factory=list)
-    work_dir: Path = field(default_factory=_default_work_dir)
-    job_log_dir: Path = field(default_factory=_default_job_log_dir)
-    job_store_dir: Path = field(default_factory=_default_job_store_dir)
-    queue_path: Path = field(default_factory=lambda: _default_work_dir() / "queue.json")
+    data_dir: Path = field(default_factory=_default_data_dir)
+    work_dir: Optional[Path] = None
+    job_log_dir: Optional[Path] = None
+    job_store_dir: Optional[Path] = None
+    queue_path: Optional[Path] = None
+    serve_dir: Optional[Path] = None
+    app_log_path: Optional[Path] = None
     log_level: str = "INFO"
     opencode_bin: str = "opencode"
     hang_timeout_seconds: float = 180.0
@@ -50,12 +41,36 @@ class Settings:
     retry_backoff_cap_seconds: float = 30.0
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
 
+    def __post_init__(self) -> None:
+        self.apply_layout()
+
+    def apply_layout(self) -> None:
+        """Fill derived paths. YAML load sets them from data_dir; tests may override."""
+        root = Path(self.data_dir)
+        derived = self.work_dir is None
+        if self.work_dir is None:
+            self.work_dir = root / ".temp"
+        if self.job_log_dir is None:
+            self.job_log_dir = root / "logs"
+        if self.job_store_dir is None:
+            self.job_store_dir = root / "jobs"
+        if self.queue_path is None:
+            self.queue_path = root / "queue.json"
+        if self.serve_dir is None:
+            self.serve_dir = root / ".serve" if derived else Path(self.work_dir) / ".serve"
+        if self.app_log_path is None:
+            self.app_log_path = Path(self.job_log_dir) / "app.log"
+
     def ensure_dirs(self) -> None:
+        self.apply_layout()
+        assert self.work_dir and self.job_log_dir and self.job_store_dir
+        assert self.queue_path and self.serve_dir and self.app_log_path
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.job_log_dir.mkdir(parents=True, exist_ok=True)
         self.job_store_dir.mkdir(parents=True, exist_ok=True)
+        self.serve_dir.mkdir(parents=True, exist_ok=True)
         self.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        (self.project_root / "logs").mkdir(parents=True, exist_ok=True)
+        self.app_log_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _as_path(value: Any, default: Path) -> Path:
@@ -92,10 +107,13 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     s.callback_retry_count = int(data.get("callback_retry_count", s.callback_retry_count))
     hosts = data.get("callback_allowed_hosts") or []
     s.callback_allowed_hosts = [str(h).strip().lower() for h in hosts if str(h).strip()]
-    s.work_dir = _as_path(data.get("work_dir"), s.work_dir)
-    s.job_log_dir = _as_path(data.get("job_log_dir"), s.job_log_dir)
-    s.job_store_dir = _as_path(data.get("job_store_dir"), s.job_store_dir)
-    s.queue_path = _as_path(data.get("queue_path"), s.work_dir / "queue.json")
+    s.data_dir = _as_path(data.get("data_dir"), s.data_dir)
+    s.work_dir = s.data_dir / ".temp"
+    s.job_log_dir = s.data_dir / "logs"
+    s.job_store_dir = s.data_dir / "jobs"
+    s.queue_path = s.data_dir / "queue.json"
+    s.serve_dir = s.data_dir / ".serve"
+    s.app_log_path = s.job_log_dir / "app.log"
     s.log_level = str(data.get("log_level", s.log_level)).upper()
     s.opencode_bin = str(data.get("opencode_bin", s.opencode_bin))
     s.hang_timeout_seconds = float(data.get("hang_timeout_seconds", s.hang_timeout_seconds))

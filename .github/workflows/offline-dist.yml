@@ -77,6 +77,8 @@ jobs:
             src/opencode_manager/app.py \
             web/dist/index.html \
             vendor/python-wheels \
+            vendor/python/windows/python.exe \
+            vendor/python/linux/bin/python3 \
             vendor/SUPPORTED_PYTHON.txt \
             vendor/bin/opencode.exe \
             vendor/bin/opencode \
@@ -119,7 +121,7 @@ jobs:
 
             One zip for Windows and Linux: `${{ steps.ver.outputs.dist_name }}.zip`
 
-            1. Download and extract once. Install a supported Python (see `vendor/SUPPORTED_PYTHON.txt`) and Git.
+            1. Download and extract once. Install Git. Python is in the zip (`vendor/python/`).
             2. Run `install.bat` then `install-opencode.bat` (Windows), or `./install.sh` then `./install-opencode.sh` (Linux). No network.
             3. Run `start.bat` / `./start.sh`.
                - API + SPA: http://127.0.0.1:8080/jobs

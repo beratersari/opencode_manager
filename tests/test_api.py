@@ -150,6 +150,28 @@ def test_queue_other_ticket(tmp_settings: Settings) -> None:
         blocker.set()
 
 
+def test_star_callback_hosts_accepts_any_url(tmp_settings: Settings) -> None:
+    tmp_settings.callback_allowed_hosts = ["*"]
+    with _client(tmp_settings) as client:
+        res = client.post(
+            "/jobs",
+            json=_body(callback_url="https://n8n.example.com/webhook-waiting/abc-123"),
+        )
+        assert res.status_code == 202
+
+
+def test_callback_host_not_allowed_is_400(tmp_settings: Settings) -> None:
+    tmp_settings.callback_allowed_hosts = ["only.example"]
+    with _client(tmp_settings) as client:
+        res = client.post(
+            "/jobs",
+            json=_body(callback_url="https://n8n.example.com/webhook-waiting/abc"),
+        )
+        assert res.status_code == 400
+        assert "not allowed" in res.json()["text"]
+        assert res.json()["job_id"] == ""
+
+
 def test_public_repo_without_pat_is_accepted(tmp_settings: Settings) -> None:
     body = _body()
     del body["PAT"]

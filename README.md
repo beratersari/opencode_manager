@@ -62,7 +62,7 @@ There is never a `queued` or `in_progress` callback.
 | `timeout_in_seconds` | yes | One OpenCode attempt (not clone / cleanup). |
 | `retry_count` | yes | Max attempts, first included. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Folder name for the clone. |
-| `callback_url` | yes | Absolute `http(s)` URL for the one terminal POST. |
+| `callback_url` | yes | Absolute `http(s)` URL for the one terminal POST. Default settings accept any host (`callback_allowed_hosts: ["*"]`). |
 | `session_id` | no | Resume this `ses_*` if it is still valid. |
 
 ## curl
@@ -125,8 +125,10 @@ listen is `0.0.0.0:8080` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
-CI workflow **Offline Distribution** builds **four** zips. Download the one
-for your OS (or the combined Windows+Linux zip):
+CI workflow **Offline Distribution** builds **four** payloads. A GitHub
+Actions artifact download is one zip of the folder (`install.bat` /
+`vendor/` at the top). Tag **Releases** attach the four `.zip` files
+directly. Download the one for your OS (or the combined Windows+Linux zip):
 
 - `opencode-manager-<version>-windows-x64.zip`
 - `opencode-manager-<version>-linux-x64.zip`

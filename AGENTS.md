@@ -44,6 +44,9 @@ These look like bugs. They are not.
 - Inbound HTTP is only an ack (`202` / `409` / `400` / `503`). Never hold
   the socket for clone or OpenCode. `503` means the process is not
   accepting (`boot` not finished, or shutting down). No callback.
+- `callback_url` is required and must be absolute `http`/`https`.
+  `callback_allowed_hosts` of `[]`, `["*"]`, or `["all"]` accepts
+  every host. A real host list is SSRF only (`*.example.com` ok).
 - Exactly one POST goes to that job’s `callback_url`, and only when
   the job is terminal (`200` / `404` / `500` / `504`).
   - Accepted job (inbound `202`, queued or started): 1 terminal callback.

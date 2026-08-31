@@ -884,7 +884,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `max_concurrent_jobs` | Worker cap |
 | `callback_timeout_seconds` | Per callback HTTP timeout |
 | `callback_retry_count` | If the caller URL is down |
-| `callback_allowed_hosts` | Optional allow-list (SSRF). Empty = any http(s) URL from the request. |
+| `callback_allowed_hosts` | Optional allow-list (SSRF). `[]` or `["*"]` / `["all"]` = any http(s) URL from the request. `*.example.com` matches that host and subdomains. |
 | `data_dir` | **One root** for everything OSM writes. Default **Windows** `C:\osm`, **Linux** `/var/lib/osm`. Derived: `{data_dir}/.temp` clones, `{data_dir}/.serve` serve logs, `{data_dir}/logs` app + job logs, `{data_dir}/jobs` history, `{data_dir}/queue.json`. |
 | `log_level` | Minimum level for both sinks |
 | `opencode_bin` | Path or name on PATH |
@@ -1069,7 +1069,7 @@ build them).
 - [ ] Setting `max_concurrent_jobs`.
 - [ ] Setting `callback_timeout_seconds`.
 - [ ] Setting `callback_retry_count`.
-- [ ] Setting `callback_allowed_hosts` (empty = any http(s) URL).
+- [ ] Setting `callback_allowed_hosts` (`[]` / `["*"]` = any http(s) URL).
 - [ ] Setting `data_dir` default Windows `C:\osm`, Linux `/var/lib/osm`. Derive `.temp`, `.serve`, `logs`, `jobs`, `queue.json`.
 - [ ] Setting `log_level` (DEBUG / INFO / WARNING / ERROR / CRITICAL).
 - [ ] Setting `opencode_bin`.
@@ -1138,7 +1138,7 @@ build them).
 - [ ] Always put the live `session_id` on every callback.
 - [ ] If callback HTTP fails, retry `callback_retry_count` times, then log; do not re-run OpenCode.
 - [ ] Honor `callback_timeout_seconds` per callback POST.
-- [ ] If `callback_allowed_hosts` is non-empty, reject callbacks to other hosts.
+- [ ] If `callback_allowed_hosts` is a real host list (not `[]` / `*` / `all`), reject callbacks to other hosts.
 
 ### 16.6 Git
 

@@ -202,8 +202,20 @@ def job_matches_list_filter(job: "JobRecord", filt: str) -> bool:
     return True
 
 
+_ALLOW_ALL_HOSTS = frozenset({"*", "all"})
+
+
 def callback_host_allowed(callback_url: str, allowed: List[str]) -> bool:
-    if not allowed:
+    """Empty list, `*`, or `all` accepts every http(s) callback_url host."""
+    tokens = {str(h).strip().lower() for h in allowed if str(h).strip()}
+    if not tokens or tokens & _ALLOW_ALL_HOSTS:
         return True
     host = (urlparse(callback_url).hostname or "").lower()
-    return host in allowed
+    if host in tokens:
+        return True
+    for token in tokens:
+        if token.startswith("*.") and len(token) > 2:
+            suffix = token[2:]
+            if host == suffix or host.endswith("." + suffix):
+                return True
+    return False

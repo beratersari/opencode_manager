@@ -1,4 +1,4 @@
-from opencode_manager.models import parse_model, validate_request_fields
+from opencode_manager.models import callback_host_allowed, parse_model, validate_request_fields
 
 
 def _ok(**overrides):
@@ -38,6 +38,37 @@ def test_unknown_agent():
 
 def test_bad_callback():
     assert "callback_url" in (validate_request_fields(_ok(callback_url="ftp://x")) or "")
+
+
+def test_n8n_wait_url_is_valid():
+    assert (
+        validate_request_fields(
+            _ok(callback_url="https://n8n.example.com/webhook-waiting/abc-123")
+        )
+        is None
+    )
+    assert (
+        validate_request_fields(_ok(callback_url="http://192.168.1.10:5678/webhook-waiting/x"))
+        is None
+    )
+
+
+def test_callback_host_allowed_star_accepts_all():
+    url = "https://n8n.example.com/webhook-waiting/abc"
+    assert callback_host_allowed(url, [])
+    assert callback_host_allowed(url, ["*"])
+    assert callback_host_allowed(url, ["all"])
+    assert callback_host_allowed(url, ["*", "n8n.example.com"])
+    assert callback_host_allowed("http://127.0.0.1:8090/callback", ["*"])
+
+
+def test_callback_host_allowed_list_is_ssrf():
+    url = "https://n8n.example.com/webhook-waiting/abc"
+    assert callback_host_allowed(url, ["n8n.example.com"])
+    assert not callback_host_allowed(url, ["other.example"])
+    assert callback_host_allowed(url, ["*.example.com"])
+    assert callback_host_allowed("https://wait.n8n.cloud/x", ["*.n8n.cloud"])
+    assert not callback_host_allowed("https://evil.com/x", ["*.n8n.cloud"])
 
 
 def test_valid_body():

@@ -8,8 +8,10 @@ max_concurrent_jobs: 2
 callback_timeout_seconds: 15
 # How many times to retry a failed callback (5xx / network).
 callback_retry_count: 3
-# If non-empty, callback_url host must be in this list. [] = any http(s).
-callback_allowed_hosts: []
+# Host allow-list for callback_url (SSRF).
+# [] or ["*"] = accept any http(s) URL from the request.
+# Example restrict: ["n8n.example.com", "*.n8n.cloud"]
+callback_allowed_hosts: ["*"]
 # One root for everything OSM writes:
 #   .temp/ clones, .serve/ serve logs, logs/, jobs/, queue.json
 # Windows default: C:\osm

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — start BOTH backend (:8080) and frontend (:5173).
+# OpenCode Session Manager — start BOTH backend (:4096) and frontend (:5173).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +15,7 @@ LAUNCH="$HERE"
 if [[ -f "$ROOT/scripts/start-backend.sh" ]]; then
   LAUNCH="$ROOT/scripts"
 fi
-DASH_PORT="${OSM_PORT:-8080}"
+DASH_PORT="${OSM_PORT:-4096}"
 BACKEND_PID=""
 
 cleanup() {

@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - start BOTH backend (:8080) and frontend (:5173)
+REM OpenCode Session Manager - start BOTH backend (:4096) and frontend (:5173)
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
 
@@ -25,7 +25,7 @@ echo ========================================
 echo   OpenCode Session Manager - Start all
 echo ========================================
 echo.
-echo   Backend  : http://127.0.0.1:8080/   ^(API + built SPA^)
+echo   Backend  : http://127.0.0.1:4096/   ^(API + built SPA^)
 echo   Frontend : http://127.0.0.1:5173/   ^(SPA proxy, no Node^)
 echo.
 
@@ -57,8 +57,8 @@ set "RC=%ERRORLEVEL%"
 set "OSM_NONINTERACTIVE="
 
 if not "%RC%"=="0" (
-    echo [ERROR] Frontend failed. Backend may still be on :8080.
-    echo Open http://127.0.0.1:8080/jobs for the manager-hosted UI.
+    echo [ERROR] Frontend failed. Backend may still be on :4096.
+    echo Open http://127.0.0.1:4096/jobs for the manager-hosted UI.
     call :maybe_pause
     exit /b 1
 )
@@ -68,8 +68,8 @@ echo ========================================
 echo   Both running
 echo ========================================
 echo Prefer UI:  http://127.0.0.1:5173/
-echo Also UI:    http://127.0.0.1:8080/jobs
-echo API:        http://127.0.0.1:8080/api/meta
+echo Also UI:    http://127.0.0.1:4096/jobs
+echo API:        http://127.0.0.1:4096/api/meta
 echo.
 echo Console windows: OSM-Backend, OSM-Frontend
 echo.

@@ -26,7 +26,7 @@ A ready n8n sub-workflow is [n8nflow.json](n8nflow.json) (from
 replaced. **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
 **OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1** are
 unchanged: OSM `text` still goes into that LLM, then the same return
-shape. Import the flow and set `remoteIP` / `remotePort` (8080) on
+shape. Import the flow and set `remoteIP` / `remotePort` (4096) on
 **remoteComputerInfo1**. **buildOsmRequest** hardcodes `PAT` and `model`.
 Do not poll OSM.
 
@@ -149,7 +149,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 Start a job (private GitLab / Azure DevOps: send `PAT`. Public: omit it or use `""`):
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8080/jobs \
+curl -sS -X POST http://127.0.0.1:4096/jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "repo_url": "https://gitlab.example.com/group/repo.git",
@@ -168,7 +168,7 @@ curl -sS -X POST http://127.0.0.1:8080/jobs \
 Optional resume:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8080/jobs \
+curl -sS -X POST http://127.0.0.1:4096/jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "repo_url": "https://github.com/example/repo.git",
@@ -187,11 +187,11 @@ curl -sS -X POST http://127.0.0.1:8080/jobs \
 Watch only (GET). The dashboard never starts or stops work:
 
 ```bash
-curl -sS 'http://127.0.0.1:8080/api/jobs?filter=active'
-curl -sS 'http://127.0.0.1:8080/api/jobs?jira_id=PROJ-123'
-curl -sS 'http://127.0.0.1:8080/api/jobs/job_xxxxxxxx'
-curl -sS 'http://127.0.0.1:8080/api/jobs/job_xxxxxxxx/chat'
-curl -sS 'http://127.0.0.1:8080/api/jobs/job_xxxxxxxx/logs'
+curl -sS 'http://127.0.0.1:4096/api/jobs?filter=active'
+curl -sS 'http://127.0.0.1:4096/api/jobs?jira_id=PROJ-123'
+curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx'
+curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx/chat'
+curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx/logs'
 ```
 
 ## Run
@@ -200,7 +200,7 @@ Needs `git` and the **offline zip** (or a source tree after
 `packaging/build_dist.py --in-place`). Python is **in the zip** — the
 installer does not use a system interpreter. Set **one** `data_dir`
 (clones in `.temp/`, logs in `logs/`, history in `jobs/`). Default
-listen is `0.0.0.0:8080` in `settings.yaml`.
+listen is `0.0.0.0:4096` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
@@ -235,7 +235,7 @@ and check the prebuilt SPA. They never hit PyPI or npm. OpenCode is a separate
 installer: `install-opencode.*` deletes `<user>/.opencode` (Windows:
 `%USERPROFILE%\.opencode`) and copies `vendor/bin` from scratch.
 `start-frontend` is a Python SPA proxy on `:5173` (not Vite). The manager
-also serves the same SPA at http://127.0.0.1:8080/jobs.
+also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 ### Build the vendor payload (needs network, once)
 
@@ -259,10 +259,10 @@ opencode-manager
 Check it is up:
 
 ```bash
-curl -sS http://127.0.0.1:8080/api/meta
+curl -sS http://127.0.0.1:4096/api/meta
 ```
 
-Dashboard: http://127.0.0.1:8080/jobs
+Dashboard: http://127.0.0.1:4096/jobs
 
 Local fake n8n Wait node (manager must already be running):
 

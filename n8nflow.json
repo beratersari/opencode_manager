@@ -28,7 +28,7 @@
             {
               "id": "a5940284-bf2f-4542-ac0e-7db975e9eed5",
               "name": "remotePort",
-              "value": 8080,
+              "value": 4096,
               "type": "number"
             },
             {
@@ -61,7 +61,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen port (8080), not a per-job opencode serve port."
+      "notes": "OSM listen port (4096), not a per-job opencode serve port."
     },
     {
       "parameters": {

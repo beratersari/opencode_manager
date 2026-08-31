@@ -1,7 +1,7 @@
 # Bind address. 0.0.0.0 = all interfaces; 127.0.0.1 = this machine only.
 listen_host: 0.0.0.0
 # Inbound HTTP port (POST /jobs, dashboard, /api).
-listen_port: 8080
+listen_port: 4096
 # How many OpenCode jobs may run at once. Extra tickets queue.
 max_concurrent_jobs: 2
 # Seconds to wait for one callback HTTP POST.

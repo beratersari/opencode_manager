@@ -126,7 +126,7 @@ echo.
 echo OpenCode is separate:
 echo   scripts\install-opencode.bat
 echo Then:
-echo   scripts\start-backend.bat     API + SPA  http://127.0.0.1:8080/
+echo   scripts\start-backend.bat     API + SPA  http://127.0.0.1:4096/
 echo   scripts\start-frontend.bat    SPA proxy  http://127.0.0.1:5173/
 echo   scripts\start.bat             both
 echo.

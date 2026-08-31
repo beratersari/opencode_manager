@@ -21,7 +21,7 @@ def _default_data_dir() -> Path:
 @dataclass
 class Settings:
     listen_host: str = "127.0.0.1"
-    listen_port: int = 8080
+    listen_port: int = 4096
     max_concurrent_jobs: int = 2
     callback_timeout_seconds: float = 15.0
     callback_retry_count: int = 3

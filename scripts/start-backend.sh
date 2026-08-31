@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — start BACKEND only (API + built SPA on :8080).
+# OpenCode Session Manager — start BACKEND only (API + built SPA on :4096).
 # For a separate UI on :5173, use start-frontend.sh after this.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ else
 fi
 cd "$ROOT"
 
-DASH_PORT="${OSM_PORT:-8080}"
+DASH_PORT="${OSM_PORT:-4096}"
 FRONTEND_PORT=5173
 VENV_PY="$ROOT/.venv/bin/python"
 OSM_PY=""

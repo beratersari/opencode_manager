@@ -880,7 +880,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 
 | Key | Role |
 |---|---|
-| `listen_host` / `listen_port` | Inbound API |
+| `listen_host` / `listen_port` | Inbound API. Default port **4096** (not a job `opencode serve` port). |
 | `max_concurrent_jobs` | Worker cap |
 | `callback_timeout_seconds` | Per callback HTTP timeout |
 | `callback_retry_count` | If the caller URL is down |

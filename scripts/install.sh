@@ -91,7 +91,7 @@ echo
 echo "OpenCode is separate:"
 echo "  scripts/install-opencode.sh"
 echo "Then:"
-echo "  scripts/start-backend.sh      API + SPA  http://127.0.0.1:8080/"
+echo "  scripts/start-backend.sh      API + SPA  http://127.0.0.1:4096/"
 echo "  scripts/start-frontend.sh     SPA proxy  http://127.0.0.1:5173/"
 echo "  scripts/start.sh              both"
 echo

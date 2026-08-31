@@ -1,7 +1,7 @@
 """Serve the prebuilt dashboard SPA and reverse-proxy /api + /ws to the manager.
 
 Offline packages have no Node/Vite. start-frontend runs this on :5173 while
-the manager serves API + the same SPA on :8080.
+the manager serves API + the same SPA on :4096.
 """
 
 from __future__ import annotations
@@ -254,7 +254,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p.add_argument(
         "--backend",
-        default=_env("OSM_BACKEND_URL", "http://127.0.0.1:8080"),
+        default=_env("OSM_BACKEND_URL", "http://127.0.0.1:4096"),
         help="Manager base URL",
     )
     p.add_argument(

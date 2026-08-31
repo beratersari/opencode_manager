@@ -22,7 +22,7 @@ PAGE = ROOT / "index.html"
 
 _lock = threading.Lock()
 _events: list[dict[str, Any]] = []
-_osm = "http://127.0.0.1:8080"
+_osm = "http://127.0.0.1:4096"
 _public_base = "http://127.0.0.1:8090"
 
 
@@ -172,7 +172,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="OSM job tester (send + listen)")
     parser.add_argument("--listen", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
-    parser.add_argument("--osm", default="http://127.0.0.1:8080")
+    parser.add_argument("--osm", default="http://127.0.0.1:4096")
     parser.add_argument(
         "--public-base",
         default="",

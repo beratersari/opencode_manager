@@ -7,14 +7,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8080',
+      '/api': 'http://127.0.0.1:4096',
       '/jobs': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://127.0.0.1:4096',
         bypass(req) {
           if (req.method === 'GET') return req.url
         },
       },
-      '/ws': { target: 'ws://127.0.0.1:8080', ws: true },
+      '/ws': { target: 'ws://127.0.0.1:4096', ws: true },
     },
   },
   build: {

@@ -22,7 +22,7 @@ cd /d "%ROOT%"
 
 set "FRONTEND_HOST=0.0.0.0"
 set "FRONTEND_PORT=5173"
-set "BACKEND_URL=http://127.0.0.1:8080"
+set "BACKEND_URL=http://127.0.0.1:4096"
 set "WEB_DIST=%ROOT%\web\dist"
 set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"
 set "OSM_PY="

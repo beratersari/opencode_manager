@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - start BACKEND only (API + built SPA on :8080)
+REM OpenCode Session Manager - start BACKEND only (API + built SPA on :4096)
 REM For a separate UI on :5173, use start-frontend.bat after this.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
@@ -20,7 +20,7 @@ if exist "%HERE%\pyproject.toml" (
 )
 cd /d "%ROOT%"
 
-set "DASH_PORT=8080"
+set "DASH_PORT=4096"
 set "FRONTEND_PORT=5173"
 set "VENV_PY=%ROOT%\.venv\Scripts\python.exe"
 set "OSM_PY="

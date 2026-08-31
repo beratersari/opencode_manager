@@ -616,7 +616,7 @@ def copy_spa(spa: Path, payload: Path) -> None:
         shutil.copy2(pkg, payload / "web" / "package.json")
     (payload / "web" / "DIST_SPA.txt").write_text(
         "OpenCode Session Manager dashboard SPA (production build).\n"
-        "Served by the manager at http://127.0.0.1:8080/jobs\n"
+        "Served by the manager at http://127.0.0.1:4096/jobs\n"
         "No Node required at runtime.\n",
         encoding="utf-8",
     )

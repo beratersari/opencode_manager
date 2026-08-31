@@ -27,7 +27,7 @@ def dist(tmp_path: Path) -> Path:
 
 
 def test_spa_index_served(dist: Path) -> None:
-    app = mod.build_app(dist=dist, backend="http://127.0.0.1:8080")
+    app = mod.build_app(dist=dist, backend="http://127.0.0.1:4096")
     client = TestClient(app)
     r = client.get("/")
     assert r.status_code == 200
@@ -35,7 +35,7 @@ def test_spa_index_served(dist: Path) -> None:
 
 
 def test_jobs_route_is_spa(dist: Path) -> None:
-    app = mod.build_app(dist=dist, backend="http://127.0.0.1:8080")
+    app = mod.build_app(dist=dist, backend="http://127.0.0.1:4096")
     client = TestClient(app)
     r = client.get("/jobs/job_abc")
     assert r.status_code == 200
@@ -48,7 +48,7 @@ def test_js_assets_not_served_as_text_plain(dist: Path) -> None:
     mimetypes.init()
     mimetypes.types_map[".js"] = "text/plain"
 
-    app = mod.build_app(dist=dist, backend="http://127.0.0.1:8080")
+    app = mod.build_app(dist=dist, backend="http://127.0.0.1:4096")
     client = TestClient(app)
     r = client.get("/assets/app.js")
     assert r.status_code == 200

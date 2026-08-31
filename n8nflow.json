@@ -4,7 +4,7 @@
     {
       "parameters": {
         "inputSource": "jsonExample",
-        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\"\n}"
+        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\",\n  \"is_session_deleted\":false\n}"
       },
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -62,6 +62,92 @@
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
       "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "92f0e7d5-32eb-41be-b0da-1f3849c5af35",
+              "leftValue": "={{ $('When Executed by Another Workflow').item.json.is_session_deleted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        128
+      ],
+      "id": "a70e274c-75a1-42cc-aabc-4e9094fbe6d0",
+      "name": "isSessionDeleted1",
+      "notes": "Parent is_session_deleted: true → OSM DELETE /sessions. false → POST /jobs."
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://{{ $('remoteComputerInfo1').item.json.remoteIP }}:{{ $('remoteComputerInfo1').item.json.remotePort }}/sessions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"jira_id\": \"{{ $('When Executed by Another Workflow').item.json.issue_id }}\",\n  \"session_id\": \"{{ $('When Executed by Another Workflow').item.json.session_id }}\"\n}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -208,
+        32
+      ],
+      "id": "49d01fba-cfcb-4927-9687-048624fce93a",
+      "name": "deleteSession1",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "OSM DELETE /sessions. neverError so 409/400/503 still return the envelope. No Wait."
+    },
+    {
+      "parameters": {
+        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nconst status = Number(env.status_code || j.statusCode || 0);\nreturn [{ json: {\n  [names.session_info]: 'deleted',\n  [names.is_success]: status === 200,\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || src.session_id || '',\n  status_code: status,\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        32
+      ],
+      "id": "21fcd3af-0d19-455a-8b1f-6d001bc2b39b",
+      "name": "parseDeleteReturnInfo1",
+      "notes": "is_success only when OSM status_code is 200. 409 (ticket still processing) is a refusal."
     },
     {
       "parameters": {
@@ -352,6 +438,12 @@
               "id": "f5d4d171-49d8-4013-ba9b-d0309dc1ada7",
               "name": "session_id",
               "value": "session_id",
+              "type": "string"
+            },
+            {
+              "id": "66755929-31dc-4880-ac0b-1f64ef564d11",
+              "name": "is_session_deleted",
+              "value": "is_session_deleted",
               "type": "string"
             },
             {
@@ -656,7 +748,8 @@
           "issue_id": "ARI-259",
           "task_type": "bug",
           "working_mode": "Plan",
-          "session_id": "-1"
+          "session_id": "-1",
+          "is_session_deleted": false
         }
       }
     ]
@@ -677,7 +770,36 @@
       "main": [
         [
           {
+            "node": "isSessionDeleted1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isSessionDeleted1": {
+      "main": [
+        [
+          {
+            "node": "deleteSession1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "parseAllNeedInfo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "deleteSession1": {
+      "main": [
+        [
+          {
+            "node": "parseDeleteReturnInfo1",
             "type": "main",
             "index": 0
           }

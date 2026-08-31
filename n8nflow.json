@@ -1,67 +1,437 @@
 {
-  "name": "My workflow 603",
+  "name": "ari_conding_agent_mini",
   "nodes": [
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\",\n  \"is_session_deleted\":false\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
       "position": [
-        -1232,
-        -496
+        -1104,
+        128
       ],
-      "id": "3fc50d91-c0f5-4232-b4d8-941d9e0cfcf4",
-      "name": "No Operation, do nothing1"
+      "id": "7929487c-dbaf-4e59-a245-83821b875ab9",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d6a0e2b2-c454-4f5d-a8d2-96fdc8fdf185",
+              "name": "task_description",
+              "value": "task_description",
+              "type": "string"
+            },
+            {
+              "id": "70ffe608-778c-4e04-ab87-2f9d34d4bb45",
+              "name": "source_branch_name",
+              "value": "source_branch_name",
+              "type": "string"
+            },
+            {
+              "id": "03d6a645-b666-4eea-9cdc-9541dc30f4a9",
+              "name": "repo_url",
+              "value": "repo_url",
+              "type": "string"
+            },
+            {
+              "id": "978483f8-9738-4f81-a660-5969c28982a9",
+              "name": "issue_id",
+              "value": "issue_id",
+              "type": "string"
+            },
+            {
+              "id": "d528f99c-3ea6-46a9-9a35-e99b275d2a3a",
+              "name": "task_type",
+              "value": "task_type",
+              "type": "string"
+            },
+            {
+              "id": "996f6727-d063-4fe3-adfc-bc1165bfd65c",
+              "name": "working_mode",
+              "value": "working_mode",
+              "type": "string"
+            },
+            {
+              "id": "f5d4d171-49d8-4013-ba9b-d0309dc1ada7",
+              "name": "session_id",
+              "value": "session_id",
+              "type": "string"
+            },
+            {
+              "id": "66755929-31dc-4880-ac0b-1f64ef564d11",
+              "name": "is_session_deleted",
+              "value": "is_session_deleted",
+              "type": "string"
+            },
+            {
+              "id": "cb72e322-3032-4064-9c3d-2cf20947e65f",
+              "name": "is_success",
+              "value": "is_success",
+              "type": "string"
+            },
+            {
+              "id": "be790a44-1983-4eec-bfc6-423b6b5837a7",
+              "name": "session_info",
+              "value": "session_info",
+              "type": "string"
+            },
+            {
+              "id": "95e51c61-e6f5-49fc-8038-7b62ef77250d",
+              "name": "target_branch_name",
+              "value": "target_branch_name",
+              "type": "string"
+            },
+            {
+              "id": "c7c79c03-1434-4c93-b7f6-bb6e32f86f3c",
+              "name": "title",
+              "value": "title",
+              "type": "string"
+            },
+            {
+              "id": "52337766-0814-4115-a2f3-d674bc22209e",
+              "name": "description",
+              "value": "description",
+              "type": "string"
+            },
+            {
+              "id": "a11e8b20-6c3a-4f01-9c2d-0e8f1b2a3c4d",
+              "name": "job_id",
+              "value": "job_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -880,
+        128
+      ],
+      "id": "69456019-1639-4cc3-917f-849761bb78c9",
+      "name": "staticVariableNames1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9d1b596e-d41d-4174-8574-d7ac22ffe561",
+              "name": "osmHost",
+              "value": "18.210.7.152",
+              "type": "string"
+            },
+            {
+              "id": "a5940284-bf2f-4542-ac0e-7db975e9eed5",
+              "name": "osmPort",
+              "value": 8080,
+              "type": "number"
+            },
+            {
+              "id": "19126df2-82dd-49ae-8857-c8d58d30df80",
+              "name": "timeout_in_seconds",
+              "value": 1800,
+              "type": "number"
+            },
+            {
+              "id": "43cb5918-5198-4b51-b0fb-b6d5be0c1e2f",
+              "name": "retry_count",
+              "value": 1,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -656,
+        128
+      ],
+      "id": "3afdae00-4442-46a6-9318-5952590acb23",
+      "name": "remoteComputerInfo1",
+      "notes": "OSM listen_port is 8080, not the per-job opencode serve port."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "92f0e7d5-32eb-41be-b0da-1f3849c5af35",
+              "leftValue": "={{ $('When Executed by Another Workflow').item.json.is_session_deleted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        128
+      ],
+      "id": "a70e274c-75a1-42cc-aabc-4e9094fbe6d0",
+      "name": "isSessionDeleted1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "387a81c1-5631-42c0-b795-6a393e4d62f0",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "deleted",
+              "type": "string"
+            },
+            {
+              "id": "f858978e-4717-47fe-b2e3-2f1ea135d50a",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "b2c3d4e5-f607-489a-9b0c-1d2e3f405162",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "c3d4e5f6-0718-49ab-8c1d-2e3f40516273",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "OSM has no session delete. session_id was not sent; no job was started.",
+              "type": "string"
+            },
+            {
+              "id": "d4e5f607-1829-4abc-9d2e-3f4051627384",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "e5f60718-293a-4bcd-ae3f-405162738495",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "f6071829-3a4b-4cde-bf40-5162738495a6",
+              "name": "={{ $('staticVariableNames1').item.json.job_id }}",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -208,
+        0
+      ],
+      "id": "21fcd3af-0d19-455a-8b1f-6d001bc2b39b",
+      "name": "parseDeleteReturnInfo1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7089a0d0-6574-4f23-a9a4-0f35f6be6dab",
+              "name": "={{ $('staticVariableNames1').item.json.task_description }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_description }}",
+              "type": "string"
+            },
+            {
+              "id": "ef50e7cc-73e3-4876-9371-210f1780bf25",
+              "name": "={{ $('staticVariableNames1').item.json.source_branch_name }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.source_branch_name }}",
+              "type": "string"
+            },
+            {
+              "id": "15f68a63-6661-4adc-92cf-eafdb6257ea1",
+              "name": "={{ $('staticVariableNames1').item.json.repo_url }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.repo_url }}",
+              "type": "string"
+            },
+            {
+              "id": "acfaa84b-45df-460a-9118-265dc599fd6d",
+              "name": "={{ $('staticVariableNames1').item.json.task_type }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_type }}",
+              "type": "string"
+            },
+            {
+              "id": "07b7e409-2d59-4a6a-a22f-169813d9270e",
+              "name": "={{ $('staticVariableNames1').item.json.working_mode }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.working_mode }}",
+              "type": "string"
+            },
+            {
+              "id": "c4891190-9b34-4e3b-9db9-396471bffbe5",
+              "name": "={{ $('staticVariableNames1').item.json.issue_id }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.issue_id }}",
+              "type": "string"
+            },
+            {
+              "id": "cf384b64-48ce-41b1-ad4a-308fa956ff0f",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "aa000001-0000-4000-8000-000000000001",
+              "name": "text",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_description }}",
+              "type": "string"
+            },
+            {
+              "id": "aa000001-0000-4000-8000-000000000002",
+              "name": "agent",
+              "value": "={{ $('When Executed by Another Workflow').item.json.agent }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -208,
+        224
+      ],
+      "id": "2846f851-30e3-4fa0-9de6-ab5dd2e03cb8",
+      "name": "parseAllNeedInfo1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($input.first().json[\"agent\"] === \"planner\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        224
+      ],
+      "id": "cb31ad63-b3ce-449b-a5e6-d4dfc2b4e086",
+      "name": "strginfyInputText1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst rawIssue = $input.first().json.issueText;\nlet prompt = rawIssue;\nif (typeof rawIssue === 'string') {\n  try { prompt = JSON.parse(rawIssue); } catch { prompt = rawIssue; }\n}\nconst rawSid = src.session_id;\nconst sessionId = (typeof rawSid === 'string' && rawSid.startsWith('ses_')) ? rawSid : '';\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: String(src.repo_url || '').trim(),\n  PAT: '',\n  source_branch: String(src.source_branch_name || '').trim(),\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Number(osm.timeout_in_seconds || 1800),\n  retry_count: Number(osm.retry_count || 1),\n  jira_id: String(src.issue_id || '').trim(),\n  callback_url: $execution.resumeUrl,\n};\nif (sessionId) body.session_id = sessionId;\nreturn [{ json: { osmBody: body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        224
+      ],
+      "id": "a0b1c2d3-e4f5-4678-8901-23456789abcd",
+      "name": "buildOsmRequest",
+      "notes": "PAT and model are hardcoded here. Prompt comes from strginfyInputText1. callback_url is $execution.resumeUrl."
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=http://{{ $('remoteComputerInfo').item.json.remoteIP }}:{{ $('remoteComputerInfo').item.json.remotePort }}/session/{{ $('parseOpencodeRequestJson').item.json.sessionID }}/prompt_async",
+        "url": "=http://{{ $('remoteComputerInfo1').item.json.osmHost }}:{{ $('remoteComputerInfo1').item.json.osmPort }}/jobs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": {\n    \"providerID\": \"{{ $('parseOpencodeRequestJson').item.json.providerID }}\",\n    \"modelID\": \"{{ $('parseOpencodeRequestJson').item.json.modelID }}\"\n  },\n  \"agent\": \"{{ $('parseOpencodeRequestJson').item.json.agent }}\",\n  \"parts\": [\n    {\n      \"type\": \"text\",\n      \"text\": {{ $json.issueText }}\n    }\n  ]\n}",
+        "jsonBody": "={{ JSON.stringify($json.osmBody) }}",
         "options": {
-          "timeout": "={{ $('remoteComputerInfo').item.json.timeout / 10 }}"
+          "timeout": 30000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -1680,
-        -304
+        496,
+        224
       ],
-      "id": "ea0d7360-0d0f-4cc7-879e-4088d560bff8",
-      "name": "sendRequestToAI",
+      "id": "f06b7dee-6256-4e9c-99cc-bbac9867ac72",
+      "name": "postJobs",
+      "notes": "Ack only. Do not hold this HTTP call for OpenCode.",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "options": {
-          "reset": true
-        }
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "aa11bb22-cc33-4dd4-8ee5-ff6677889900",
+              "leftValue": "={{ $json.status_code }}",
+              "rightValue": 202,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
       "position": [
-        -1456,
-        -304
+        752,
+        224
       ],
-      "id": "9da3cce1-7c72-4114-bfc5-070ff7886c4d",
-      "name": "isSessionFinishLoop"
+      "id": "e4ce800f-d13c-4117-8195-a28818fb1e1b",
+      "name": "ackIs202"
     },
     {
       "parameters": {
-        "amount": "=60"
+        "resume": "webhook",
+        "limitWaitTime": true,
+        "resumeAmount": 6,
+        "resumeUnit": "hours",
+        "options": {}
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -1232,
-        -304
+        1008,
+        128
       ],
-      "id": "9f2dbc4d-53d3-4736-a7e2-db66ea5aa81d",
-      "name": "waitForSpecificTime",
-      "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b"
+      "id": "d77b433a-cb0b-4139-b486-53babf6b45d3",
+      "name": "waitForOsmCallback",
+      "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b",
+      "notes": "OSM POSTs one terminal envelope here. Never queued/in_progress."
     },
     {
       "parameters": {
@@ -74,13 +444,12 @@
           },
           "conditions": [
             {
-              "id": "f09724fd-47eb-40b4-b4f7-9c3793ebcce7",
-              "leftValue": "={{ $runIndex >= 100 ||  $json.exists }}",
-              "rightValue": false,
+              "id": "bb22cc33-dd44-4ee5-9ff6-001122334455",
+              "leftValue": "={{ $json.status_code }}",
+              "rightValue": 200,
               "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
+                "type": "number",
+                "operation": "equals"
               }
             }
           ],
@@ -91,139 +460,284 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -784,
-        -160
+        1264,
+        128
       ],
-      "id": "dc56fff1-d10b-40d3-9d6a-4b3330098611",
-      "name": "isTimeoutOrFinished"
+      "id": "655abb78-2408-443a-8e4d-986eb9d4e913",
+      "name": "callbackIs200"
     },
     {
       "parameters": {
-        "url": "=http://{{ $('remoteComputerInfo').item.json.remoteIP }}:{{ $('remoteComputerInfo').item.json.remotePort + 1 }}/sessions",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
+        "assignments": {
+          "assignments": [
             {
-              "name": "sessionId",
-              "value": "={{ $('parseOpencodeRequestJson').item.json.sessionID }}"
+              "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f7536ce3-8358-454c-972c-5e17938b5de8",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "178e466d-4ca3-400b-91d6-bc628244708f",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "401a150b-4b55-4620-ba53-8e8e7236ee4f",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "d0a79bf7-8f99-47f2-b1e6-c94ecd41225b",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "22a8c4bf-ca00-4598-8189-20f8a11dbc34",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "updated",
+              "type": "string"
+            },
+            {
+              "id": "33b9d5d0-db11-4a60-9290-21g9b22c33d4",
+              "name": "={{ $('staticVariableNames1').item.json.job_id }}",
+              "value": "={{ $json.job_id }}",
+              "type": "string"
             }
           ]
         },
-        "options": {
-          "timeout": "={{ $('remoteComputerInfo').item.json.timeout / 10 }}"
-        }
+        "options": {}
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
-        -1008,
-        -304
+        1520,
+        48
       ],
-      "id": "dbd05d97-7846-4686-ac86-12b358625a4d",
-      "name": "sessionStatusInfo",
-      "alwaysOutputData": false,
-      "onError": "continueRegularOutput"
+      "id": "dfa626d7-beb0-453a-9050-1e0cabf5321c",
+      "name": "returnSuccess1"
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
+        "assignments": {
+          "assignments": [
             {
-              "id": "a7322219-b4e2-491b-8d3b-3c45b48c5b01",
-              "leftValue": "={{!!$json.text}}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
+              "id": "4761cb68-ef39-40cf-be93-be3607e8a8a1",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "g7536ce3-8358-454c-972c-5e17938b5de9",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "278e466d-4ca3-400b-91d6-bc628244708g",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "501a150b-4b55-4620-ba53-8e8e7236ee4g",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "={{ $json.text || $json.error || 'OSM job failed' }}",
+              "type": "string"
+            },
+            {
+              "id": "e0a79bf7-8f99-47f2-b1e6-c94ecd41225c",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "32a8c4bf-ca00-4598-8189-20f8a11dbc35",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "updated",
+              "type": "string"
+            },
+            {
+              "id": "43b9d5d0-db11-4a60-9290-21g9b22c33d5",
+              "name": "={{ $('staticVariableNames1').item.json.job_id }}",
+              "value": "={{ $json.job_id }}",
+              "type": "string"
             }
-          ],
-          "combinator": "and"
+          ]
         },
         "options": {}
       },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
-        -560,
-        -160
+        1520,
+        320
       ],
-      "id": "55dd4771-f735-49be-bf8d-74c42362e255",
-      "name": "isTextExist"
+      "id": "90cdad78-bb94-4935-b723-4abac4ba3c79",
+      "name": "returnFail1"
     }
   ],
-  "pinData": {},
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "task_description": "do nothing",
+          "source_branch_name": "develop",
+          "repo_url": "https://hostname.company.com.tr/test/test_project.git",
+          "issue_id": "ARI-259",
+          "task_type": "bug",
+          "working_mode": "Plan",
+          "session_id": "-1",
+          "is_session_deleted": false
+        }
+      }
+    ]
+  },
   "connections": {
-    "sendRequestToAI": {
+    "When Executed by Another Workflow": {
       "main": [
         [
           {
-            "node": "isSessionFinishLoop",
+            "node": "staticVariableNames1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "isSessionFinishLoop": {
+    "staticVariableNames1": {
       "main": [
         [
           {
-            "node": "No Operation, do nothing1",
+            "node": "remoteComputerInfo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "remoteComputerInfo1": {
+      "main": [
+        [
+          {
+            "node": "isSessionDeleted1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isSessionDeleted1": {
+      "main": [
+        [
+          {
+            "node": "parseDeleteReturnInfo1",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "waitForSpecificTime",
+            "node": "parseAllNeedInfo1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "waitForSpecificTime": {
+    "buildOsmRequest": {
       "main": [
         [
           {
-            "node": "sessionStatusInfo",
+            "node": "postJobs",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "isTimeoutOrFinished": {
+    "postJobs": {
       "main": [
         [
           {
-            "node": "isTextExist",
+            "node": "ackIs202",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ackIs202": {
+      "main": [
+        [
+          {
+            "node": "waitForOsmCallback",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "isSessionFinishLoop",
+            "node": "returnFail1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "sessionStatusInfo": {
+    "waitForOsmCallback": {
       "main": [
         [
           {
-            "node": "isTimeoutOrFinished",
+            "node": "callbackIs200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "callbackIs200": {
+      "main": [
+        [
+          {
+            "node": "returnSuccess1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "returnFail1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parseAllNeedInfo1": {
+      "main": [
+        [
+          {
+            "node": "strginfyInputText1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "strginfyInputText1": {
+      "main": [
+        [
+          {
+            "node": "buildOsmRequest",
             "type": "main",
             "index": 0
           }
@@ -237,11 +751,10 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "64166dd4-efe3-4f1c-97aa-c54b8ee3a652",
+  "versionId": "d414227a-d274-4267-8915-b1decb4d544a",
   "meta": {
     "instanceId": "3fd2a9ed563ac88aef341fdaad8b1749cd4358ce8bf834e7a58613197496e399"
   },
-  "id": "WHaIwhdWp35akaFU",
+  "id": "yY77oYPuNnhRt0Zt",
   "tags": []
 }
-

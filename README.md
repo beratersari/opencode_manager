@@ -21,6 +21,44 @@ Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md).
 5. After the job is terminal (callback arrived, or you know it failed), the
    same `jira_id` may be posted again as a **new** job.
 
+A ready n8n sub-workflow is [n8nflow.json](n8nflow.json). Import it and set
+`osmHost` / `osmPort` on **remoteComputerInfo1**. Do not poll OSM. The
+parent trigger is unchanged (no `PAT` / `model` there). **buildOsmRequest**
+hardcodes `PAT` and `model` on the OSM body. **strginfyInputText1** builds
+the prompt the same way as before (`text`, planner suffix, `issue_id`,
+`repo_url`, `sourceBranch` / `targetBranch`).
+
+There is **no hardcoded webhook URL** in that file. n8n creates a **new
+Wait resume URL for each run**. The Code node **buildOsmRequest** copies
+it into the OSM body:
+
+```javascript
+callback_url: $execution.resumeUrl,
+```
+
+`$execution.resumeUrl` belongs to the Wait node **waitForOsmCallback**
+(`resume: webhook`). Typical shape:
+
+```text
+https://<your-n8n-host>/webhook-waiting/<executionId>/<webhookId>
+```
+
+`webhookId` in the Wait node (`65a1bc19-ed88-4b03-9297-2bbddc83919b`) is
+only n8n’s internal id, not the public URL.
+
+Flow:
+
+1. n8n starts the run.
+2. **buildOsmRequest** sets `callback_url` to `$execution.resumeUrl`.
+3. **postJobs** `POST /jobs` and takes the ack only.
+4. OSM later POSTs the one terminal JSON to that URL.
+5. **waitForOsmCallback** resumes with `{ text, session_id, status_code, jira_id, job_id }`.
+
+After a test run, open **buildOsmRequest** → `osmBody.callback_url` to
+see the real address. OSM must be able to reach that host (n8n’s public
+URL or tunnel). `localhost` on the n8n machine is not reachable from OSM
+unless they are the same host.
+
 Inbound ack and callback share one body:
 
 ```json

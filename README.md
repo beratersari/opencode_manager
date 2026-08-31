@@ -62,7 +62,10 @@ Flow:
    **waitForOsmCallback**. **400** / **409** / **503** go to
    **returnAckFail** with OSM `text` (no callback).
 5. OSM later POSTs the one terminal JSON to the Wait URL.
-6. **waitForOsmCallback** resumes with `{ text, session_id, status_code, jira_id, job_id }`.
+6. **normalizeCallback** unwraps the Wait `{ body }` wrapper.
+7. **isCallback200**: `status_code === 200` goes to **isTextExist1**
+   (then the LLM). **404** / **500** / **504** and Wait timeout (still
+   the **202** ack) go to **returnAckFail** with OSM `text`.
 
 After a test run, open **buildOsmRequest** → `osmBody.callback_url` to
 see the real address. OSM must be able to reach that host (n8n’s public

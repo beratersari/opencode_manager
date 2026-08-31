@@ -170,6 +170,40 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cc200001-0000-4000-8000-000000000200",
+              "leftValue": "={{ Number($json.status_code) }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1304,
+        160
+      ],
+      "id": "e4ce800f-cb00-4117-8195-a28818fb1200",
+      "name": "isCallback200",
+      "notes": "OSM terminal 200 only. 404/500/504 and Wait timeout (202 ack) go to returnAckFail."
+    },
+    {
+      "parameters": {
         "assignments": {
           "assignments": [
             {
@@ -767,7 +801,25 @@
       "main": [
         [
           {
+            "node": "isCallback200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isCallback200": {
+      "main": [
+        [
+          {
             "node": "isTextExist1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "returnAckFail",
             "type": "main",
             "index": 0
           }

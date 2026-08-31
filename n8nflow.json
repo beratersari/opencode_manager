@@ -4,7 +4,7 @@
     {
       "parameters": {
         "inputSource": "jsonExample",
-        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\",\n  \"is_session_deleted\":false\n}"
+        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\"\n}"
       },
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -34,19 +34,19 @@
             {
               "id": "19126df2-82dd-49ae-8857-c8d58d30df80",
               "name": "timeout",
-              "value": "={{ 30 * 60 * 1000 }}",
-              "type": "string"
+              "value": 1800,
+              "type": "number"
+            },
+            {
+              "id": "a7c3e1f0-8b2d-4b51-b0fb-b6d5be0c1e30",
+              "name": "retry_count",
+              "value": 1,
+              "type": "number"
             },
             {
               "id": "43cb5918-5198-4b51-b0fb-b6d5be0c1e2f",
               "name": "session_id",
               "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
-              "type": "string"
-            },
-            {
-              "id": "1f080776-6b02-461b-947c-7dda4d4591bb",
-              "name": "",
-              "value": "",
               "type": "string"
             }
           ]
@@ -61,93 +61,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen port (4096), not a per-job opencode serve port."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "92f0e7d5-32eb-41be-b0da-1f3849c5af35",
-              "leftValue": "={{ $('When Executed by Another Workflow').item.json.is_session_deleted }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        -432,
-        128
-      ],
-      "id": "a70e274c-75a1-42cc-aabc-4e9094fbe6d0",
-      "name": "isSessionDeleted1"
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "dd000001-0000-4000-8000-000000000001",
-              "name": "ok",
-              "value": true,
-              "type": "boolean"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        -208,
-        16
-      ],
-      "id": "49d01fba-cfcb-4927-9687-048624fce93a",
-      "name": "deleteSession1",
-      "notes": "OSM has no session delete. Same return path as before."
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "387a81c1-5631-42c0-b795-6a393e4d62f0",
-              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
-              "value": "deleted",
-              "type": "string"
-            },
-            {
-              "id": "f858978e-4717-47fe-b2e3-2f1ea135d50a",
-              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
-              "value": "={{!$input.item.json.error }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        16,
-        16
-      ],
-      "id": "21fcd3af-0d19-455a-8b1f-6d001bc2b39b",
-      "name": "parseDeleteReturnInfo1"
+      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run."
     },
     {
       "parameters": {
@@ -261,7 +175,7 @@
             {
               "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
               "name": "={{ $('staticVariableNames1').item.json.session_id }}",
-              "value": "={{ $('parseOpencodeRequestJson1').item.json.sessionID }}",
+              "value": "={{ $json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
               "type": "string"
             },
             {
@@ -314,7 +228,7 @@
             {
               "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
               "name": "={{ $('staticVariableNames1').item.json.session_id }}",
-              "value": "={{ $('parseOpencodeRequestJson1').item.json.sessionID }}",
+              "value": "={{ $('normalizeCallback').item.json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
               "type": "string"
             },
             {
@@ -404,12 +318,6 @@
               "id": "f5d4d171-49d8-4013-ba9b-d0309dc1ada7",
               "name": "session_id",
               "value": "session_id",
-              "type": "string"
-            },
-            {
-              "id": "66755929-31dc-4880-ac0b-1f64ef564d11",
-              "name": "is_session_deleted",
-              "value": "is_session_deleted",
               "type": "string"
             },
             {
@@ -590,9 +498,10 @@
     {
       "parameters": {
         "resume": "webhook",
+        "httpMethod": "POST",
         "limitWaitTime": true,
-        "resumeAmount": 6,
-        "resumeUnit": "hours",
+        "resumeAmount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
+        "resumeUnit": "seconds",
         "options": {}
       },
       "type": "n8n-nodes-base.wait",
@@ -604,11 +513,25 @@
       "id": "d77b433a-cb0b-4139-b486-53babf6b45d3",
       "name": "waitForOsmCallback",
       "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b",
-      "notes": "OSM POSTs one terminal envelope here. Then the original LLM chain runs on $json.text."
+      "notes": "Wait timeout = remoteComputerInfo1.timeout * retry_count (seconds). OSM POSTs one terminal envelope here. Clone/cleanup sit outside that clock. httpMethod must be POST."
     },
     {
       "parameters": {
-        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout) / 1000)),\n  retry_count: 1,\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text || j.body.job_id))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        160
+      ],
+      "id": "c0ffee00-cb11-4cb1-9cb1-normalize00cb",
+      "name": "normalizeCallback",
+      "notes": "Wait webhook wraps OSM JSON as { headers, body }. Flatten to the OSM envelope so isTextExist and the LLM see $json.text."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -618,7 +541,7 @@
       ],
       "id": "a0b1c2d3-e4f5-4678-8901-23456789abcd",
       "name": "buildOsmRequest",
-      "notes": "Maps stringify output to OSM POST /jobs. PAT and model hardcoded. Does not change prompt text."
+      "notes": "Maps stringify output to OSM POST /jobs. timeout_in_seconds and retry_count come from remoteComputerInfo1. PAT and model hardcoded."
     },
     {
       "parameters": {
@@ -699,8 +622,7 @@
           "issue_id": "ARI-259",
           "task_type": "bug",
           "working_mode": "Plan",
-          "session_id": "-1",
-          "is_session_deleted": false
+          "session_id": "-1"
         }
       }
     ]
@@ -721,36 +643,7 @@
       "main": [
         [
           {
-            "node": "isSessionDeleted1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "isSessionDeleted1": {
-      "main": [
-        [
-          {
-            "node": "deleteSession1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "parseAllNeedInfo1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "deleteSession1": {
-      "main": [
-        [
-          {
-            "node": "parseDeleteReturnInfo1",
             "type": "main",
             "index": 0
           }
@@ -860,6 +753,17 @@
       ]
     },
     "waitForOsmCallback": {
+      "main": [
+        [
+          {
+            "node": "normalizeCallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizeCallback": {
       "main": [
         [
           {

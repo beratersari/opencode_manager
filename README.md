@@ -27,7 +27,11 @@ replaced. **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
 **OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1** are
 unchanged: OSM `text` still goes into that LLM, then the same return
 shape. Import the flow and set `remoteIP` / `remotePort` (4096) on
-**remoteComputerInfo1**. **buildOsmRequest** hardcodes `PAT` and `model`.
+**remoteComputerInfo1**. That node is also the only place to set
+`timeout` (one OSM attempt, seconds) and `retry_count` (attempts,
+first included). **buildOsmRequest** copies both onto the OSM body.
+**waitForOsmCallback** waits `timeout * retry_count` seconds.
+**buildOsmRequest** hardcodes `PAT` and `model`.
 Do not poll OSM.
 
 There is **no hardcoded webhook URL** in that file. n8n creates a **new

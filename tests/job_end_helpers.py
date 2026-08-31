@@ -152,6 +152,9 @@ class ScriptedClient:
     def status(self) -> dict:
         return self._status
 
+    def session_payload(self, session_id: str) -> dict:  # noqa: ARG002
+        return {}
+
     def list_messages(self, session_id: str) -> list[dict]:  # noqa: ARG002
         return list(self._messages)
 

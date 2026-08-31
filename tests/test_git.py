@@ -20,7 +20,7 @@ def test_identity_is_ticket_only():
     assert clone_identity("A-1") == clone_identity("A-1")
     assert clone_identity("A-2") == "A-2"
     assert clone_identity("A-1") != clone_identity("A-2")
-    assert clone_identity("PROJ/99") == "PROJ_99"
+    assert clone_identity("PROJ-99") == "PROJ-99"
 
 
 def test_pat_not_on_argv_helper():

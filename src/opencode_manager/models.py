@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field, field_validator
 
 KNOWN_AGENTS = frozenset({"build", "plan", "general", "explore"})
 _MODEL_RE = re.compile(r"^[^/\s]+/[^/\s].*$")
+# Ticket folder. Must be a strict child of work_dir — not ".", "..", or slashes.
+_JIRA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 LIVE_STATUSES = frozenset({"queued", "running"})
 ERROR_STATUSES = frozenset({"error", "timeout", "not_found"})
 LIST_FILTERS = frozenset({"all", "active", "error", "completed"})
@@ -58,6 +60,14 @@ class JobRequest(BaseModel):
             return None
         text = value.strip()
         return text or None
+
+    @field_validator("jira_id")
+    @classmethod
+    def _jira(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not _JIRA_ID_RE.match(text):
+            raise ValueError("jira_id must be a Windows-safe ticket id")
+        return text
 
     @field_validator("retry_count")
     @classmethod
@@ -179,6 +189,8 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         return "timeout_in_seconds and retry_count must be integers"
     if int(body["timeout_in_seconds"]) < 1:
         return "timeout_in_seconds must be >= 1"
+    if not _JIRA_ID_RE.match(str(body["jira_id"]).strip()):
+        return "jira_id must be a Windows-safe ticket id"
     return None
 
 

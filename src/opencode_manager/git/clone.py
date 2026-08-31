@@ -33,14 +33,24 @@ class GitError(RuntimeError):
         self.missing_branch = missing_branch
 
 
+_SAFE_TICKET = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+
+
 def clone_identity(jira_id: str) -> str:
     """One live job per ticket, so the folder is the ticket id only."""
-    ticket = re.sub(r"[^A-Za-z0-9._-]+", "_", (jira_id or "").strip())[:40]
-    return ticket or "ticket"
+    ticket = (jira_id or "").strip()
+    if not _SAFE_TICKET.match(ticket):
+        raise GitError(f"unsafe jira_id {ticket!r} is not a clone folder")
+    return ticket
 
 
 def clone_path_for(work_dir: Path, jira_id: str) -> Path:
-    return work_dir / clone_identity(jira_id)
+    dest = work_dir / clone_identity(jira_id)
+    root = work_dir.resolve()
+    resolved = dest.resolve()
+    if resolved == root or root not in resolved.parents:
+        raise GitError(f"clone path {resolved} is not under {root}")
+    return dest
 
 
 def public_git_url(url: str) -> str:

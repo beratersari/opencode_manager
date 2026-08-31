@@ -44,6 +44,7 @@ class OpenCodeRunner:
         self.store = store
 
     def run(self, job: JobRecord, *, should_stop: Callable[[], bool]) -> Terminal:
+        dest = None
         dest = clone_path_for(self.settings.work_dir, job.jira_id)
         job.clone_path = str(dest)
         self.store.save(job)
@@ -138,8 +139,9 @@ class OpenCodeRunner:
                 [job.serve_pid, *job.extra_pids],
                 dest,
             )
-            stop_job_holders(job, dest)
-            _remove_clone(dest, reason="job-end")
+            if dest is not None:
+                stop_job_holders(job, dest)
+                _remove_clone(dest, reason="job-end")
 
 
 def finish_job(

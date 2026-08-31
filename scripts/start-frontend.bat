@@ -1,7 +1,7 @@
 @echo off
 REM =============================================================================
 REM OpenCode Session Manager - start FRONTEND only (SPA proxy on :5173)
-REM Requires: prebuilt web\dist, backend already running. No Node/Vite.
+REM Serves web\dist. Rebuilds it first when local Vite is present.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
 
@@ -43,6 +43,16 @@ if not defined OSM_PY (
     exit /b 1
 )
 echo Python   : %OSM_PY%
+
+if exist "%ROOT%\web\node_modules\.bin\vite.cmd" (
+    echo Rebuilding web\dist from web\src ...
+    pushd "%ROOT%\web"
+    call node_modules\.bin\vite.cmd build
+    if errorlevel 1 (
+        echo [WARNING] vite build failed — serving whatever is in web\dist.
+    )
+    popd
+)
 
 if not exist "%WEB_DIST%\index.html" (
     echo [ERROR] Missing %WEB_DIST%\index.html

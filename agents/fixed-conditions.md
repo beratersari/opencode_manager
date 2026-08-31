@@ -37,6 +37,9 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Folder is `{work_dir}/{jira_id}` only | `test_clone_path_is_ticket_only` |
 | Repo and branch are not in the folder name | `test_clone_path_ignores_repo_and_branch` |
+| `.` / `..` / slashes are inbound 400 (no shared folder) | `test_unsafe_jira_id_is_400`, `test_clone_path_rejects_dot_slash_and_collision` |
+| OpenCode `busy` is not compact; `time.compacting` is | `test_opencode_busy_is_not_compacting_without_time_field` |
+| Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
 
 ## Branch existence and origin
 

@@ -52,6 +52,12 @@ else
   echo "          Run scripts/install-opencode.sh (wipes old CLI, copies vendor/bin)."
 fi
 
+if [[ -f "$ROOT/scripts/osm-lib.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$ROOT/scripts/osm-lib.sh"
+  osm_refresh_web_dist "$ROOT"
+fi
+
 if [[ ! -f "$ROOT/web/dist/index.html" ]]; then
   echo "[WARNING] web/dist/index.html missing — API will run but UI on :${DASH_PORT} will not load."
   echo "          Use the CI zip or run python3 packaging/build_dist.py --in-place."

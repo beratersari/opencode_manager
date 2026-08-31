@@ -165,20 +165,33 @@ def session_is_busy(status: Any, session_id: Optional[str]) -> bool:
     return False
 
 
-def session_is_compacting(status: Any, session_id: Optional[str]) -> bool:
-    if not isinstance(status, dict) or not session_id:
+def session_is_compacting(
+    status: Any,
+    session_id: Optional[str],
+    *,
+    session_info: Any = None,
+) -> bool:
+    """True when this session is in OpenCode compact.
+
+    ``GET /session/status`` is only ``idle`` | ``retry`` | ``busy``. Compact
+    is ``Session.time.compacting`` on ``GET /session/:id``, not a status type.
+    """
+    if not session_id:
         return False
+    if isinstance(status, dict):
 
-    def _compact(row: Any) -> bool:
-        if not isinstance(row, dict):
-            return False
-        kind = str(row.get("type") or row.get("status") or row.get("state") or "").lower()
-        return "compact" in kind
+        def _compact(row: Any) -> bool:
+            if not isinstance(row, dict):
+                return False
+            kind = str(row.get("type") or row.get("status") or row.get("state") or "").lower()
+            return "compact" in kind
 
-    if _compact(status.get(session_id)):
-        return True
-    if _compact(status):
-        return True
+        if _compact(status.get(session_id)) or _compact(status):
+            return True
+    if isinstance(session_info, dict):
+        inner = session_info.get("time") if isinstance(session_info.get("time"), dict) else session_info
+        if isinstance(inner, dict) and inner.get("compacting"):
+            return True
     return False
 
 
@@ -328,6 +341,22 @@ class OpenCodeClient:
             seen.add(mid)
             out.append(mid)
         return out
+
+    def session_payload(self, session_id: str) -> Dict[str, Any]:
+        """GET /session/:id body. Empty on error. No per-poll log line."""
+        if not session_id:
+            return {}
+        try:
+            response = self.http.get(f"/session/{session_id}", headers=self.headers, timeout=10.0)
+        except Exception:
+            return {}
+        if response.status_code != 200:
+            return {}
+        try:
+            data = response.json()
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def get_session(self, session_id: str) -> httpx.Response:
         path = f"/session/{session_id}"

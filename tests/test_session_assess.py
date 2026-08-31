@@ -8,6 +8,7 @@ from opencode_manager.opencode.session import (
     looks_like_question,
     model_is_known,
     session_is_busy,
+    session_is_compacting,
     snapshot_chat,
     turn_has_new_assistant,
     unknown_model_message,
@@ -22,6 +23,16 @@ def test_busy_status_shapes() -> None:
     assert session_is_busy({"ses_1": {"type": "busy"}}, "ses_1")
     assert session_is_busy({"ses_1": {"type": "busy_compacting"}}, "ses_1")
     assert not session_is_busy({"ses_1": {"type": "idle"}}, "ses_1")
+
+
+def test_opencode_busy_is_not_compacting_without_time_field() -> None:
+    assert not session_is_compacting({"ses_1": {"type": "busy"}}, "ses_1")
+    assert session_is_compacting({"ses_1": {"type": "compacting"}}, "ses_1")
+    assert session_is_compacting(
+        {"ses_1": {"type": "busy"}},
+        "ses_1",
+        session_info={"id": "ses_1", "time": {"created": 1, "updated": 2, "compacting": 99}},
+    )
 
 
 def test_question_detect() -> None:

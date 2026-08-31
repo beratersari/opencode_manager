@@ -115,9 +115,12 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   Never return a sync 404 for a missing remote ref.
 - One settings root: `data_dir` (Windows `C:\osm`, Linux
   `/var/lib/osm`). Clones live under `{data_dir}/.temp`. Folder name is the **ticket id**
-  (`jira_id`, Windows-safe). Dedup is one live job per ticket, so
-  repo and branch are not part of the path. Two tickets ⇒ two
-  folders. Same ticket later ⇒ same folder (hard-delete, then clone).
+  (`jira_id`, Windows-safe: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`).
+  `.`, `..`, slashes, and other characters are inbound **400**. The
+  dest must be a strict child of `{data_dir}/.temp` — never the temp
+  root itself. Dedup is one live job per ticket, so repo and branch
+  are not part of the path. Two tickets ⇒ two folders. Same ticket
+  later ⇒ same folder (hard-delete, then clone).
 - **New job** (including after boot leftover ERROR): if that
   stable path already exists, sequential hard-delete it first, then
   clone. Do not `git clone` until that path is gone. If the leftover
@@ -206,9 +209,11 @@ Never POST a user message while the session is `busy` / compacting.
 - Compact-loop (~8) counts **new** compact markers **this wait**
   only. Markers already in the session when the turn started do not
   count (resumed `ses_*` / KAN-95).
-- While status is `compacting` / `busy_compacting`, that **is**
-  progress. Do **not** run the hang clock (compact may last minutes
-  with no new markers).
+- While status is `compacting` / `busy_compacting`, **or**
+  `GET /session/:id` has `time.compacting`, that **is** progress.
+  OpenCode `GET /session/status` is only `idle` / `retry` / `busy`
+  — do not require a `compacting` status type. Do **not** run the
+  hang clock (compact may last minutes with no new markers).
 - Hang watchdog: `busy` **and not compacting** **and** no new
   message / compact marker **and no assistant yet this turn** for
   `hang_timeout_seconds` → **outer retry**: abort → kill **this**

@@ -75,6 +75,11 @@ def test_valid_body():
     assert validate_request_fields(_ok()) is None
 
 
+def test_unsafe_jira_id_is_400():
+    for jira_id in (".", "..", "PROJ/99", "../etc", "a b"):
+        assert validate_request_fields(_ok(jira_id=jira_id)), jira_id
+
+
 def test_missing_or_empty_pat_is_ok():
     body = _ok()
     del body["PAT"]

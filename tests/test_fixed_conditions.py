@@ -189,7 +189,37 @@ def test_clone_path_ignores_repo_and_branch() -> None:
     """Folder is the ticket. Repo/branch are not in the path."""
     work = Path("/var/lib/osm/.temp")
     assert clone_path_for(work, "PROJ-1") == work / "PROJ-1"
-    assert clone_identity("PROJ/99") == "PROJ_99"
+    assert clone_identity("PROJ-99") == "PROJ-99"
+
+
+def test_clone_path_rejects_dot_slash_and_collision() -> None:
+    work = Path("/tmp/osm-work-safe")
+    work.mkdir(parents=True, exist_ok=True)
+    from opencode_manager.git.clone import GitError
+    from opencode_manager.models import validate_request_fields
+
+    body = {
+        "repo_url": "https://x/y.git",
+        "source_branch": "d",
+        "prompt": "p",
+        "model": "a/b",
+        "agent_mode": "build",
+        "timeout_in_seconds": 1,
+        "retry_count": 1,
+        "callback_url": "http://127.0.0.1/x",
+    }
+    assert validate_request_fields({**body, "jira_id": "."})
+    assert validate_request_fields({**body, "jira_id": "PROJ/99"})
+    assert validate_request_fields({**body, "jira_id": "PROJ_99"}) is None
+    try:
+        clone_path_for(work, ".")
+    except GitError as exc:
+        assert "unsafe" in str(exc).lower() or "not under" in str(exc).lower()
+    else:
+        raise AssertionError("jira_id='.' must not resolve to the work root")
+    dest = clone_path_for(work, "PROJ_99")
+    assert dest.resolve() != work.resolve()
+    assert dest.resolve().is_relative_to(work.resolve())
 
 
 def test_subprocess_timeout_on_git_becomes_giterror(monkeypatch) -> None:

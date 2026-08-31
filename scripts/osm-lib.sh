@@ -49,3 +49,27 @@ osm_require_bundled_python() {
   fi
   echo "$path"
 }
+
+# Rebuild web/dist from web/src when local Vite exists (dev tree).
+# Offline zips have no web/node_modules — they keep the shipped dist.
+osm_refresh_web_dist() {
+  local root="$1"
+  local vite="$root/web/node_modules/.bin/vite"
+  local src="$root/web/src"
+  local dist="$root/web/dist/index.html"
+  if [[ ! -e "$vite" ]]; then
+    if [[ -f "$dist" ]]; then
+      echo "[OK] web/dist is the shipped build (no local Vite)"
+    fi
+    return 0
+  fi
+  if [[ ! -d "$src" ]]; then
+    return 0
+  fi
+  if [[ -f "$dist" ]] && ! find "$src" -type f -newer "$dist" -print -quit | grep -q .; then
+    echo "[OK] web/dist is current"
+    return 0
+  fi
+  echo "Rebuilding web/dist from web/src ..."
+  (cd "$root/web" && "$vite" build)
+}

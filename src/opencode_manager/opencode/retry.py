@@ -419,7 +419,15 @@ def _inner_loop(
             return _leave("serve-dead", dead_msgs)
         status = client.status()
         busy = session_is_busy(status, job.session_id)
-        compacting = session_is_compacting(status, job.session_id)
+        session_info = None
+        if job.session_id and hasattr(client, "session_payload"):
+            try:
+                session_info = client.session_payload(job.session_id)
+            except Exception:
+                session_info = None
+        compacting = session_is_compacting(
+            status, job.session_id, session_info=session_info
+        )
         listed_ok = True
         try:
             messages = client.list_messages(job.session_id)

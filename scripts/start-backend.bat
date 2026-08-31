@@ -54,6 +54,16 @@ if errorlevel 1 (
     echo [OK] opencode on PATH
 )
 
+if exist "%ROOT%\web\node_modules\.bin\vite.cmd" (
+    echo Rebuilding web\dist from web\src ...
+    pushd "%ROOT%\web"
+    call node_modules\.bin\vite.cmd build
+    if errorlevel 1 (
+        echo [WARNING] vite build failed — serving whatever is in web\dist.
+    )
+    popd
+)
+
 if not exist "%ROOT%\web\dist\index.html" (
     echo [WARNING] web\dist\index.html missing — API will run but UI on :%DASH_PORT% will not load.
     echo           Use the CI zip or run python packaging\build_dist.py --in-place.

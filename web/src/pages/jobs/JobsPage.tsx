@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchJobs, fetchQueue } from '../../api/client'
 import type { JobItem, JobsPayload } from '../../api/types'
@@ -18,6 +18,7 @@ export function JobsPage() {
   const [payload, setPayload] = useState<JobsPayload | null>(null)
   const [queue, setQueue] = useState<JobItem[]>([])
   const [error, setError] = useState<string | null>(null)
+  const seqRef = useRef(0)
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -28,9 +29,11 @@ export function JobsPage() {
   }, [jira])
 
   const load = useCallback(async () => {
+    const mine = ++seqRef.current
     try {
       if (filter === 'queue') {
         const q = await fetchQueue({ jiraId: debounced || undefined })
+        if (seqRef.current !== mine) return
         setQueue(q.items || [])
         setError(null)
         return
@@ -41,9 +44,11 @@ export function JobsPage() {
         pageSize: 25,
         filter,
       })
+      if (seqRef.current !== mine) return
       setPayload(data)
       setError(null)
     } catch (e) {
+      if (seqRef.current !== mine) return
       setError(e instanceof Error ? e.message : 'Failed to load jobs')
     }
   }, [debounced, page, filter])
@@ -86,6 +91,10 @@ export function JobsPage() {
               key={f.id}
               type="button"
               onClick={() => {
+                if (f.id !== filter) {
+                  setPayload(null)
+                  setQueue([])
+                }
                 setFilter(f.id)
                 setPage(1)
               }}

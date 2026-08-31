@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # OpenCode Session Manager — start FRONTEND only (SPA proxy on :5173).
-# Requires: prebuilt web/dist, backend already running. No Node/Vite.
+# Serves web/dist. Rebuilds it first when local Vite is present.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,6 +38,12 @@ if [[ -z "$OSM_PY" ]]; then
   exit 1
 fi
 echo "Python   : $OSM_PY"
+
+if [[ -f "$ROOT/scripts/osm-lib.sh" ]]; then
+  # shellcheck disable=SC1091
+  . "$ROOT/scripts/osm-lib.sh"
+  osm_refresh_web_dist "$ROOT"
+fi
 
 if [[ ! -f "$WEB_DIST/index.html" ]]; then
   echo "[ERROR] Missing $WEB_DIST/index.html"

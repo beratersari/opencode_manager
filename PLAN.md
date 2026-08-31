@@ -274,7 +274,7 @@ Different cases:
 | `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, …). Unknown → 400. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
-| `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. |
+| `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. Must already be a Windows-safe folder name: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`. `.`, `..`, slashes, and other characters are inbound **400** so two tickets cannot share `{work_dir}/{jira_id}` or delete `{work_dir}` itself. |
 | `callback_url` | yes | Absolute `http(s)` URL we POST the **terminal** result to. This is the caller (n8n Wait-node URL), **not** a setting on this server. Missing or non-http(s) → **400**. |
 
 Do **not** infer the target from `Host`, `Origin`, or `Referer`. n8n wait-node URLs are unique per execution (`…/webhook-waiting/<id>/…`) and fire **once** (the first POST resumes the Wait node). The site origin is not enough. The caller must send the exact URL it wants the result on.
@@ -500,7 +500,7 @@ until OpenCode is actually idle:
 
 | Observation | Action |
 |---|---|
-| Compact / `Session auto-compacted` / `busy_compacting` | **Wait.** No new user message. No OSM “Continue”. OpenCode itself may insert a synthetic user turn (`Continue if you have next steps…`, `synthetic` + `compaction_continue`) so `SessionPrompt.run` does not exit on the compact summary’s `finish=stop`. Leave that turn alone. |
+| Compact / `Session auto-compacted` / `busy_compacting` / `Session.time.compacting` | **Wait.** OpenCode `GET /session/status` is only `idle` \| `retry` \| `busy` — compact is **not** a status type. Read `GET /session/:id` `time.compacting`. Do not run the hang clock. No OSM “Continue”. OpenCode itself may insert a synthetic user turn (`Continue if you have next steps…`, `synthetic` + `compaction_continue`) so `SessionPrompt.run` does not exit on the compact summary’s `finish=stop`. Leave that turn alone. |
 | `tool-calls` / unfinished finish **and the session is still busy** | Wait. |
 | Compact recap that quotes “Shall I…?” | Still compact, not a live question. Wait. |
 | Clarifying question (live, last turn stopped) | **One** unattended nudge (see prompts below), then wait. Never re-send the original prompt. |
@@ -736,7 +736,10 @@ or `/tfs/`.
    not invent a branch from `main`.
 3. Clone under `work_dir` into a short **stable** Windows-safe path
    whose identity is the **ticket id** only (e.g.
-   `{work_dir}/{jira_id}`).
+   `{work_dir}/{jira_id}`). The dest must be a **strict child** of
+   `work_dir` — never `work_dir` itself and never a parent. Do not
+   rewrite `/` to `_` (that would make `PROJ/99` and `PROJ_99` one
+   folder). Reject the id at inbound instead.
 
    | OS | Default `work_dir` |
    |---|---|

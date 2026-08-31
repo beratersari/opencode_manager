@@ -90,6 +90,9 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
         lambda b: b.__setitem__("repo_url", "git@host:g/r.git"),
         lambda b: b.__setitem__("callback_url", "not-a-url"),
         lambda b: b.__setitem__("agent_mode", "codex"),
+        lambda b: b.__setitem__("jira_id", "."),
+        lambda b: b.__setitem__("jira_id", ".."),
+        lambda b: b.__setitem__("jira_id", "PROJ/99"),
     ],
 )
 def test_inbound_error_matrix_is_400_no_job(tmp_settings: Settings, mutate) -> None:

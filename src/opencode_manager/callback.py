@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 import httpx
 
@@ -12,6 +12,17 @@ from opencode_manager.models import Envelope
 from opencode_manager.settings import Settings
 
 logger = get_logger()
+
+# n8n Wait 404 = webhook not armed yet. 408/429 are transient. Other 4xx are not.
+_RETRYABLE_CLIENT = frozenset({404, 408, 429})
+
+
+def callback_http_outcome(status_code: int) -> Literal["delivered", "retry", "permanent"]:
+    if 200 <= status_code < 300:
+        return "delivered"
+    if status_code in _RETRYABLE_CLIENT or status_code >= 500:
+        return "retry"
+    return "permanent"
 
 
 def post_callback(settings: Settings, envelope: Envelope, callback_url: str) -> None:
@@ -44,12 +55,23 @@ def post_callback(settings: Settings, envelope: Envelope, callback_url: str) -> 
                 index + 1,
                 attempts,
             )
-            if response.status_code < 500:
+            outcome = callback_http_outcome(response.status_code)
+            if outcome == "delivered":
                 return
             last_err = f"HTTP {response.status_code} {clip(response.text, 200)}"
+            if outcome == "permanent":
+                log_fail(
+                    logger,
+                    "callback HTTP permanent, not retrying",
+                    status=response.status_code,
+                    err=last_err,
+                    url=callback_url,
+                )
+                return
         except Exception as exc:  # noqa: BLE001
             last_err = redact(str(exc))
             log_http(logger, "POST", callback_url, err=last_err, ok=False)
             logger.warning("callback failed: %s", last_err)
-        time.sleep(min(2 ** index, 8))
+        if index + 1 < attempts:
+            time.sleep(min(2 ** index, 8))
     log_fail(logger, "callback gave up", attempts=attempts, err=last_err, url=callback_url)

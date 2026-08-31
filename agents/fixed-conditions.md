@@ -58,6 +58,15 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Shutdown kills `extra_pids`, sends one `500`, then `POST /jobs` is `503` | `test_shutdown_kills_extra_pids_and_rejects_submit` |
 | Missing dequeued store row does not stall the queue | `test_on_done_skips_missing_queue_row` |
 
+## Callback HTTP
+
+| Condition | Test |
+|---|---|
+| Callback HTTP `200` is delivered (no second POST) | `test_callback_200_stops_without_retry` |
+| Wait `404` then `200` retries the same envelope | `test_callback_404_then_200_retries` |
+| Permanent `400` / `405` do not retry | `test_callback_400_does_not_retry`, `test_callback_405_does_not_retry` |
+| `503` then `200` still retries | `test_callback_503_then_200_retries` |
+
 ## Model inventory
 
 | Condition | Test |

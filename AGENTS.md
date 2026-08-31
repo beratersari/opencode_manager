@@ -47,12 +47,20 @@ These look like bugs. They are not.
 - `callback_url` is required and must be absolute `http`/`https`.
   `callback_allowed_hosts` of `[]`, `["*"]`, or `["all"]` accepts
   every host. A real host list is SSRF only (`*.example.com` ok).
-- Exactly one POST goes to that job’s `callback_url`, and only when
-  the job is terminal (`200` / `404` / `500` / `504`).
+- Exactly one terminal callback (same envelope) goes to that job’s
+  `callback_url`, and only when the job is terminal (`200` / `404` /
+  `500` / `504`).
   - Accepted job (inbound `202`, queued or started): 1 terminal callback.
   - `409` / inbound `400`: no callback.
   - Never POST `queued` or `in_progress`. n8n wait-node URLs fire once;
     the HTTP ack already says queued vs started.
+  - Callback **HTTP** (n8n’s reply to that POST, not the envelope
+    `status_code`): `2xx` is delivered — stop. Retry the same envelope
+    on `404` / `408` / `429` / `5xx` / transport error
+    (`callback_retry_count`, then log). Other `4xx` (`400`, `401`,
+    `403`, `405`, `410`, `422`, …) are permanent — log and stop.
+    Do not re-run OpenCode. n8n Wait `404` means the webhook is not
+    armed yet, not that the callback was delivered.
 - Dedup key is **`jira_id`**. Running or queued → `409`. Do not
   enqueue a second job for the same ticket.
 - Capacity full + **other** tickets → queue. Persist the queue

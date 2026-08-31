@@ -314,9 +314,11 @@ file** is `{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`.
 
 ### 4.3 Callbacks (this service → request `callback_url`)
 
-Same JSON. **One POST per accepted job**, when the job is finished. Never a
-`queued` or `in_progress` callback — n8n wait-node URLs fire on the first
-POST, and the inbound HTTP ack already said queued vs started.
+Same JSON. **One terminal callback per accepted job**, when the job is
+finished (the same envelope may be retried on transient HTTP failure).
+Never a `queued` or `in_progress` callback — n8n wait-node URLs fire on
+the first successful POST, and the inbound HTTP ack already said queued
+vs started.
 
 | Phase | When | `status_code` | `text` |
 |---|---|---|---|
@@ -332,9 +334,19 @@ Callback counts:
 - 409 / 400 on the inbound request: **0** callbacks.
 - `status_code` **202** is inbound-only. It never appears on a callback.
 
-If the target API is down, retry the callback a small fixed number of
-times (e.g. 3) and then log. The job itself is already finished; do not
-re-run OpenCode because n8n missed a webhook.
+Callback **HTTP** (n8n’s reply to the POST) is not the envelope
+`status_code`. Classify that transport status:
+
+| Callback HTTP | Action |
+|---|---|
+| `2xx` | Delivered. Stop. Wait URLs fire once — never retry a `200`. |
+| `404` / `408` / `429` / `5xx` / transport error | Retry the **same** envelope `callback_retry_count` times, then log. |
+| Other `4xx` (`400`, `401`, `403`, `405`, `410`, `422`, …) | Permanent. Log and stop. |
+
+n8n Wait `404` is “webhook not armed yet” (fast-fail race after inbound
+`202`), not a delivered callback. A Wait `405` is the wrong method and
+will not start working on retry. The job itself is already finished; do
+not re-run OpenCode because n8n missed a webhook.
 
 ### 4.4 Status codes (shared vocabulary)
 
@@ -883,7 +895,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `listen_host` / `listen_port` | Inbound API. Default port **4096** (not a job `opencode serve` port). |
 | `max_concurrent_jobs` | Worker cap |
 | `callback_timeout_seconds` | Per callback HTTP timeout |
-| `callback_retry_count` | If the caller URL is down |
+| `callback_retry_count` | Retries of the same terminal POST on `404` / `408` / `429` / `5xx` / transport error (default 3). Not used for permanent `4xx`. |
 | `callback_allowed_hosts` | Optional allow-list (SSRF). `[]` or `["*"]` / `["all"]` = any http(s) URL from the request. `*.example.com` matches that host and subdomains. |
 | `data_dir` | **One root** for everything OSM writes. Default **Windows** `C:\osm`, **Linux** `/var/lib/osm`. Derived: `{data_dir}/.temp` clones, `{data_dir}/.serve` serve logs, `{data_dir}/logs` app + job logs, `{data_dir}/jobs` history, `{data_dir}/queue.json`. |
 | `log_level` | Minimum level for both sinks |
@@ -1136,7 +1148,7 @@ build them).
 - [ ] Last OpenCode attempt timed out and no attempts left: callback **504**.
 - [ ] Other exhausted-retry / crash: callback **500**.
 - [ ] Always put the live `session_id` on every callback.
-- [ ] If callback HTTP fails, retry `callback_retry_count` times, then log; do not re-run OpenCode.
+- [ ] Callback HTTP `2xx` is delivered (stop). Retry the same envelope on `404` / `408` / `429` / `5xx` / transport error (`callback_retry_count`, then log). Permanent `4xx` (`400` / `401` / `403` / `405` / `410` / `422` / …) stop immediately. Do not re-run OpenCode. n8n Wait `404` is not delivered.
 - [ ] Honor `callback_timeout_seconds` per callback POST.
 - [ ] If `callback_allowed_hosts` is a real host list (not `[]` / `*` / `all`), reject callbacks to other hosts.
 

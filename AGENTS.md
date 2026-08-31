@@ -55,13 +55,22 @@ These look like bugs. They are not.
   OpenCode 2xx or 404 → **200** (idempotent). Serve boot / other
   OpenCode failure → **500**. Boot/shutdown → **503**. `POST /jobs`
   for a ticket whose session delete is in flight is also **409**.
-- `callback_url` is required and must be absolute `http`/`https`.
+- `callback_url` is optional. Omit or leave empty to **poll** instead
+  of receiving a POST. If present it must be absolute `http`/`https`.
   `callback_allowed_hosts` of `[]`, `["*"]`, or `["all"]` accepts
   every host. A real host list is SSRF only (`*.example.com` ok).
-- Exactly one terminal callback (same envelope) goes to that job’s
-  `callback_url`, and only when the job is terminal (`200` / `404` /
-  `500` / `504`).
-  - Accepted job (inbound `202`, queued or started): 1 terminal callback.
+- `GET /jobs/{job_id}` is the poller (same envelope as the callback,
+  plus `live` and `status`). Unknown id → HTTP **404**. Live
+  queued/running → HTTP **202**, envelope `status_code` **202**.
+  Terminal → HTTP **200**, envelope `status_code` is `200` / `404` /
+  `500` / `504`. Dashboard `/api/jobs/{id}` is unchanged.
+- When `callback_url` was sent: exactly one terminal callback (same
+  envelope) goes to that URL, and only when the job is terminal
+  (`200` / `404` / `500` / `504`).
+  - Accepted job with a callback URL (inbound `202`, queued or
+    started): 1 terminal callback.
+  - Accepted job with no callback URL: **0** callbacks; poll
+    `GET /jobs/{job_id}`.
   - `409` / inbound `400`: no callback.
   - Never POST `queued` or `in_progress`. n8n wait-node URLs fire once;
     the HTTP ack already says queued vs started.

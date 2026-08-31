@@ -38,9 +38,9 @@ class JobRequest(BaseModel):
     timeout_in_seconds: int
     retry_count: int
     jira_id: str
-    callback_url: str
+    callback_url: str = ""
 
-    @field_validator("repo_url", "source_branch", "prompt", "model", "agent_mode", "jira_id", "callback_url")
+    @field_validator("repo_url", "source_branch", "prompt", "model", "agent_mode", "jira_id")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         text = (value or "").strip()
@@ -51,6 +51,11 @@ class JobRequest(BaseModel):
     @field_validator("PAT")
     @classmethod
     def _optional_pat(cls, value: Optional[str]) -> str:
+        return (value or "").strip()
+
+    @field_validator("callback_url")
+    @classmethod
+    def _optional_callback(cls, value: Optional[str]) -> str:
         return (value or "").strip()
 
     @field_validator("session_id")
@@ -88,6 +93,40 @@ class Envelope(BaseModel):
     status_code: int
     jira_id: str
     job_id: str
+
+
+def poll_payload(job: "JobRecord") -> tuple[int, Dict[str, Any]]:
+    """HTTP status + envelope for GET /jobs/{id}. Extra live/status for the poller."""
+    live = bool(job.live or job.status in LIVE_STATUSES)
+    if live:
+        return 202, {
+            "text": job.text or "Job is still in progress.",
+            "session_id": job.session_id or "",
+            "status_code": 202,
+            "jira_id": job.jira_id,
+            "job_id": job.job_id,
+            "live": True,
+            "status": job.status,
+        }
+    if job.callback_status_code is not None:
+        code = int(job.callback_status_code)
+    elif job.status == "success":
+        code = 200
+    elif job.status == "not_found":
+        code = 404
+    elif job.status == "timeout":
+        code = 504
+    else:
+        code = 500
+    return 200, {
+        "text": job.text or job.error_message or "",
+        "session_id": job.session_id or "",
+        "status_code": code,
+        "jira_id": job.jira_id,
+        "job_id": job.job_id,
+        "live": False,
+        "status": job.status,
+    }
 
 
 class AttemptRow(BaseModel):
@@ -158,7 +197,6 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         "timeout_in_seconds",
         "retry_count",
         "jira_id",
-        "callback_url",
     )
     for key in required:
         if key not in body or body[key] is None or str(body[key]).strip() == "":
@@ -178,10 +216,11 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
     agent = str(body["agent_mode"]).strip()
     if agent not in KNOWN_AGENTS:
         return f"unknown agent_mode: {agent}"
-    callback = str(body["callback_url"]).strip()
-    cb = urlparse(callback)
-    if cb.scheme not in {"http", "https"} or not cb.netloc:
-        return "callback_url must be an absolute http(s) URL"
+    if "callback_url" in body and body["callback_url"] is not None and str(body["callback_url"]).strip():
+        callback = str(body["callback_url"]).strip()
+        cb = urlparse(callback)
+        if cb.scheme not in {"http", "https"} or not cb.netloc:
+            return "callback_url must be an absolute http(s) URL"
     try:
         int(body["timeout_in_seconds"])
         int(body["retry_count"])

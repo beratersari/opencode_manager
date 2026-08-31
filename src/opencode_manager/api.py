@@ -1,4 +1,4 @@
-"""HTTP routes: POST /jobs, DELETE /sessions, plus read-only dashboard GET /api/*."""
+"""HTTP routes: POST /jobs, GET /jobs/:id, DELETE /sessions, plus GET-only /api/*."""
 
 from __future__ import annotations
 
@@ -50,6 +50,13 @@ async def post_jobs(request: Request) -> JSONResponse:
         envelope.status_code,
     )
     return JSONResponse(envelope.model_dump(), status_code=status)
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str, request: Request) -> JSONResponse:
+    """n8n poller: same envelope as the callback, plus live/status."""
+    status, payload = _mgr(request).poll_job(job_id)
+    return JSONResponse(payload, status_code=status)
 
 
 @router.delete("/sessions")

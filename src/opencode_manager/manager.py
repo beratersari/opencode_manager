@@ -22,6 +22,7 @@ from opencode_manager.models import (
     JobRequest,
     callback_host_allowed,
     mint_job_id,
+    poll_payload,
     utc_now,
     validate_request_fields,
     validate_session_delete_fields,
@@ -168,7 +169,9 @@ class Manager:
         req = JobRequest.model_validate(
             {**body, "retry_count": max(1, int(body["retry_count"]))}
         )
-        if not callback_host_allowed(req.callback_url, self.settings.callback_allowed_hosts):
+        if req.callback_url and not callback_host_allowed(
+            req.callback_url, self.settings.callback_allowed_hosts
+        ):
             logger.warning("reject POST /jobs 400: callback host not allowed")
             return 400, Envelope(
                 text="callback_url host is not allowed",
@@ -313,6 +316,20 @@ class Manager:
         if not job:
             return None
         return job.public_dict()
+
+    def poll_job(self, job_id: str) -> tuple[int, Dict[str, Any]]:
+        job = self.store.get(job_id)
+        if not job:
+            return 404, {
+                "text": f"No job {job_id}",
+                "session_id": "",
+                "status_code": 404,
+                "jira_id": "",
+                "job_id": job_id,
+                "live": False,
+                "status": "not_found",
+            }
+        return poll_payload(job)
 
     def delete_session(self, body: Dict[str, Any]) -> tuple[int, Envelope]:
         """Sync OpenCode session delete. Not a job. No callback. No history row."""

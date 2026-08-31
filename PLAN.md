@@ -262,7 +262,8 @@ Different cases:
 ### 4.1 Incoming (n8n → this service)
 
 Inbound writes: `POST /jobs` (run a ticket) and `DELETE /sessions`
-(forget an OpenCode `ses_*`). Dashboard `/api/*` is GET-only.
+(forget an OpenCode `ses_*`). Inbound poll: `GET /jobs/{job_id}`.
+Dashboard `/api/*` is GET-only.
 
 `POST /jobs`:
 
@@ -278,7 +279,7 @@ Inbound writes: `POST /jobs` (run a ticket) and `DELETE /sessions`
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. Must already be a Windows-safe folder name: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`. `.`, `..`, slashes, and other characters are inbound **400** so two tickets cannot share `{work_dir}/{jira_id}` or delete `{work_dir}` itself. |
-| `callback_url` | yes | Absolute `http(s)` URL we POST the **terminal** result to. This is the caller (n8n Wait-node URL), **not** a setting on this server. Missing or non-http(s) → **400**. |
+| `callback_url` | no | Absolute `http(s)` URL we POST the **terminal** result to (n8n Wait-node URL). Omit or empty → **no callback**; poll `GET /jobs/{job_id}`. Present but not http(s) → **400**. |
 
 Do **not** infer the target from `Host`, `Origin`, or `Referer`. n8n wait-node URLs are unique per execution (`…/webhook-waiting/<id>/…`) and fire **once** (the first POST resumes the Wait node). The site origin is not enough. The caller must send the exact URL it wants the result on.
 
@@ -295,7 +296,7 @@ Always fast. Never wait for OpenCode.
 | Same `jira_id` running or queued | **409** | Already in progress. Include the existing `job_id` and `session_id` if we have one. **No callback.** |
 | Same `jira_id` has a session delete in flight | **409** | Do not start a job under a delete. **No callback.** |
 | Capacity full | **202** | Queued. `job_id`, `session_id` (incoming or empty). One terminal callback later. |
-| Capacity free, accepted | **202** | Started. One terminal callback later. |
+| Capacity free, accepted | **202** | Started. One terminal callback later if `callback_url` was set; else poll `GET /jobs/{job_id}`. |
 | Missing/invalid fields, SSH URL, unknown agent, bad `model` | **400** | Error text. No callback. |
 | Process is booting or shutting down | **503** | Not accepting jobs. No callback. |
 | `source_branch` missing on remote | **202** then callback **404** | Check in the worker after accept (§6.3). Not a sync 400. |
@@ -384,6 +385,20 @@ clone) → `start_serve` → `DELETE /session/:id` with
 `x-opencode-directory` → kill **this** serve → if we created the dest,
 hard-delete only that empty dir. Leave a pre-existing leftover clone.
 No `JobRecord`. Log on `app.log` with `jira_id`.
+
+### 4.4b Poll (`GET /jobs/{job_id}`)
+
+When `callback_url` is omitted, n8n (or curl) reads the same terminal
+envelope by polling this path. Dashboard `GET /api/jobs/{id}` stays
+the jobs-tab payload.
+
+| Job state | HTTP | Envelope `status_code` |
+|---|---|---|
+| Unknown id | **404** | 404 |
+| queued / running (`live`) | **202** | 202 |
+| Terminal | **200** | 200 / 404 / 500 / 504 |
+
+Body is the callback envelope plus `live` and `status`.
 
 ### 4.4 Status codes (shared vocabulary)
 
@@ -1160,7 +1175,9 @@ build them).
 - [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `job_id`.
 - [ ] Missing required field → HTTP **400**, no callback.
 - [ ] Empty / omitted `source_branch` on the body → HTTP **400**, no callback.
-- [ ] `callback_url` missing or not `http`/`https` → HTTP **400**, no callback.
+- [ ] `callback_url` omitted or empty → accept; no callback; poll `GET /jobs/{job_id}`.
+- [ ] `callback_url` present but not `http`/`https` → HTTP **400**, no callback.
+- [ ] `GET /jobs/{job_id}`: unknown 404; live 202; terminal HTTP 200 with envelope `status_code`.
 - [ ] Do not infer callback from `Host` / `Origin` / `Referer`.
 - [ ] SSH `repo_url` (`git@`, `ssh://`) → HTTP **400**, no callback.
 - [ ] Unknown `agent_mode` → HTTP **400**, no callback.

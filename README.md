@@ -148,7 +148,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 | `timeout_in_seconds` | yes | One OpenCode attempt (not clone / cleanup). |
 | `retry_count` | yes | Max attempts, first included. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Folder name for the clone. |
-| `callback_url` | yes | Absolute `http(s)` URL for the one terminal POST. Default settings accept any host (`callback_allowed_hosts: ["*"]`). |
+| `callback_url` | no | Absolute `http(s)` URL for the one terminal POST. Omit or `""` to poll `GET /jobs/{job_id}` instead. Default settings accept any host (`callback_allowed_hosts: ["*"]`). |
 | `session_id` | no | Resume this `ses_*` if it is still valid. |
 
 ## curl
@@ -170,6 +170,27 @@ curl -sS -X POST http://127.0.0.1:4096/jobs \
     "jira_id": "PROJ-123",
     "callback_url": "https://n8n.example.com/webhook-waiting/abc123"
   }'
+```
+
+Poll instead of a callback (omit `callback_url`):
+
+```bash
+# 202 + job_id
+JOB=$(curl -sS -X POST http://127.0.0.1:4096/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "repo_url": "https://gitlab.example.com/group/repo.git",
+    "source_branch": "main",
+    "prompt": "Add tests for the login handler.",
+    "model": "opencode/mimo-v2.5-free",
+    "agent_mode": "build",
+    "timeout_in_seconds": 1800,
+    "retry_count": 2,
+    "jira_id": "PROJ-123"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+
+# loop until HTTP 200 (envelope status_code is 200/404/500/504)
+curl -sS -w '\nHTTP %{http_code}\n' http://127.0.0.1:4096/jobs/$JOB
 ```
 
 Optional resume:

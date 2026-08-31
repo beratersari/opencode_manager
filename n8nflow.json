@@ -44,6 +44,12 @@
               "type": "number"
             },
             {
+              "id": "c0a1b2c3-d4e5-4f67-8901-pollinterval01",
+              "name": "poll_interval",
+              "value": 10,
+              "type": "number"
+            },
+            {
               "id": "43cb5918-5198-4b51-b0fb-b6d5be0c1e2f",
               "name": "session_id",
               "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
@@ -61,7 +67,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run."
+      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. poll_interval = seconds between GET /jobs/{id}. Loop budget = timeout * retry_count."
     },
     {
       "parameters": {
@@ -286,7 +292,7 @@
       ],
       "id": "e4ce800f-cb00-4117-8195-a28818fb1200",
       "name": "isCallback200",
-      "notes": "OSM terminal 200 only. 404/500/504 and Wait timeout (202 ack) go to returnAckFail."
+      "notes": "OSM terminal 200 only. 404/500/504 and poll budget spent (still 202) go to returnAckFail."
     },
     {
       "parameters": {
@@ -348,7 +354,7 @@
             {
               "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
               "name": "={{ $('staticVariableNames1').item.json.session_id }}",
-              "value": "={{ $('normalizeCallback').item.json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
+              "value": "={{ $('normalizePoll').item.json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
               "type": "string"
             },
             {
@@ -571,7 +577,7 @@
       "name": "sendRequestToAI1",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
-      "notes": "OSM POST /jobs ack only. neverError so 400/409/503 still return the envelope. 202 started and 202 queued both wait for the one callback."
+      "notes": "OSM POST /jobs ack only. neverError so 400/409/503 still return the envelope. 202 started/queued → poll GET /jobs/{id}. No callback_url."
     },
     {
       "parameters": {
@@ -619,15 +625,13 @@
       ],
       "id": "e4ce800f-ack0-4117-8195-a28818fb1e1b",
       "name": "ackIs202",
-      "notes": "202 = started or queued → Wait (one callback). 400 / 409 / 503 → returnAckFail with OSM text. No callback."
+      "notes": "202 = started or queued → poll loop. 400 / 409 / 503 → returnAckFail. No callback."
     },
     {
       "parameters": {
-        "resume": "webhook",
-        "httpMethod": "POST",
-        "limitWaitTime": true,
-        "resumeAmount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
-        "resumeUnit": "seconds",
+        "resume": "timeInterval",
+        "amount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10) }}",
+        "unit": "seconds",
         "options": {}
       },
       "type": "n8n-nodes-base.wait",
@@ -637,27 +641,87 @@
         160
       ],
       "id": "d77b433a-cb0b-4139-b486-53babf6b45d3",
-      "name": "waitForOsmCallback",
-      "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b",
-      "notes": "Wait timeout = remoteComputerInfo1.timeout * retry_count (seconds). OSM POSTs one terminal envelope here. Clone/cleanup sit outside that clock. httpMethod must be POST."
+      "name": "waitPollInterval",
+      "notes": "Sleep poll_interval seconds, then GET /jobs/{id}. Loops while envelope status_code is 202."
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text || j.body.job_id))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+        "method": "GET",
+        "url": "=http://{{ $('remoteComputerInfo1').item.json.remoteIP }}:{{ $('remoteComputerInfo1').item.json.remotePort }}/jobs/{{ $('normalizeAck').item.json.job_id }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
       "position": [
         1248,
         160
       ],
-      "id": "c0ffee00-cb11-4cb1-9cb1-normalize00cb",
-      "name": "normalizeCallback",
-      "notes": "Wait webhook wraps OSM JSON as { headers, body }. Flatten to the OSM envelope so isTextExist and the LLM see $json.text."
+      "id": "e1f2a3b4-c5d6-4789-8abc-polljobstatus01",
+      "name": "pollJobStatus",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "GET /jobs/{job_id}. HTTP 202 = still live. HTTP 200 = terminal (read envelope status_code)."
     },
     {
       "parameters": {
-        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text || j.body.job_id))\n  ? j.body : j;\nconst ack = $('normalizeAck').first().json || {};\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || ack.jira_id || '',\n  job_id: env.job_id || ack.job_id || '',\n  live: env.live === true,\n  status: env.status || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        160
+      ],
+      "id": "c0ffee00-cb11-4cb1-9cb1-normalize00cb",
+      "name": "normalizePoll",
+      "notes": "Flatten GET /jobs envelope so isCallback200 and the LLM see $json.text / status_code."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "still-live-202",
+              "leftValue": "={{ Number($json.status_code) === 202 && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1472,
+        160
+      ],
+      "id": "f2a3b4c5-d6e7-4890-9bcd-stillinprogress1",
+      "name": "stillInProgress",
+      "notes": "Loop while OSM GET is 202 and elapsed < timeout * retry_count. Else go to isCallback200 (200 success / other fail / poll budget spent)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -667,7 +731,7 @@
       ],
       "id": "a0b1c2d3-e4f5-4678-8901-23456789abcd",
       "name": "buildOsmRequest",
-      "notes": "Maps stringify output to OSM POST /jobs. timeout_in_seconds and retry_count come from remoteComputerInfo1. PAT and model hardcoded."
+      "notes": "Maps stringify output to OSM POST /jobs. No callback_url — n8n polls GET /jobs/{id}."
     },
     {
       "parameters": {
@@ -894,7 +958,7 @@
       "main": [
         [
           {
-            "node": "waitForOsmCallback",
+            "node": "waitPollInterval",
             "type": "main",
             "index": 0
           }
@@ -908,19 +972,48 @@
         ]
       ]
     },
-    "waitForOsmCallback": {
+    "waitPollInterval": {
       "main": [
         [
           {
-            "node": "normalizeCallback",
+            "node": "pollJobStatus",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "normalizeCallback": {
+    "pollJobStatus": {
       "main": [
+        [
+          {
+            "node": "normalizePoll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizePoll": {
+      "main": [
+        [
+          {
+            "node": "stillInProgress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "stillInProgress": {
+      "main": [
+        [
+          {
+            "node": "waitPollInterval",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "isCallback200",

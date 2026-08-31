@@ -50,6 +50,25 @@ def test_connections_only_name_existing_nodes() -> None:
     assert bad == [], "n8n connections name missing nodes:\n" + "\n".join(bad)
 
 
+def test_job_path_polls_osm_jobs_not_callback() -> None:
+    data = _flow()
+    names = {str(n["name"]) for n in data["nodes"]}
+    assert {"waitPollInterval", "pollJobStatus", "normalizePoll", "stillInProgress"} <= names
+    assert "waitForOsmCallback" not in names
+    build = next(n for n in data["nodes"] if n["name"] == "buildOsmRequest")
+    code = str(build["parameters"].get("jsCode") or "")
+    assert "callback_url" not in code
+    poll = next(n for n in data["nodes"] if n["name"] == "pollJobStatus")
+    url = str(poll["parameters"].get("url") or "")
+    assert "/jobs/" in url
+    assert poll["parameters"].get("method") == "GET"
+    wait = next(n for n in data["nodes"] if n["name"] == "waitPollInterval")
+    assert wait["parameters"].get("resume") == "timeInterval"
+    loop = data["connections"]["stillInProgress"]["main"]
+    assert loop[0][0]["node"] == "waitPollInterval"
+    assert loop[1][0]["node"] == "isCallback200"
+
+
 def test_session_delete_branch_targets_osm_sessions() -> None:
     data = _flow()
     names = {str(n["name"]) for n in data["nodes"]}

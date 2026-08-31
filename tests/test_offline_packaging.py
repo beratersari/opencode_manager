@@ -88,6 +88,17 @@ def test_four_platform_packs() -> None:
     assert not mod.wheel_for_pack("foo-1.0-cp312-cp312-macosx_11_0_arm64.whl", "winlinux")
 
 
+def test_ci_uploads_stage_dir_not_nested_zip() -> None:
+    text = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "offline-dist.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-x64/" in text
+    assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-linux-x64/" in text
+    assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-darwin/" in text
+    assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-linux/" in text
+    assert "path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip" not in text.split("Create GitHub Release")[0]
+
+
 def test_zip_does_not_stage_agents_folder() -> None:
     mod = _load()
     assert "agents" not in mod.COPY_DIRS

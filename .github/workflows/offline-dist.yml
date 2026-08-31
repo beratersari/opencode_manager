@@ -135,35 +135,38 @@ jobs:
           fi
           echo "Four-zip payload OK"
 
-      - name: Upload Windows zip
+      # upload-artifact always wraps the path in a zip. Upload the staged
+      # folder (not the payload .zip) so a download extracts install.bat /
+      # vendor/ directly. Tag releases still attach the real .zip files below.
+      - name: Upload Windows payload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-windows-x64
-          path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip
+          path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-x64/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Linux zip
+      - name: Upload Linux payload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-linux-x64
-          path: dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
+          path: dist/stage/${{ steps.ver.outputs.dist_name }}-linux-x64/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload macOS zip
+      - name: Upload macOS payload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-darwin
-          path: dist/${{ steps.ver.outputs.dist_name }}-darwin.zip
+          path: dist/stage/${{ steps.ver.outputs.dist_name }}-darwin/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Windows+Linux zip
+      - name: Upload Windows+Linux payload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-windows-linux
-          path: dist/${{ steps.ver.outputs.dist_name }}-windows-linux.zip
+          path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-linux/
           if-no-files-found: error
           retention-days: 30
 

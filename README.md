@@ -21,12 +21,14 @@ Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md).
 5. After the job is terminal (callback arrived, or you know it failed), the
    same `jira_id` may be posted again as a **new** job.
 
-A ready n8n sub-workflow is [n8nflow.json](n8nflow.json). Import it and set
-`osmHost` / `osmPort` on **remoteComputerInfo1**. Do not poll OSM. The
-parent trigger is unchanged (no `PAT` / `model` there). **buildOsmRequest**
-hardcodes `PAT` and `model` on the OSM body. **strginfyInputText1** builds
-the prompt the same way as before (`text`, planner suffix, `issue_id`,
-`repo_url`, `sourceBranch` / `targetBranch`).
+A ready n8n sub-workflow is [n8nflow.json](n8nflow.json) (from
+[n8ninitial.json](n8ninitial.json)). Only the OpenCode HTTP/poll path is
+replaced. **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
+**OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1** are
+unchanged: OSM `text` still goes into that LLM, then the same return
+shape. Import the flow and set `remoteIP` / `remotePort` (8080) on
+**remoteComputerInfo1**. **buildOsmRequest** hardcodes `PAT` and `model`.
+Do not poll OSM.
 
 There is **no hardcoded webhook URL** in that file. n8n creates a **new
 Wait resume URL for each run**. The Code node **buildOsmRequest** copies
@@ -50,9 +52,13 @@ Flow:
 
 1. n8n starts the run.
 2. **buildOsmRequest** sets `callback_url` to `$execution.resumeUrl`.
-3. **postJobs** `POST /jobs` and takes the ack only.
-4. OSM later POSTs the one terminal JSON to that URL.
-5. **waitForOsmCallback** resumes with `{ text, session_id, status_code, jira_id, job_id }`.
+3. **sendRequestToAI1** `POST /jobs` and takes the ack only (`neverError`
+   so **400** / **409** / **503** still return the envelope).
+4. **ackIs202**: both **202** texts (`in progress` and `queued`) go to
+   **waitForOsmCallback**. **400** / **409** / **503** go to
+   **returnAckFail** with OSM `text` (no callback).
+5. OSM later POSTs the one terminal JSON to the Wait URL.
+6. **waitForOsmCallback** resumes with `{ text, session_id, status_code, jira_id, job_id }`.
 
 After a test run, open **buildOsmRequest** → `osmBody.callback_url` to
 see the real address. OSM must be able to reach that host (n8n’s public

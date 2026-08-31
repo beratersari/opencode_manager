@@ -45,6 +45,14 @@ def test_bad_callback():
     assert "callback_url" in (validate_request_fields(_ok(callback_url="ftp://x")) or "")
 
 
+def test_missing_or_empty_callback_is_ok():
+    body = _ok()
+    del body["callback_url"]
+    assert validate_request_fields(body) is None
+    assert validate_request_fields(_ok(callback_url="")) is None
+    assert validate_request_fields(_ok(callback_url="   ")) is None
+
+
 def test_n8n_wait_url_is_valid():
     assert (
         validate_request_fields(

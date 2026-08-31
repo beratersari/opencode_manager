@@ -82,7 +82,6 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
     [
         lambda b: b.pop("source_branch"),
         lambda b: b.pop("jira_id"),
-        lambda b: b.pop("callback_url"),
         lambda b: b.pop("timeout_in_seconds"),
         lambda b: b.__setitem__("source_branch", "  "),
         lambda b: b.__setitem__("timeout_in_seconds", 0),

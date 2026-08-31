@@ -33,21 +33,56 @@ Inbound ack and callback share one body:
 }
 ```
 
-| Inbound | Meaning | Callback? |
-|---|---|---|
-| **202** | Accepted (started or queued) | Yes — one terminal POST later |
-| **409** | That `jira_id` is already live | No |
-| **400** | Bad body (missing field, SSH URL, bad model, …) | No |
-| **503** | Manager booting or shutting down | No |
+There is never a `queued` or `in_progress` callback. `{…}` below is filled in.
+`job_id` is empty on **400** / **503**. **409** returns the live job’s id.
 
-| Callback `status_code` | Meaning | `text` |
-|---|---|---|
-| **200** | Finished | Last assistant message |
-| **404** | `source_branch` missing on the remote | Error |
-| **500** | Failed after retries | Error (never a PAT) |
-| **504** | Attempt clock ran out | Error |
+### Ack (`POST /jobs` response)
 
-There is never a `queued` or `in_progress` callback.
+| HTTP | `text` | When | Callback? |
+|---|---|---|---|
+| **202** | `Job accepted and is now in progress.` | Slot free; worker started | Yes — one terminal POST later |
+| **202** | `Job accepted and queued.` | Capacity full; other ticket | Yes — one terminal POST later |
+| **409** | `jira_id {jira_id} already has a live job` | Same ticket running or queued | No |
+| **400** | `missing required field: {name}` | Missing/empty `repo_url`, `source_branch`, `prompt`, `model`, `agent_mode`, `timeout_in_seconds`, `retry_count`, `jira_id`, or `callback_url` | No |
+| **400** | `SSH repo_url is rejected` | `git@` or `ssh://` | No |
+| **400** | `repo_url must be http(s) or file` | Other scheme | No |
+| **400** | `model must be provider/id` | Not `provider/id` | No |
+| **400** | `unknown agent_mode: {agent}` | Not `build` / `plan` / `general` / `explore` | No |
+| **400** | `callback_url must be an absolute http(s) URL` | Missing scheme or host | No |
+| **400** | `callback_url host is not allowed` | Host not in `callback_allowed_hosts` (ignored when that list is `[]` / `*` / `all`) | No |
+| **400** | `timeout_in_seconds and retry_count must be integers` | Non-integer | No |
+| **400** | `timeout_in_seconds must be >= 1` | Zero or negative | No |
+| **503** | `manager is not accepting jobs` | Booting or shutting down | No |
+
+### Callback (one POST to `callback_url`)
+
+Only after inbound **202**. `status_code` on this POST is never 202.
+
+| `status_code` | `text` | When |
+|---|---|---|
+| **200** | Last assistant message | OpenCode finished |
+| **404** | `source_branch '{branch}' does not exist on the remote` | Branch missing on the remote |
+| **500** | `manager shutting down` | Shutdown, or the job was stopped mid-flight |
+| **500** | `could not remove leftover clone at {path}` | Stable clone path could not be deleted before clone |
+| **500** | `git failed: {error}` | Clone / `ls-remote` failed (never includes a PAT) |
+| **500** | `model '{provider/id}' is not available on this OpenCode serve. Available: {sample}.` | Model missing from `GET /config/providers` |
+| **500** | `model still asking after UNATTENDED_NUDGE` | Still asking after the one nudge |
+| **500** | `compact leftover after COMPACT_LOOP_NUDGE` | Compact leftover after the compact nudge |
+| **500** | `attempt {n} ended: hang` | Hang watchdog; no attempts left |
+| **500** | `attempt {n} ended: serve-dead` | Serve died; no attempts left |
+| **500** | `attempt {n} ended: incomplete` | Incomplete resume exhausted |
+| **500** | `serve boot failed: {error}` | Last attempt could not start `opencode serve` |
+| **500** | `serve health failed` | Last attempt’s serve never became healthy |
+| **500** | `session create failed: {error}` | No live `ses_*` yet; create failed on last attempt |
+| **500** | `resume rejected: {error}` | Mid-job resume failed (live id already bound) |
+| **500** | `resume rejected; will not open a blank session` | Mid-job hang retry would have created a new session |
+| **500** | `session busy; refusing to POST a user message` | Last attempt refused to POST while busy |
+| **500** | `user message POST failed: {error}` | Last attempt’s `/message` failed |
+| **500** | `worker crashed: {error}` | Uncaught worker exception |
+| **500** | `pipeline failed: {error}` | Uncaught pipeline exception |
+| **504** | `attempt {n} ended: timeout` | Attempt clock hit zero; no attempts left |
+
+Boot leftovers (`process restarted; leftover job was not resumed`) are history-only **ERROR** rows. They are **not** POSTed.
 
 ### `POST /jobs` body
 

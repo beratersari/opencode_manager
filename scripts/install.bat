@@ -101,6 +101,10 @@ if errorlevel 1 (
 if errorlevel 1 (
     echo [ERROR] Offline package install failed.
     echo Wheels must match the bundled python.exe in vendor\python\windows.
+    echo Need a Windows PyYAML wheel ^(PyYAML-*-win_amd64.whl^) in vendor\python-wheels.
+    echo Present yaml / pydantic-core wheels:
+    dir /b "%WHEELS%\*yaml*" 2>nul
+    dir /b "%WHEELS%\*pydantic_core*" 2>nul
     call :maybe_pause
     exit /b 1
 )

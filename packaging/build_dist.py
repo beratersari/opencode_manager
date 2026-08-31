@@ -183,6 +183,21 @@ WHEEL_PLATFORMS = {
     "darwin-x64": "macosx_11_0_x86_64",
 }
 
+# Native wheels that must exist in every OS zip. pip --platform evaluates
+# environment markers on the *host*, so uvicorn[standard] on Linux CI still
+# requires uvloop when targeting win_amd64. uvloop has no Windows wheel, the
+# whole download fails, and PyYAML / pydantic-core never land in the zip.
+REQUIRED_NATIVE_PROJECTS = ("pyyaml", "pydantic_core")
+
+_UVICORN_STANDARD_COMMON = (
+    "uvicorn>=0.32",
+    "httptools>=0.6",
+    "python-dotenv>=0.13",
+    "PyYAML>=6.0",
+    "watchfiles>=0.13",
+    "websockets>=10.4",
+)
+
 # Per-OS zips plus a combined Windows+Linux zip.
 PACKS: dict[str, dict[str, object]] = {
     "windows": {
@@ -210,6 +225,95 @@ PACKS: dict[str, dict[str, object]] = {
         "opencodes": (("windows", "x64", "windows"), ("linux", "x64", "linux")),
     },
 }
+
+
+def _req_name_and_extra(req: str) -> tuple[str, str]:
+    head = req.split(";")[0].strip()
+    extra = ""
+    if "[" in head and "]" in head:
+        extra = head[head.index("[") + 1 : head.index("]")].strip().lower()
+        name = head[: head.index("[")].strip()
+    else:
+        name = head
+    for sep in (">=", "<=", "==", "~=", "!=", ">", "<"):
+        if sep in name:
+            name = name.split(sep, 1)[0].strip()
+            break
+    return name.lower(), extra
+
+
+def reqs_for_wheel_platform(reqs: list[str], platform_key: str) -> list[str]:
+    """Rewrite extras so `pip download --platform` does not require uvloop on Windows."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(item: str) -> None:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+
+    windows = platform_key == "windows"
+    for req in reqs:
+        name, extra = _req_name_and_extra(req)
+        if name == "uvicorn" and "standard" in extra.split(","):
+            for item in _UVICORN_STANDARD_COMMON:
+                add(item)
+            add("colorama>=0.4" if windows else "uvloop>=0.15")
+            continue
+        add(req)
+    add("PyYAML>=6.0")
+    add("pydantic-core")
+    return out
+
+
+def wheel_dist_name(filename: str) -> str:
+    return filename.split("-", 1)[0].lower().replace("-", "_")
+
+
+def has_project_wheel(wheels: Path, project: str, pack: str) -> bool:
+    want = project.lower().replace("-", "_")
+    if not wheels.is_dir():
+        return False
+    for item in wheels.iterdir():
+        if not item.is_file():
+            continue
+        if wheel_dist_name(item.name) != want:
+            continue
+        if wheel_for_pack(item.name, pack):
+            return True
+    return False
+
+
+def assert_pack_wheels(wheels: Path, pack: str) -> None:
+    """Fail the build if a zip would not be installable offline."""
+    checks: list[str]
+    if pack == "winlinux":
+        checks = ["windows", "linux"]
+    else:
+        checks = [pack]
+    missing: list[str] = []
+    for sub in checks:
+        for proj in REQUIRED_NATIVE_PROJECTS:
+            if not has_project_wheel(wheels, proj, sub):
+                missing.append(f"{proj} ({sub})")
+    if pack == "darwin":
+        for proj in REQUIRED_NATIVE_PROJECTS:
+            names = [
+                p.name.lower()
+                for p in wheels.iterdir()
+                if p.is_file() and wheel_dist_name(p.name) == proj.replace("-", "_")
+            ]
+            if not any("macosx" in n and "arm64" in n for n in names):
+                missing.append(f"{proj} (darwin-arm64)")
+            if not any("macosx" in n and "x86_64" in n for n in names):
+                missing.append(f"{proj} (darwin-x64)")
+    if missing:
+        listing = sorted(p.name for p in wheels.iterdir() if p.is_file()) if wheels.is_dir() else []
+        raise SystemExit(
+            f"FAIL: {pack} wheel set missing {missing} under {wheels}\n"
+            f"  present: {listing}"
+        )
 
 
 def pip_download_wheels(
@@ -249,62 +353,61 @@ def pip_download_wheels(
             "--prefer-binary",
         ]
     )
-    plats = [WHEEL_PLATFORMS[p] for p in platforms if p in WHEEL_PLATFORMS]
-    if not plats:
-        return
-    for plat in plats:
+    for platform_key in platforms:
+        plat = WHEEL_PLATFORMS.get(platform_key)
+        if not plat:
+            continue
+        plat_reqs = reqs_for_wheel_platform(reqs, platform_key)
+        plat_req_file = wheels.parent / f"requirements-{platform_key}.txt"
+        plat_req_file.write_text("\n".join(plat_reqs) + "\n", encoding="utf-8")
         for pv in py_versions:
             tag = pv.replace(".", "")
             print(f"  pip download {plat} cp{tag} (Python {pv})...")
-            cmd = [
-                sys.executable,
-                "-m",
-                "pip",
-                "download",
-                "-r",
-                str(req_file),
-                "-d",
-                str(wheels),
-                "--python-version",
-                pv,
-                "--platform",
-                plat,
-                "--implementation",
-                "cp",
-                "--abi",
-                f"cp{tag}",
-                "--only-binary=:all:",
-                "--prefer-binary",
-            ]
-            try:
-                run(cmd)
-            except subprocess.CalledProcessError:
-                print(f"  WARNING: incomplete wheel set for Python {pv} ({plat})")
-            helper = [
-                sys.executable,
-                "-m",
-                "pip",
-                "download",
-                "pip",
-                "setuptools",
-                "wheel",
-                "-d",
-                str(wheels),
-                "--python-version",
-                pv,
-                "--platform",
-                plat,
-                "--implementation",
-                "cp",
-                "--abi",
-                f"cp{tag}",
-                "--only-binary=:all:",
-                "--prefer-binary",
-            ]
-            try:
-                run(helper)
-            except subprocess.CalledProcessError:
-                pass
+            run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "download",
+                    "-r",
+                    str(plat_req_file),
+                    "-d",
+                    str(wheels),
+                    "--python-version",
+                    pv,
+                    "--platform",
+                    plat,
+                    "--implementation",
+                    "cp",
+                    "--abi",
+                    f"cp{tag}",
+                    "--only-binary=:all:",
+                    "--prefer-binary",
+                ]
+            )
+            run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "download",
+                    "pip",
+                    "setuptools",
+                    "wheel",
+                    "-d",
+                    str(wheels),
+                    "--python-version",
+                    pv,
+                    "--platform",
+                    plat,
+                    "--implementation",
+                    "cp",
+                    "--abi",
+                    f"cp{tag}",
+                    "--only-binary=:all:",
+                    "--prefer-binary",
+                ]
+            )
 
 
 def supported_python_versions(wheels: Path, candidates: list[str]) -> list[str]:
@@ -597,6 +700,8 @@ def main(argv: list[str] | None = None) -> int:
                 wheel_plats.append(w)
     pip_download_wheels(reqs, wheel_src, wheel_versions, wheel_plats)
     supported = supported_python_versions(wheel_src, wheel_versions)
+    if args.in_place:
+        assert_pack_wheels(wheel_src, host_pack)
 
     print("\nStep 3: Fetching bundled CPython...")
     py_assets: list[str] = []
@@ -661,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
         vendor = payload / "vendor"
         n_wheels = copy_wheels_for_pack(wheel_src, vendor / "python-wheels", pid)
         print(f"  wheels copied for {pid}: {n_wheels}")
+        assert_pack_wheels(vendor / "python-wheels", pid)
         for pack_os, dest_name in spec["pythons"]:  # type: ignore[misc]
             src_py = py_root / dest_name
             dest_py = vendor / "python" / dest_name

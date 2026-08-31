@@ -280,7 +280,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   produces four zips: `*-windows-x64.zip`, `*-linux-x64.zip`,
   `*-darwin.zip`, and `*-windows-linux.zip` (Windows + Linux). Each
   has that OS’s bundled CPython, matching wheels, OpenCode CLI, and
-  `web/dist`. Do not ship `agents/` in the zip.
+  `web/dist`. Do not ship `agents/` in the zip. Native wheels
+  (`PyYAML`, `pydantic-core`) must exist for that OS. Do not
+  `pip download --platform win_amd64` of `uvicorn[standard]` as-is:
+  host markers still require `uvloop` (no Windows wheel) and the
+  whole Windows set is skipped.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
 - Do not vendor Git, Codex, `glab`, portable Node, or

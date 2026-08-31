@@ -66,7 +66,13 @@ VENV_PY="$VENV_DIR/bin/python"
 echo
 echo "Step 2: Installing packages from vendor/python-wheels (no network)..."
 "$VENV_PY" -m pip install --upgrade pip --no-index --find-links="$WHEELS"
-"$VENV_PY" -m pip install --no-index --find-links="$WHEELS" -e .
+if ! "$VENV_PY" -m pip install --no-index --find-links="$WHEELS" -e .; then
+  echo "[ERROR] Offline package install failed."
+  echo "Wheels must match the bundled interpreter. Need PyYAML + pydantic-core for this OS."
+  echo "Present yaml / pydantic-core wheels:"
+  ls -1 "$WHEELS"/*[Yy][Aa][Mm][Ll]* "$WHEELS"/*pydantic_core* 2>/dev/null || true
+  exit 1
+fi
 echo "[OK] Manager installed into .venv from local wheels"
 
 echo

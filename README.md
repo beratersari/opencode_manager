@@ -125,16 +125,16 @@ listen is `0.0.0.0:8080` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
-CI workflow **Offline Distribution** builds **three** zips. Download the one
-for your OS:
+CI workflow **Offline Distribution** builds **four** zips. Download the one
+for your OS (or the combined Windows+Linux zip):
 
 - `opencode-manager-<version>-windows-x64.zip`
 - `opencode-manager-<version>-linux-x64.zip`
 - `opencode-manager-<version>-darwin.zip` (Apple Silicon + Intel)
 - `opencode-manager-<version>-windows-linux.zip` (Windows + Linux together)
 
-Each zip has that OS’s bundled CPython, matching wheels, OpenCode CLI,
-and `web/dist`. Extract it. Install Git. Then:
+Each zip has the matching bundled CPython, wheels, OpenCode CLI, and
+`web/dist`. `agents/` is not shipped. Extract it. Install Git. Then:
 
 ```bash
 # Windows

@@ -918,8 +918,11 @@ Clone the repo for reference only. Do not import it as a dependency.
   **GET-only** — strip every write control.
 - offline zip shape: four CI zips (Windows, Linux, macOS, plus a
   combined Windows+Linux zip). Each has that OS’s bundled CPython,
-  matching wheels, prebuilt `web/dist`, and OpenCode CLI. Do not
-  ship `agents/`. Target `install.*` creates `.venv` with the
+  matching wheels (including native `PyYAML` + `pydantic-core` for
+  that OS), prebuilt `web/dist`, and OpenCode CLI. Do not ship
+  `agents/`. Expand `uvicorn[standard]` before `pip download
+  --platform` so Linux CI does not require `uvloop` for
+  `win_amd64`. Target `install.*` creates `.venv` with the
   bundled interpreter (`--no-index`).
 
 **Do not copy**
@@ -977,10 +980,9 @@ opencode_manager/
   scripts/              # offline install + start (Windows .bat, Linux .sh)
   packaging/            # versions.env + build_dist.py (needs network)
   vendor/               # CI zip only: bundled CPython + wheels + OpenCode bin
-  logs/                 # app log only: logs/app.log (project root)
-# clones default:  Windows C:\osm\.temp   Linux /var/lib/osm/.temp
-# job logs default: Windows C:\osm\logs    Linux /var/lib/osm/logs
-# job history:      Windows C:\osm\jobs    Linux /var/lib/osm/jobs
+  agents/               # closed-defect notes (not shipped in the zip)
+# runtime under data_dir (Windows C:\osm, Linux /var/lib/osm):
+#   .temp/ clones, .serve/ serve logs, logs/ (app + jobs), jobs/, queue.json
 ```
 
 Cross-platform: `os.name` branches only in kill + rmtree + a few git env

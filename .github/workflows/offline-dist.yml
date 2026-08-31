@@ -1,5 +1,6 @@
-# Build three offline zips (Windows, Linux, macOS).
-# Each zip has that OS's bundled CPython, matching wheels, OpenCode CLI, and web/dist.
+# Build four offline zips (Windows, Linux, macOS, plus Windows+Linux).
+# Each zip has the matching bundled CPython, wheels, OpenCode CLI, and web/dist.
+# Do not ship agents/.
 # Target install never hits the network.
 
 name: Offline Distribution
@@ -81,6 +82,33 @@ jobs:
             if [ -d "$stage/agents" ]; then
               echo "agents/ must not be in $suffix"
               exit 1
+            fi
+            shopt -s nullglob
+            yaml_wheels=("$stage"/vendor/python-wheels/[Pp]y[Yy]AML-*.whl "$stage"/vendor/python-wheels/pyyaml-*.whl)
+            core_wheels=("$stage"/vendor/python-wheels/pydantic_core-*.whl)
+            shopt -u nullglob
+            if [ ${#yaml_wheels[@]} -eq 0 ]; then
+              echo "PyYAML wheel missing in $suffix"
+              ls -1 "$stage/vendor/python-wheels" || true
+              exit 1
+            fi
+            if [ ${#core_wheels[@]} -eq 0 ]; then
+              echo "pydantic-core wheel missing in $suffix"
+              ls -1 "$stage/vendor/python-wheels" || true
+              exit 1
+            fi
+            if [ "$suffix" = "windows-x64" ] || [ "$suffix" = "windows-linux" ]; then
+              if ! ls "$stage"/vendor/python-wheels/[Pp]y[Yy]AML-*win_amd64*.whl >/dev/null 2>&1 \
+                && ! ls "$stage"/vendor/python-wheels/pyyaml-*win_amd64*.whl >/dev/null 2>&1; then
+                echo "Windows PyYAML wheel missing in $suffix"
+                ls -1 "$stage/vendor/python-wheels" || true
+                exit 1
+              fi
+              if ! ls "$stage"/vendor/python-wheels/pydantic_core-*win_amd64*.whl >/dev/null 2>&1; then
+                echo "Windows pydantic-core wheel missing in $suffix"
+                ls -1 "$stage/vendor/python-wheels" || true
+                exit 1
+              fi
             fi
             if [ "$suffix" = "windows-x64" ] && [ -e "$stage/vendor/python/linux" ]; then
               echo "windows zip must not include linux python"

@@ -261,7 +261,10 @@ Different cases:
 
 ### 4.1 Incoming (n8n → this service)
 
-`POST /jobs` (name can change; one write endpoint is enough).
+Inbound writes: `POST /jobs` (run a ticket) and `DELETE /sessions`
+(forget an OpenCode `ses_*`). Dashboard `/api/*` is GET-only.
+
+`POST /jobs`:
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -290,6 +293,7 @@ Always fast. Never wait for OpenCode.
 | Situation | HTTP | Body idea |
 |---|---|---|
 | Same `jira_id` running or queued | **409** | Already in progress. Include the existing `job_id` and `session_id` if we have one. **No callback.** |
+| Same `jira_id` has a session delete in flight | **409** | Do not start a job under a delete. **No callback.** |
 | Capacity full | **202** | Queued. `job_id`, `session_id` (incoming or empty). One terminal callback later. |
 | Capacity free, accepted | **202** | Started. One terminal callback later. |
 | Missing/invalid fields, SSH URL, unknown agent, bad `model` | **400** | Error text. No callback. |
@@ -348,16 +352,49 @@ n8n Wait `404` is “webhook not armed yet” (fast-fail race after inbound
 will not start working on retry. The job itself is already finished; do
 not re-run OpenCode because n8n missed a webhook.
 
+### 4.4a Session delete (`DELETE /sessions`)
+
+Parent n8n can ask OSM to **forget** an OpenCode conversation. This is
+not a job, not job cancel, and not clone delete. Without it, the same
+`ses_*` still resumes after a clean re-clone; sending `-1` already
+starts a new session and leaves the old row in `opencode.db`.
+
+JSON body (same host/port as `POST /jobs`):
+
+```json
+{ "jira_id": "ARI-259", "session_id": "ses_…" }
+```
+
+Same envelope. `job_id` is always empty. **No callback.** The HTTP
+response is the result (seconds: short-lived serve + OpenCode
+`DELETE /session/:id`).
+
+| Situation | HTTP | Notes |
+|---|---|---|
+| Booting / shutting down | **503** | Same as `POST /jobs`. |
+| Missing fields, unsafe `jira_id`, `session_id` empty / `-1` / not `ses_*` | **400** | |
+| `jira_id` queued or running | **409** | Include that job’s `job_id` + `session_id`. Do not touch OpenCode. |
+| Another delete for this `jira_id` already running | **409** | |
+| OpenCode 2xx or 404 | **200** | Idempotent. |
+| Serve boot fail / other OpenCode error | **500** | Kill this serve. No retry loop. |
+
+How: occupy `jira_id` in an in-memory delete set (so `POST /jobs`
+409s) → `clone_path_for` (mkdir empty dest only if missing; no git
+clone) → `start_serve` → `DELETE /session/:id` with
+`x-opencode-directory` → kill **this** serve → if we created the dest,
+hard-delete only that empty dir. Leave a pre-existing leftover clone.
+No `JobRecord`. Log on `app.log` with `jira_id`.
+
 ### 4.4 Status codes (shared vocabulary)
 
 | Code | Meaning |
 |---|---|
-| 200 | OpenCode finished; `text` is the last assistant output |
+| 200 | OpenCode finished (`text` is the last assistant output), or `DELETE /sessions` succeeded |
 | 202 | Inbound ack only: queued or started. Never a callback. |
 | 400 | Bad request / unusable input |
 | 404 | `source_branch` does not exist on the remote |
-| 409 | This `jira_id` already has a live job |
-| 500 | Failed after retries (serve crash, incomplete, unexpected) |
+| 409 | This `jira_id` already has a live job, or a session delete is in flight |
+| 500 | Failed after retries (serve crash, incomplete, unexpected), or session delete serve/OpenCode failed |
 | 503 | Inbound only: manager is booting or shutting down. No callback. |
 | 504 | An OpenCode attempt hit `timeout_in_seconds` and no attempts remain |
 
@@ -366,9 +403,17 @@ not re-run OpenCode because n8n missed a webhook.
 ## 5. Runtime behaviour
 
 ```
+n8n  --DELETE /sessions-->  manager
+                         │
+                         ├─ 409 live job or delete already in flight
+                         ├─ 400 / 503
+                         └─ short-lived serve → DELETE /session/:id → 200 / 500
+                            (no callback, no JobRecord)
+
 n8n  --POST /jobs-->  manager
                          │
                          ├─ 409 already in progress (same jira_id)  — no callback
+                         ├─ 409 session delete in flight for that jira_id — no callback
                          ├─ 202 queued
                          │        └─ later worker slot
                          └─ 202 started
@@ -967,7 +1012,7 @@ opencode_manager/
   src/opencode_manager/
     app.py              # HTTP server
     settings.py
-    api.py              # POST /jobs
+    api.py              # POST /jobs, DELETE /sessions
     models.py           # request/response
     queue.py            # persist + dispatch
     worker.py           # one job pipeline
@@ -1107,6 +1152,9 @@ build them).
 ### 16.3 Inbound HTTP
 
 - [ ] `POST /jobs` accepts the JSON fields in §4.1.
+- [ ] `DELETE /sessions` accepts `{ jira_id, session_id }`; same envelope; `job_id` empty; no callback; no history row.
+- [ ] `DELETE /sessions`: live `jira_id` or delete in flight → **409**; empty/`-1`/not `ses_*` → **400**; OpenCode 404 → **200**; boot/shutdown → **503**.
+- [ ] `POST /jobs` while a session delete is in flight for that `jira_id` → **409**.
 - [ ] Inbound handler never waits for clone or OpenCode (ack only).
 - [ ] Mint `job_id` on accept; n8n does not send it.
 - [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `job_id`.
@@ -1133,7 +1181,7 @@ build them).
 - [ ] FIFO dequeue when a running job becomes terminal.
 - [ ] On dequeue run the same pipeline; do **not** send an `in_progress` callback.
 - [ ] After success / fail / timeout / ERROR, a new POST for that `jira_id` is a new job.
-- [ ] While booting: do not start any job, do not dequeue, do not accept `POST /jobs`.
+- [ ] While booting: do not start any job, do not dequeue, do not accept `POST /jobs` or `DELETE /sessions`.
 - [ ] On boot: reap orphan processes on `work_dir`; mark leftover running/queued as history ERROR (no callback, no OpenCode); they are not live (`409` off).
 - [ ] On shutdown: stop accepting `/jobs`; kill every job tree; mark running and queued jobs ERROR; terminal callback `500` each; then job-end delete; keep history rows.
 - [ ] A later `POST /jobs` for a boot leftover ERROR or shutdown-ERROR `jira_id` is a new job (not `409`).
@@ -1306,8 +1354,8 @@ build them).
 
 Copy the **jobs tab** from virtual_developer’s `web/` SPA. Same tech
 stack and the same look. It is **read-only**. n8n still owns
-`POST /jobs`. The dashboard never starts, stops, retries, or deletes
-a job.
+`POST /jobs` and `DELETE /sessions`. The dashboard never starts,
+stops, retries, or deletes a job.
 
 virtual_developer pages we **do not** build: Poll, Scheduled,
 Sessions, Storage, Settings, issue detail (`/tasks/:key`).
@@ -1368,8 +1416,8 @@ delivery, Codex, Jira description, workflow_type, worker backend
 ### 17.4 GET API (dashboard → manager)
 
 All under `/api`. **GET and WebSocket only.** POST / PATCH / DELETE
-on `/api/*` → **405**. `POST /jobs` (n8n) is unchanged and is not
-under `/api`.
+on `/api/*` → **405**. `POST /jobs` and `DELETE /sessions` (n8n) are
+not under `/api`.
 
 | Method | Path | Purpose |
 |---|---|---|

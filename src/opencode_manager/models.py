@@ -194,6 +194,21 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def validate_session_delete_fields(body: Dict[str, Any]) -> Optional[str]:
+    """Return a 400 message or None if DELETE /sessions body is usable."""
+    if not isinstance(body, dict):
+        return "missing required field: jira_id"
+    for key in ("jira_id", "session_id"):
+        if key not in body or body[key] is None or str(body[key]).strip() == "":
+            return f"missing required field: {key}"
+    if not _JIRA_ID_RE.match(str(body["jira_id"]).strip()):
+        return "jira_id must be a Windows-safe ticket id"
+    session_id = str(body["session_id"]).strip()
+    if session_id == "-1" or not session_id.startswith("ses_"):
+        return "session_id must be a live OpenCode ses_* id"
+    return None
+
+
 def parse_model(model: str) -> tuple[str, str]:
     provider, _, name = model.strip().partition("/")
     return provider, name

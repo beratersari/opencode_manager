@@ -1,4 +1,4 @@
-"""HTTP routes: POST /jobs plus read-only dashboard GET /api/*."""
+"""HTTP routes: POST /jobs, DELETE /sessions, plus read-only dashboard GET /api/*."""
 
 from __future__ import annotations
 
@@ -47,6 +47,29 @@ async def post_jobs(request: Request) -> JSONResponse:
         "inbound POST /jobs ack HTTP %s job_id=%s status_code=%s",
         status,
         envelope.job_id,
+        envelope.status_code,
+    )
+    return JSONResponse(envelope.model_dump(), status_code=status)
+
+
+@router.delete("/sessions")
+async def delete_sessions(request: Request) -> JSONResponse:
+    manager = _mgr(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    get_logger().info(
+        "inbound DELETE /sessions jira_id=%s session=%s",
+        body.get("jira_id"),
+        body.get("session_id") or "",
+    )
+    status, envelope = manager.delete_session(body)
+    get_logger().info(
+        "inbound DELETE /sessions ack HTTP %s status_code=%s",
+        status,
         envelope.status_code,
     )
     return JSONResponse(envelope.model_dump(), status_code=status)

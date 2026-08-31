@@ -41,9 +41,20 @@ These look like bugs. They are not.
 
 ### API and jobs
 
-- Inbound HTTP is only an ack (`202` / `409` / `400` / `503`). Never hold
-  the socket for clone or OpenCode. `503` means the process is not
+- Inbound writes are `POST /jobs` and `DELETE /sessions`. Dashboard
+  `/api/*` stays GET-only.
+- `POST /jobs` is only an ack (`202` / `409` / `400` / `503`). Never hold
+  that socket for clone or OpenCode. `503` means the process is not
   accepting (`boot` not finished, or shutting down). No callback.
+- `DELETE /sessions` is a **sync** admin op (not a job): forget an
+  OpenCode `ses_*` for a ticket. Same envelope shape; `job_id` is
+  empty. No `callback_url`, no queue, no history row. Body is
+  `{ jira_id, session_id }`. Empty / `-1` / not `ses_*` → **400**.
+  Live queued/running `jira_id` → **409** (include that job’s
+  `job_id`). A delete already in flight for that ticket → **409**.
+  OpenCode 2xx or 404 → **200** (idempotent). Serve boot / other
+  OpenCode failure → **500**. Boot/shutdown → **503**. `POST /jobs`
+  for a ticket whose session delete is in flight is also **409**.
 - `callback_url` is required and must be absolute `http`/`https`.
   `callback_allowed_hosts` of `[]`, `["*"]`, or `["all"]` accepts
   every host. A real host list is SSRF only (`*.example.com` ok).
@@ -61,8 +72,9 @@ These look like bugs. They are not.
     `403`, `405`, `410`, `422`, …) are permanent — log and stop.
     Do not re-run OpenCode. n8n Wait `404` means the webhook is not
     armed yet, not that the callback was delivered.
-- Dedup key is **`jira_id`**. Running or queued → `409`. Do not
-  enqueue a second job for the same ticket.
+- Dedup key is **`jira_id`**. Running or queued → `409`. Session
+  delete in progress for that ticket → `409`. Do not enqueue a
+  second job for the same ticket.
 - Capacity full + **other** tickets → queue. Persist the queue
   (including `callback_url`) so a **running** process can dequeue
   after a slot frees. A process restart does **not** auto-run
@@ -75,7 +87,7 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - **While booting: do not start any job.** Do not dequeue. Do not
   clone. Do not start `opencode serve`. Do not resume a leftover
   running or queued job. Do not send callbacks for leftovers. Do
-  not accept `POST /jobs` until boot is finished.
+  not accept `POST /jobs` or `DELETE /sessions` until boot is finished.
 - **Boot cleanup is process hygiene only.** Kill leftover
   `serve_pid` / `extra_pids` recorded on running or queued rows.
   Then reap orphans whose cwd/argv is `work_dir` (leftover serves,
@@ -84,7 +96,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   them. They are not live, so those `jira_id`s are not `409`. Do
   **not** “handle” those jobs (no OpenCode, no terminal callback,
   no re-enqueue).
-- **While shutting down:** stop accepting `POST /jobs`. Force-kill
+- **While shutting down:** stop accepting `POST /jobs` and
+  `DELETE /sessions`. Force-kill
   every job’s process tree (git, **that** job’s serve, tool
   children). Mark every running **and** queued job **ERROR**. Send
   each its one terminal callback `500`. Then the normal job-end

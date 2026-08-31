@@ -540,6 +540,22 @@ class OpenCodeClient:
         except Exception as exc:  # noqa: BLE001
             log_fail(logger, "abort session failed", session_id=session_id, err=exc)
 
+    def delete_session(self, session_id: str) -> httpx.Response:
+        path = f"/session/{session_id}"
+        try:
+            response = self.http.delete(path, headers=self.headers, timeout=30.0)
+        except Exception as exc:  # noqa: BLE001
+            log_http(logger, "DELETE", path, err=exc, ok=False)
+            raise
+        log_http(
+            logger,
+            "DELETE",
+            path,
+            status=response.status_code,
+            body=response.text if response.status_code >= 400 else None,
+        )
+        return response
+
 
 def _part_text(value: Any) -> str:
     if value is None:

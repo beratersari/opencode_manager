@@ -13,6 +13,7 @@ from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, protect_pids, stop_job_holders
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
 from opencode_manager.dashboard.store import JobStore
+from opencode_manager.git.clone import GitError, clone_path_for
 from opencode_manager.log import get_logger, job_log_filename
 from opencode_manager.log_context import bind, clear
 from opencode_manager.models import (
@@ -23,7 +24,10 @@ from opencode_manager.models import (
     mint_job_id,
     utc_now,
     validate_request_fields,
+    validate_session_delete_fields,
 )
+from opencode_manager.opencode.serve import serve_log_path, start_serve, stop_serve
+from opencode_manager.opencode.session import OpenCodeClient
 from opencode_manager.queue import JobQueue
 from opencode_manager.settings import Settings
 from opencode_manager.worker import JobRunner, OpenCodeRunner, Terminal, finish_job, run_pipeline
@@ -43,6 +47,11 @@ class Manager:
         self._running = 0
         self._pats: Dict[str, str] = {}
         self._threads: list[threading.Thread] = []
+        self._session_deletes: set[str] = set()
+        self.session_delete_health_timeout = 30.0
+        self._start_delete_serve = start_serve
+        self._stop_delete_serve = stop_serve
+        self._open_code_client_cls = OpenCodeClient
 
     def boot(self) -> None:
         logger.info(
@@ -184,6 +193,18 @@ class Manager:
                     jira_id=req.jira_id,
                     job_id=live.job_id,
                 )
+            if req.jira_id in self._session_deletes:
+                logger.info(
+                    "reject POST /jobs 409: jira_id=%s has a session delete in progress",
+                    req.jira_id,
+                )
+                return 409, Envelope(
+                    text=f"jira_id {req.jira_id} has a session delete in progress",
+                    session_id="",
+                    status_code=409,
+                    jira_id=req.jira_id,
+                    job_id="",
+                )
             job_id = mint_job_id()
             accepted = utc_now()
             job = JobRecord(
@@ -292,6 +313,160 @@ class Manager:
         if not job:
             return None
         return job.public_dict()
+
+    def delete_session(self, body: Dict[str, Any]) -> tuple[int, Envelope]:
+        """Sync OpenCode session delete. Not a job. No callback. No history row."""
+        raw_jira = str(body.get("jira_id") or "")
+        raw_session = str(body.get("session_id") or "")
+        if not self.ready or self.stopping:
+            logger.warning(
+                "reject DELETE /sessions: manager not accepting (ready=%s stopping=%s)",
+                self.ready,
+                self.stopping,
+            )
+            return 503, Envelope(
+                text="manager is not accepting jobs",
+                session_id=raw_session,
+                status_code=503,
+                jira_id=raw_jira,
+                job_id="",
+            )
+        err = validate_session_delete_fields(body)
+        if err:
+            logger.warning(
+                "reject DELETE /sessions 400: %s jira_id=%s session=%s",
+                err,
+                body.get("jira_id"),
+                body.get("session_id") or "",
+            )
+            return 400, Envelope(
+                text=err,
+                session_id=raw_session.strip(),
+                status_code=400,
+                jira_id=raw_jira.strip(),
+                job_id="",
+            )
+        jira_id = str(body["jira_id"]).strip()
+        session_id = str(body["session_id"]).strip()
+        with self._lock:
+            live = self.store.live_for_jira(jira_id)
+            if live:
+                logger.info(
+                    "reject DELETE /sessions 409: jira_id=%s already live as %s status=%s",
+                    jira_id,
+                    live.job_id,
+                    live.status,
+                )
+                return 409, Envelope(
+                    text=f"jira_id {jira_id} already has a live job",
+                    session_id=live.session_id or session_id,
+                    status_code=409,
+                    jira_id=jira_id,
+                    job_id=live.job_id,
+                )
+            if jira_id in self._session_deletes:
+                logger.info(
+                    "reject DELETE /sessions 409: jira_id=%s already deleting",
+                    jira_id,
+                )
+                return 409, Envelope(
+                    text=f"jira_id {jira_id} has a session delete in progress",
+                    session_id=session_id,
+                    status_code=409,
+                    jira_id=jira_id,
+                    job_id="",
+                )
+            self._session_deletes.add(jira_id)
+        bind(jira_id=jira_id)
+        handle = None
+        client = None
+        dest: Optional[Path] = None
+        created_dest = False
+        try:
+            try:
+                dest = clone_path_for(self.settings.work_dir, jira_id)
+            except GitError as exc:
+                logger.warning("reject DELETE /sessions 400: %s", exc)
+                return 400, Envelope(
+                    text=str(exc),
+                    session_id=session_id,
+                    status_code=400,
+                    jira_id=jira_id,
+                    job_id="",
+                )
+            created_dest = not dest.exists()
+            if created_dest:
+                dest.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                "DELETE /sessions start jira_id=%s session=%s dest=%s created_dest=%s",
+                jira_id,
+                session_id,
+                dest,
+                created_dest,
+            )
+            try:
+                handle = self._start_delete_serve(
+                    bin_name=self.settings.opencode_bin,
+                    cwd=dest,
+                    log_path=serve_log_path(self.settings.serve_dir, f"session-delete-{jira_id}"),
+                    timeout=float(self.session_delete_health_timeout),
+                    should_stop=lambda: self.stopping,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("DELETE /sessions serve boot failed jira_id=%s err=%s", jira_id, exc)
+                return 500, Envelope(
+                    text=f"serve boot failed: {exc}",
+                    session_id=session_id,
+                    status_code=500,
+                    jira_id=jira_id,
+                    job_id="",
+                )
+            client = self._open_code_client_cls(handle.base_url, str(dest))
+            try:
+                response = client.delete_session(session_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("DELETE /sessions OpenCode call failed jira_id=%s err=%s", jira_id, exc)
+                return 500, Envelope(
+                    text=f"session delete failed: {exc}",
+                    session_id=session_id,
+                    status_code=500,
+                    jira_id=jira_id,
+                    job_id="",
+                )
+            if response.status_code >= 400 and response.status_code != 404:
+                text = f"OpenCode refused session delete (HTTP {response.status_code})"
+                logger.error("DELETE /sessions OpenCode HTTP %s jira_id=%s", response.status_code, jira_id)
+                return 500, Envelope(
+                    text=text,
+                    session_id=session_id,
+                    status_code=500,
+                    jira_id=jira_id,
+                    job_id="",
+                )
+            logger.info("DELETE /sessions ok jira_id=%s session=%s", jira_id, session_id)
+            return 200, Envelope(
+                text="session deleted",
+                session_id=session_id,
+                status_code=200,
+                jira_id=jira_id,
+                job_id="",
+            )
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            if handle is not None:
+                try:
+                    self._stop_delete_serve(handle)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("DELETE /sessions stop serve failed jira_id=%s err=%s", jira_id, exc)
+            if created_dest and dest is not None:
+                delete_clone_path(dest, reason="session-delete-temp")
+            with self._lock:
+                self._session_deletes.discard(jira_id)
+            clear()
 
 
 def _public_repo(url: str) -> str:

@@ -1,4 +1,9 @@
-from opencode_manager.models import callback_host_allowed, parse_model, validate_request_fields
+from opencode_manager.models import (
+    callback_host_allowed,
+    parse_model,
+    validate_request_fields,
+    validate_session_delete_fields,
+)
 
 
 def _ok(**overrides):
@@ -90,6 +95,14 @@ def test_missing_or_empty_pat_is_ok():
 
 def test_parse_model():
     assert parse_model("opencode/hy3-free") == ("opencode", "hy3-free")
+
+
+def test_session_delete_fields():
+    assert validate_session_delete_fields({"jira_id": "PROJ-1", "session_id": "ses_abc"}) is None
+    assert "jira_id" in (validate_session_delete_fields({}) or "")
+    assert "session_id" in (validate_session_delete_fields({"jira_id": "PROJ-1"}) or "")
+    assert validate_session_delete_fields({"jira_id": "PROJ-1", "session_id": "-1"})
+    assert validate_session_delete_fields({"jira_id": "../x", "session_id": "ses_abc"})
 
 
 def test_retry_count_zero_is_coerced_by_request():

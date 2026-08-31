@@ -1,0 +1,986 @@
+{
+  "name": "n8n-callback",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"task_description\": \"a string\",\n  \"source_branch_name\": \"develop\",\n  \"repo_url\": \"https://hostname.company.com.tr/test/test_project.git\",\n  \"issue_id\": \"ARI-259\",\n  \"task_type\": \"bug\",\n  \"working_mode\": \"Plan\",\n  \"session_id\":\"-1\",\n  \"is_session_deleted\":false\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1104,
+        128
+      ],
+      "id": "7929487c-dbaf-4e59-a245-83821b875ab9",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9d1b596e-d41d-4174-8574-d7ac22ffe561",
+              "name": "remoteIP",
+              "value": "18.210.7.152",
+              "type": "string"
+            },
+            {
+              "id": "a5940284-bf2f-4542-ac0e-7db975e9eed5",
+              "name": "remotePort",
+              "value": 4096,
+              "type": "number"
+            },
+            {
+              "id": "19126df2-82dd-49ae-8857-c8d58d30df80",
+              "name": "timeout",
+              "value": 1800,
+              "type": "number"
+            },
+            {
+              "id": "a7c3e1f0-8b2d-4b51-b0fb-b6d5be0c1e30",
+              "name": "retry_count",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "43cb5918-5198-4b51-b0fb-b6d5be0c1e2f",
+              "name": "session_id",
+              "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -656,
+        128
+      ],
+      "id": "3afdae00-4442-46a6-9318-5952590acb23",
+      "name": "remoteComputerInfo1",
+      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "92f0e7d5-32eb-41be-b0da-1f3849c5af35",
+              "leftValue": "={{ $('When Executed by Another Workflow').item.json.is_session_deleted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        128
+      ],
+      "id": "a70e274c-75a1-42cc-aabc-4e9094fbe6d0",
+      "name": "isSessionDeleted1",
+      "notes": "Parent is_session_deleted: true → OSM DELETE /sessions. false → POST /jobs."
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://{{ $('remoteComputerInfo1').item.json.remoteIP }}:{{ $('remoteComputerInfo1').item.json.remotePort }}/sessions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"jira_id\": \"{{ $('When Executed by Another Workflow').item.json.issue_id }}\",\n  \"session_id\": \"{{ $('When Executed by Another Workflow').item.json.session_id }}\"\n}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -208,
+        32
+      ],
+      "id": "49d01fba-cfcb-4927-9687-048624fce93a",
+      "name": "deleteSession1",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "OSM DELETE /sessions. neverError so 409/400/503 still return the envelope. No Wait."
+    },
+    {
+      "parameters": {
+        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nconst status = Number(env.status_code || j.statusCode || 0);\nconst ok = status === 200;\nreturn [{ json: {\n  [names.session_info]: ok ? 'deleted' : 'updated',\n  [names.is_success]: ok,\n  text: env.text || j.message || j.error || '',\n  session_id: ok ? (env.session_id || src.session_id || '') : (src.session_id || ''),\n  status_code: status,\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        32
+      ],
+      "id": "21fcd3af-0d19-455a-8b1f-6d001bc2b39b",
+      "name": "parseDeleteReturnInfo1",
+      "notes": "is_success and session_info=deleted only on OSM 200. Otherwise session_info=updated and inbound session_id is kept."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7089a0d0-6574-4f23-a9a4-0f35f6be6dab",
+              "name": "={{ $('staticVariableNames1').item.json.task_description }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_description }}",
+              "type": "string"
+            },
+            {
+              "id": "ef50e7cc-73e3-4876-9371-210f1780bf25",
+              "name": "={{ $('staticVariableNames1').item.json.source_branch_name }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.source_branch_name }}",
+              "type": "string"
+            },
+            {
+              "id": "15f68a63-6661-4adc-92cf-eafdb6257ea1",
+              "name": "={{ $('staticVariableNames1').item.json.repo_url }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.repo_url }}",
+              "type": "string"
+            },
+            {
+              "id": "acfaa84b-45df-460a-9118-265dc599fd6d",
+              "name": "={{ $('staticVariableNames1').item.json.task_type }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_type }}",
+              "type": "string"
+            },
+            {
+              "id": "07b7e409-2d59-4a6a-a22f-169813d9270e",
+              "name": "={{ $('staticVariableNames1').item.json.working_mode }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.working_mode }}",
+              "type": "string"
+            },
+            {
+              "id": "c4891190-9b34-4e3b-9db9-396471bffbe5",
+              "name": "={{ $('staticVariableNames1').item.json.issue_id }}",
+              "value": "={{ $('When Executed by Another Workflow').item.json.issue_id }}",
+              "type": "string"
+            },
+            {
+              "id": "cf384b64-48ce-41b1-ad4a-308fa956ff0f",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "aa000001-0000-4000-8000-000000000001",
+              "name": "text",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task_description }}",
+              "type": "string"
+            },
+            {
+              "id": "aa000001-0000-4000-8000-000000000002",
+              "name": "agent",
+              "value": "={{ $('When Executed by Another Workflow').item.json.agent }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -208,
+        224
+      ],
+      "id": "2846f851-30e3-4fa0-9de6-ab5dd2e03cb8",
+      "name": "parseAllNeedInfo1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a7322219-b4e2-491b-8d3b-3c45b48c5b01",
+              "leftValue": "={{!!$json.text}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1360,
+        160
+      ],
+      "id": "e4ce800f-d13c-4117-8195-a28818fb1e1b",
+      "name": "isTextExist1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cc200001-0000-4000-8000-000000000200",
+              "leftValue": "={{ Number($json.status_code) }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1304,
+        160
+      ],
+      "id": "e4ce800f-cb00-4117-8195-a28818fb1200",
+      "name": "isCallback200",
+      "notes": "OSM terminal 200 only. 404/500/504 and Wait timeout (202 ack) go to returnAckFail."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f7536ce3-8358-454c-972c-5e17938b5de8",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "178e466d-4ca3-400b-91d6-bc628244708f",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "401a150b-4b55-4620-ba53-8e8e7236ee4f",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "=-1",
+              "type": "string"
+            },
+            {
+              "id": "d0a79bf7-8f99-47f2-b1e6-c94ecd41225b",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": "=false",
+              "type": "boolean"
+            },
+            {
+              "id": "22a8c4bf-ca00-4598-8189-20f8a11dbc34",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "updated",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1584,
+        400
+      ],
+      "id": "90cdad78-bb94-4935-b723-4abac4ba3c79",
+      "name": "returnFail1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3761cb68-ef39-40cf-be93-be3607e8a8a0",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $('normalizeCallback').item.json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "f7536ce3-8358-454c-972c-5e17938b5de8",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "={{ $input.item.json.text.parseJson().target_branch_name }}",
+              "type": "string"
+            },
+            {
+              "id": "178e466d-4ca3-400b-91d6-bc628244708f",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "={{ $input.item.json.text.parseJson().prTitle }}",
+              "type": "string"
+            },
+            {
+              "id": "401a150b-4b55-4620-ba53-8e8e7236ee4f",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "={{ $input.item.json.text.parseJson().description }}",
+              "type": "string"
+            },
+            {
+              "id": "d0a79bf7-8f99-47f2-b1e6-c94ecd41225b",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": "={{ !$input.item.json.error && !!$input.item.json.text.parseJson().description }}",
+              "type": "boolean"
+            },
+            {
+              "id": "22a8c4bf-ca00-4598-8189-20f8a11dbc34",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "updated",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1808,
+        48
+      ],
+      "id": "dfa626d7-beb0-453a-9050-1e0cabf5321c",
+      "name": "returnSuccess1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d6a0e2b2-c454-4f5d-a8d2-96fdc8fdf185",
+              "name": "task_description",
+              "value": "task_description",
+              "type": "string"
+            },
+            {
+              "id": "70ffe608-778c-4e04-ab87-2f9d34d4bb45",
+              "name": "source_branch_name",
+              "value": "source_branch_name",
+              "type": "string"
+            },
+            {
+              "id": "03d6a645-b666-4eea-9cdc-9541dc30f4a9",
+              "name": "repo_url",
+              "value": "repo_url",
+              "type": "string"
+            },
+            {
+              "id": "978483f8-9738-4f81-a660-5969c28982a9",
+              "name": "issue_id",
+              "value": "issue_id",
+              "type": "string"
+            },
+            {
+              "id": "d528f99c-3ea6-46a9-9a35-e99b275d2a3a",
+              "name": "task_type",
+              "value": "task_type",
+              "type": "string"
+            },
+            {
+              "id": "996f6727-d063-4fe3-adfc-bc1165bfd65c",
+              "name": "working_mode",
+              "value": "working_mode",
+              "type": "string"
+            },
+            {
+              "id": "f5d4d171-49d8-4013-ba9b-d0309dc1ada7",
+              "name": "session_id",
+              "value": "session_id",
+              "type": "string"
+            },
+            {
+              "id": "66755929-31dc-4880-ac0b-1f64ef564d11",
+              "name": "is_session_deleted",
+              "value": "is_session_deleted",
+              "type": "string"
+            },
+            {
+              "id": "cb72e322-3032-4064-9c3d-2cf20947e65f",
+              "name": "is_success",
+              "value": "is_success",
+              "type": "string"
+            },
+            {
+              "id": "be790a44-1983-4eec-bfc6-423b6b5837a7",
+              "name": "session_info",
+              "value": "session_info",
+              "type": "string"
+            },
+            {
+              "id": "95e51c61-e6f5-49fc-8038-7b62ef77250d",
+              "name": "target_branch_name",
+              "value": "target_branch_name",
+              "type": "string"
+            },
+            {
+              "id": "c7c79c03-1434-4c93-b7f6-bb6e32f86f3c",
+              "name": "title",
+              "value": "title",
+              "type": "string"
+            },
+            {
+              "id": "52337766-0814-4115-a2f3-d674bc22209e",
+              "name": "description",
+              "value": "description",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -880,
+        128
+      ],
+      "id": "69456019-1639-4cc3-917f-849761bb78c9",
+      "name": "staticVariableNames1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": " Sen bir metin-analizi ve özetleme asistanısın. Aşağıdaki kuralları harfiyen uygula ve yalnızca belirtilen JSON formatında, düz metin olarak yanıt ver. Başka hiçbir açıklama, yorum, selamlama, markdown kod bloku (```json) veya ek  karakter yazma.    ### Alan Kuralları    1. target_branch_name      - Kullanıcının mesajından branch adını bul.  - Eğer bulunan metin, büyük/küçük harf duyarsız olarak tam olarak \"main\" veya \"develop\" ise, bu alana kesinlikle `-1` yaz.  2. prTitle      - Kullanıcının gönderdiği tam metni analiz et.      - 6 ile 12 kelime arasında, ana problemi ve çözümü/eylemi yansıtan bir özet cümle oluştur.      - Bu özet tamamen senin tarafından yeniden ifade edilmiş olmalıdır; orijinal metinden kelime kelime alıntı-kopya yapma.    3. description      - Kullanıcının sana ilettiği orijinal mesajın tamamını, karakter karakter aynen koruyarak al.      - Orijinal boşluklar, satır sonları, tab karakterleri ve tüm markdown işaretleri değiştirilmeden korunmalıdır.      - JSON string geçerliliği için zorunlu minimal escape işlemlerini (çift tırnak -> \\\", satır sonları -> \\\\n) uygula; içerik anlamında hiçbir karakter silinmemeli veya değiştirilmemelidir.    ### Adım Adım İş Akışı   1. Kullanıcının tam mesajını `description` alanı için kaydet.  2. O bölge içindeki Branch ismini bul.   3. Değeri trimle ve küçük harfe çevirerek \"main\" veya \"develop\" olup olmadığını kontrol et. Koşulları sağlarsa `-1` ata; sağlamazsa çıkarılan ham değeri `target_branch_name` olarak kullan.   4. Tüm metni anlayarak `prTitle` üret.   ###Examples  {{ \"target_branch_name\": \"feature/12345-creating-file\", \"prTitle\": \"Add HelloFromAri.txt greeting file\", \"description\": \"Create a new file named HelloFromAri.txt in the repository root with a friendly greeting. This file can be added manually or via a CI step. The content can be something like \\\"Hello from Ari!\\\". After the file is added, commit it to the 'main' branch and open a pull request with this title and description.\"  }}  {{ \"target_branch_name\": \"bugfix/12345-error-fixes\", \"prTitle\": \"Add HelloFromAri.txt greeting file\", \"description\": \"Create a new file named HelloFromAri.txt in the repository root with a friendly greeting. This file can be added manually or via a CI step. The content can be something like \\\"Hello from Ari!\\\". After the file is added, commit it to the 'main' branch and open a pull request with this title and description.\"  }}  if you cannot find the branch value from input text: {{ \"target_branch_name\": \"-1\", \"prTitle\": \"Add HelloFromAri.txt greeting file\", \"description\": \"Create a new file named HelloFromAri.txt in the repository root with a friendly greeting. This file can be added manually or via a CI step. The content can be something like \\\"Hello from Ari!\\\". After the file is added, commit it to the 'main' branch and open a pull request with this title and description.\"  }}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1584,
+        48
+      ],
+      "id": "054682ff-81db-4669-889b-c1521bc48784",
+      "name": "Basic LLM Chain1",
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-120b",
+          "mode": "list",
+          "cachedResultName": "openai/gpt-oss-120b"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1584,
+        240
+      ],
+      "id": "89565dcf-e1c1-4492-b48f-2f981fe8b0d9",
+      "name": "OpenAI Chat Model1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://{{ $('remoteComputerInfo1').item.json.remoteIP }}:{{ $('remoteComputerInfo1').item.json.remotePort }}/jobs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.osmBody) }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        224
+      ],
+      "id": "f06b7dee-6256-4e9c-99cc-bbac9867ac72",
+      "name": "sendRequestToAI1",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "OSM POST /jobs ack only. neverError so 400/409/503 still return the envelope. 202 started and 202 queued both wait for the one callback."
+    },
+    {
+      "parameters": {
+        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($input.first().json[\"agent\"] === \"planner\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        224
+      ],
+      "id": "cb31ad63-b3ce-449b-a5e6-d4dfc2b4e086",
+      "name": "strginfyInputText1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "aa11bb22-cc33-4dd4-8ee5-ff6677889900",
+              "leftValue": "={{ Number($json.status_code || $json.body && $json.body.status_code) }}",
+              "rightValue": 202,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        912,
+        224
+      ],
+      "id": "e4ce800f-ack0-4117-8195-a28818fb1e1b",
+      "name": "ackIs202",
+      "notes": "202 = started or queued → Wait (one callback). 400 / 409 / 503 → returnAckFail with OSM text. No callback."
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "resumeAmount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
+        "resumeUnit": "seconds",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        160
+      ],
+      "id": "d77b433a-cb0b-4139-b486-53babf6b45d3",
+      "name": "waitForOsmCallback",
+      "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b",
+      "notes": "Wait timeout = remoteComputerInfo1.timeout * retry_count (seconds). OSM POSTs one terminal envelope here. Clone/cleanup sit outside that clock. httpMethod must be POST."
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text || j.body.job_id))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        160
+      ],
+      "id": "c0ffee00-cb11-4cb1-9cb1-normalize00cb",
+      "name": "normalizeCallback",
+      "notes": "Wait webhook wraps OSM JSON as { headers, body }. Flatten to the OSM envelope so isTextExist and the LLM see $json.text."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        224
+      ],
+      "id": "a0b1c2d3-e4f5-4678-8901-23456789abcd",
+      "name": "buildOsmRequest",
+      "notes": "Maps stringify output to OSM POST /jobs. timeout_in_seconds and retry_count come from remoteComputerInfo1. PAT and model hardcoded."
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        224
+      ],
+      "id": "b1c2d3e4-f5a6-4789-9012-3456789abcde",
+      "name": "normalizeAck",
+      "notes": "Flatten n8n HTTP wrapping so status_code/text match the OSM envelope."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ackfail-session",
+              "name": "={{ $('staticVariableNames1').item.json.session_id }}",
+              "value": "={{ $json.session_id || $('When Executed by Another Workflow').item.json.session_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ackfail-branch",
+              "name": "={{ $('staticVariableNames1').item.json.target_branch_name }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "ackfail-title",
+              "name": "={{ $('staticVariableNames1').item.json.title }}",
+              "value": "-1",
+              "type": "string"
+            },
+            {
+              "id": "ackfail-desc",
+              "name": "={{ $('staticVariableNames1').item.json.description }}",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "ackfail-ok",
+              "name": "={{ $('staticVariableNames1').item.json.is_success }}",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "ackfail-info",
+              "name": "={{ $('staticVariableNames1').item.json.session_info }}",
+              "value": "updated",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1136,
+        400
+      ],
+      "id": "c2d3e4f5-a6b7-4890-9123-456789abcdef",
+      "name": "returnAckFail",
+      "notes": "Inbound 400/409/503: no callback. description is the OSM ack text."
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "task_description": "do nothing",
+          "source_branch_name": "develop",
+          "repo_url": "https://hostname.company.com.tr/test/test_project.git",
+          "issue_id": "ARI-259",
+          "task_type": "bug",
+          "working_mode": "Plan",
+          "session_id": "-1",
+          "is_session_deleted": false
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "staticVariableNames1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "remoteComputerInfo1": {
+      "main": [
+        [
+          {
+            "node": "isSessionDeleted1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isSessionDeleted1": {
+      "main": [
+        [
+          {
+            "node": "deleteSession1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "parseAllNeedInfo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "deleteSession1": {
+      "main": [
+        [
+          {
+            "node": "parseDeleteReturnInfo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parseAllNeedInfo1": {
+      "main": [
+        [
+          {
+            "node": "strginfyInputText1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isTextExist1": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "returnFail1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "staticVariableNames1": {
+      "main": [
+        [
+          {
+            "node": "remoteComputerInfo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "returnSuccess1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "strginfyInputText1": {
+      "main": [
+        [
+          {
+            "node": "buildOsmRequest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sendRequestToAI1": {
+      "main": [
+        [
+          {
+            "node": "normalizeAck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ackIs202": {
+      "main": [
+        [
+          {
+            "node": "waitForOsmCallback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "returnAckFail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "waitForOsmCallback": {
+      "main": [
+        [
+          {
+            "node": "normalizeCallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizeCallback": {
+      "main": [
+        [
+          {
+            "node": "isCallback200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "isCallback200": {
+      "main": [
+        [
+          {
+            "node": "isTextExist1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "returnAckFail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "buildOsmRequest": {
+      "main": [
+        [
+          {
+            "node": "sendRequestToAI1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizeAck": {
+      "main": [
+        [
+          {
+            "node": "ackIs202",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d414227a-d274-4267-8915-b1decb4d544a",
+  "meta": {
+    "instanceId": "3fd2a9ed563ac88aef341fdaad8b1749cd4358ce8bf834e7a58613197496e399"
+  },
+  "id": "yY77oYPuNnhRt0Zt",
+  "tags": []
+}

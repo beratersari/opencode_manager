@@ -42,7 +42,9 @@ These look like bugs. They are not.
 ### API and jobs
 
 - Inbound writes are `POST /jobs` and `DELETE /sessions`. Dashboard
-  `/api/*` stays GET-only.
+  `/api/*` stays GET-only. n8n may use `n8n-callback.json` (one
+  terminal POST to `callback_url`) or `n8n-poller.json` (omit
+  `callback_url`, poll `GET /jobs/{job_id}`). Same OSM process.
 - `POST /jobs` is only an ack (`202` / `409` / `400` / `503`). Never hold
   that socket for clone or OpenCode. `503` means the process is not
   accepting (`boot` not finished, or shutting down). No callback.

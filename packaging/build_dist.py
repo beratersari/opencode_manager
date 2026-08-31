@@ -48,7 +48,8 @@ COPY_FILES = (
     "Agents.md",
     "PLAN.md",
     "VERSION",
-    "n8nflow.json",
+    "n8n-callback.json",
+    "n8n-poller.json",
 )
 
 COPY_DIRS = (

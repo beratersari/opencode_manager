@@ -1,5 +1,5 @@
 {
-  "name": "ari_conding_agent_mini",
+  "name": "n8n-poller",
   "nodes": [
     {
       "parameters": {
@@ -54,6 +54,12 @@
               "name": "session_id",
               "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
               "type": "string"
+            },
+            {
+              "id": "d0e1f2a3-b4c5-4678-9012-pollmaxseconds1",
+              "name": "poll_max_seconds",
+              "value": 21600,
+              "type": "number"
             }
           ]
         },
@@ -67,7 +73,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. poll_interval = seconds between GET /jobs/{id}. Loop budget = timeout * retry_count."
+      "notes": "OSM listen host/port (4096). timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. poll_interval = seconds between GET /jobs/{id}. poll_max_seconds = safety cap only; loop while the job is live."
     },
     {
       "parameters": {
@@ -143,7 +149,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nconst status = Number(env.status_code || j.statusCode || 0);\nreturn [{ json: {\n  [names.session_info]: 'deleted',\n  [names.is_success]: status === 200,\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || src.session_id || '',\n  status_code: status,\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
+        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nconst status = Number(env.status_code || j.statusCode || 0);\nconst ok = status === 200;\nreturn [{ json: {\n  [names.session_info]: ok ? 'deleted' : 'updated',\n  [names.is_success]: ok,\n  text: env.text || j.message || j.error || '',\n  session_id: ok ? (env.session_id || src.session_id || '') : (src.session_id || ''),\n  status_code: status,\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -153,7 +159,7 @@
       ],
       "id": "21fcd3af-0d19-455a-8b1f-6d001bc2b39b",
       "name": "parseDeleteReturnInfo1",
-      "notes": "is_success only when OSM status_code is 200. 409 (ticket still processing) is a refusal."
+      "notes": "is_success and session_info=deleted only on OSM 200. Otherwise session_info=updated and inbound session_id is kept."
     },
     {
       "parameters": {
@@ -696,7 +702,7 @@
           "conditions": [
             {
               "id": "still-live-202",
-              "leftValue": "={{ Number($json.status_code) === 202 && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
+              "leftValue": "={{ ($json.live === true || Number($json.status_code) === 202 || Number($json.status_code) === 0 || (Number($json.status_code) >= 500 && Number($json.status_code) < 600)) && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.poll_max_seconds) || (Math.max(1, Number($('remoteComputerInfo1').item.json.timeout)) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count)) + 600)) }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -717,7 +723,7 @@
       ],
       "id": "f2a3b4c5-d6e7-4890-9bcd-stillinprogress1",
       "name": "stillInProgress",
-      "notes": "Loop while OSM GET is 202 and elapsed < timeout * retry_count. Else go to isCallback200 (200 success / other fail / poll budget spent)."
+      "notes": "Loop while OSM says live (202 / live / GET 5xx blip) and elapsed < poll_max_seconds. OSM owns timeout*retry_count. Cap only stops a hung OSM. Then isCallback200."
     },
     {
       "parameters": {

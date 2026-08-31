@@ -263,7 +263,9 @@ Different cases:
 
 Inbound writes: `POST /jobs` (run a ticket) and `DELETE /sessions`
 (forget an OpenCode `ses_*`). Inbound poll: `GET /jobs/{job_id}`.
-Dashboard `/api/*` is GET-only.
+n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
+`n8n-poller.json` (omit `callback_url`, GET loop). Same OSM. Dashboard
+`/api/*` is GET-only.
 
 `POST /jobs`:
 
@@ -389,7 +391,10 @@ No `JobRecord`. Log on `app.log` with `jira_id`.
 ### 4.4b Poll (`GET /jobs/{job_id}`)
 
 When `callback_url` is omitted, n8n (or curl) reads the same terminal
-envelope by polling this path. Dashboard `GET /api/jobs/{id}` stays
+envelope by polling this path until the job is **not live**. n8n must
+not stop at `timeout * retry_count` (clone/queue sit outside that).
+`n8n-poller.json` loops while `live` / `202` (and retries GET 5xx
+blips) until `poll_max_seconds`. Dashboard `GET /api/jobs/{id}` stays
 the jobs-tab payload.
 
 | Job state | HTTP | Envelope `status_code` |

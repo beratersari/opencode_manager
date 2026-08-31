@@ -14,29 +14,31 @@ Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md).
    `Host` / `Origin`.
 2. `POST /jobs` and return immediately on the ack. Do **not** hold the
    socket for clone or OpenCode.
-3. Treat inbound **202** as accepted (started or queued). Wait for the
-   callback. Do not poll OSM to decide success.
+3. Treat inbound **202** as accepted (started or queued). Either wait
+   for the callback **or** omit `callback_url` and poll
+   `GET /jobs/{job_id}` until HTTP 200.
 4. Use a stable `jira_id` per ticket. A second POST for the same id while
    that job is running or queued is **409** and gets **no** callback.
 5. After the job is terminal (callback arrived, or you know it failed), the
    same `jira_id` may be posted again as a **new** job.
 
-A ready n8n sub-workflow is [n8nflow.json](n8nflow.json) (from
-[n8ninitial.json](n8ninitial.json)). Only the OpenCode HTTP/poll path is
-replaced. **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
-**OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1** are
-unchanged: OSM `text` still goes into that LLM, then the same return
-shape. Import the flow and set `remoteIP` / `remotePort` (4096) on
-**remoteComputerInfo1**. That node is also the only place to set
-`timeout` (one OSM attempt, seconds) and `retry_count` (attempts,
-first included). **buildOsmRequest** copies both onto the OSM body.
-**waitForOsmCallback** waits `timeout * retry_count` seconds.
-**buildOsmRequest** hardcodes `PAT` and `model`.
-Do not poll OSM.
+Two ready n8n sub-workflows (same OSM, pick one):
 
-There is **no hardcoded webhook URL** in that file. n8n creates a **new
-Wait resume URL for each run**. The Code node **buildOsmRequest** copies
-it into the OSM body:
+| File | How it waits |
+|---|---|
+| [n8n-callback.json](n8n-callback.json) | Sends `callback_url` (`$execution.resumeUrl`). **waitForOsmCallback** is a Wait webhook. |
+| [n8n-poller.json](n8n-poller.json) | Omits `callback_url`. Sleeps `poll_interval`, then `GET /jobs/{id}` until the job is terminal (or `poll_max_seconds`). |
+
+Both keep **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
+**OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1**. Import
+and set `remoteIP` / `remotePort` (4096) on **remoteComputerInfo1**.
+That node also has `timeout`, `retry_count`, and (poller only)
+`poll_interval` / `poll_max_seconds`. **buildOsmRequest** hardcodes
+`PAT` and `model`.
+
+**n8n-callback** has **no hardcoded webhook URL**. n8n creates a new
+Wait resume URL each run. **buildOsmRequest** copies it into the OSM
+body:
 
 ```javascript
 callback_url: $execution.resumeUrl,
@@ -59,7 +61,8 @@ Flow:
 3. **sendRequestToAI1** `POST /jobs` and takes the ack only (`neverError`
    so **400** / **409** / **503** still return the envelope).
 4. **ackIs202**: both **202** texts (`in progress` and `queued`) go to
-   **waitForOsmCallback**. **400** / **409** / **503** go to
+   **waitForOsmCallback** (callback flow) or the GET `/jobs/{id}` loop
+   (poller). **400** / **409** / **503** go to
    **returnAckFail** with OSM `text` (no callback).
 5. OSM later POSTs the one terminal JSON to the Wait URL.
 6. **normalizeCallback** unwraps the Wait `{ body }` wrapper.

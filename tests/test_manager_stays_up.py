@@ -105,42 +105,17 @@ def test_as_pid_rejects_junk() -> None:
     assert _as_pid(4242) == 4242
 
 
-def test_windows_process_rows_timeout_and_oserror(monkeypatch) -> None:
-    import subprocess
-
+def test_windows_process_rows_never_spawns(monkeypatch) -> None:
     import opencode_manager.cleanup.kill as killmod
 
+    spawned: list[object] = []
     monkeypatch.setattr(
         killmod.subprocess,
         "run",
-        lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="ps", timeout=1)),
+        lambda *a, **k: spawned.append(a) or SimpleNamespace(returncode=0, stdout=b"[]", stderr=b""),
     )
     assert _windows_process_rows() == []
-
-    monkeypatch.setattr(
-        killmod.subprocess,
-        "run",
-        lambda *_a, **_k: (_ for _ in ()).throw(OSError("no powershell")),
-    )
-    assert _windows_process_rows() == []
-
-    monkeypatch.setattr(
-        killmod.subprocess,
-        "run",
-        lambda *_a, **_k: (_ for _ in ()).throw(UnicodeDecodeError("utf-8", b"", 0, 1, "boom")),
-    )
-    assert _windows_process_rows() == []
-
-
-def test_windows_process_rows_garbage_bytes(monkeypatch) -> None:
-    import opencode_manager.cleanup.kill as killmod
-
-    monkeypatch.setattr(
-        killmod.subprocess,
-        "run",
-        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=b"\xff\xfe{", stderr=b""),
-    )
-    assert _windows_process_rows() == []
+    assert spawned == []
 
 
 def test_stop_job_holders_skips_scan_when_clone_missing(tmp_path: Path, monkeypatch) -> None:
@@ -220,8 +195,15 @@ def test_file_holders_and_path_has_holders_never_raise(tmp_path: Path, monkeypat
     )
     assert file_holder_pids(tmp_path) == []
     assert kill_file_holders(tmp_path) == 0
-    # Conservative: if the scan fails, assume holders remain (do not drop locks).
-    assert path_has_holders(tmp_path) is True
+    if os.name == "nt":
+        # Windows leftover walk is Restart Manager only. A failed RM
+        # call is already swallowed as "no holders"; do not fall back
+        # to a Win32_Process snapshot.
+        assert path_has_holders(tmp_path) is False
+    else:
+        # Conservative: if the /proc scan fails, assume holders remain
+        # (do not drop locks).
+        assert path_has_holders(tmp_path) is True
 
 
 def test_stop_job_holders_never_raises_when_every_step_fails(tmp_path: Path, monkeypatch) -> None:
@@ -350,6 +332,21 @@ def test_boot_never_raises_and_still_accepts(tmp_settings: Settings, monkeypatch
     status, env = manager.submit(_body(jira_id="BOOT-1"))
     assert status == 202
     assert env.job_id
+
+
+def test_ws_uses_live_counts_not_list_all(tmp_settings: Settings, monkeypatch) -> None:
+    app = create_app(tmp_settings)
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            JobStore,
+            "list_all",
+            lambda self: (_ for _ in ()).throw(AssertionError("ws must not list_all")),
+        )
+        with client.websocket_connect("/ws") as ws:
+            data = ws.receive_json()
+    assert data["running"] == 0
+    assert data["queue_queued"] == 0
+    assert "server_time" in data
 
 
 def test_shutdown_never_raises(tmp_settings: Settings, monkeypatch) -> None:

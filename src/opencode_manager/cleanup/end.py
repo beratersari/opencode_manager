@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Iterable, Optional, Set
 
@@ -78,6 +79,11 @@ def stop_job_holders(
     except Exception:  # noqa: BLE001
         logger.exception("kill_file_holders failed clone=%s", clone)
     try:
+        # Windows: one Restart Manager query (inside kill_file_holders).
+        # A second RmStartSession is what doubled the native hit after a 200.
+        if os.name == "nt":
+            drop_git_locks(clone)
+            return
         if path_has_holders(clone, protect=guarded):
             logger.warning("holders remain; leaving .git locks in place clone=%s", clone)
             return

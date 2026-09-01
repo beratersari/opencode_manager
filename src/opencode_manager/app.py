@@ -57,9 +57,7 @@ def create_app(
         await ws.accept()
         try:
             while True:
-                jobs = manager.store.list_all()
-                running = sum(1 for j in jobs if j.status == "running")
-                queued = sum(1 for j in jobs if j.status == "queued")
+                running, queued = manager.live_counts()
                 await ws.send_json(
                     {
                         "running": running,

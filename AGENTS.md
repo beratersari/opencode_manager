@@ -102,7 +102,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - **Boot cleanup is process hygiene only.** Kill leftover
   `serve_pid` / `extra_pids` recorded on running or queued rows.
   Then reap orphans whose cwd/argv is `work_dir` (leftover serves,
-  git, tools) on Windows and Linux. Mark leftover running/queued
+  git, tools) on Linux `/proc` only — do not snapshot Win32_Process
+  on Windows. Mark leftover running/queued
   rows **ERROR** in the job-history store so the dashboard can show
   them. They are not live, so those `jira_id`s are not `409`. Do
   **not** “handle” those jobs (no OpenCode, no terminal callback,
@@ -308,9 +309,16 @@ Order, always, on the **job-end** path:
    On Windows do **not** snapshot every process (`Get-CimInstance
    Win32_Process` via PowerShell). That scan, after a successful job
    whose clone still exists, is killed by EDR (`Backend exited`).
-   Windows leftovers are Restart Manager file holders only. Never
+   `_windows_process_rows` must not spawn PowerShell. `reap_path` and
+   the leftover cwd/argv walk are Linux `/proc` only. Windows
+   leftovers are Restart Manager file holders only. Never
    PEB-walk python/cmd/powershell or every PID. Restart Manager
-   calls must set ctypes argtypes. Never `taskkill` the manager PID,
+   calls must set ctypes argtypes. The RmStartSession key buffer is
+   `CCH_RM_SESSION_KEY+1` WCHARs (33), not 32. Query RM in a **child
+   process** so a `rstrtmgr` access violation cannot kill OSM. Job-end
+   runs that query **once** (do not call `path_has_holders` after it
+   on Windows). Dashboard `/ws` uses live slot/queue counts — it must
+   not `list_all()` every tick. Never `taskkill` the manager PID,
    its parent console, or PID ≤ 4. Do not reap a drive root. A
    holder-stop / delete / boot / shutdown exception must not skip
    clone delete, leave boot unfinished, or take down the process.
@@ -385,7 +393,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   `limit=2000` stays for the Logs tab.
 - Persist a history row per `job_id`. Keep it after
   clone delete and after boot leftover ERROR. 409 is only running or
-  queued.
+  queued. Job JSON is parsed with `json.loads` + `model_validate`
+  (not `model_validate_json`). Rows over 50 MB are skipped.
+  `list_all` may reuse an in-memory copy for `CACHE_TTL_SECONDS`
+  (3s); `save` drops that cache before the write. Live `/ws` ticks
+  use `Manager.live_counts()` (running slots + queue length), not
+  `list_all()`.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
   (live serve or snapshot), per-job log lines for that
   `job_id`, then that job’s OpenCode serve log. Chat must work after

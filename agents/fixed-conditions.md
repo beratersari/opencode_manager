@@ -44,6 +44,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
 | Hang does not fire after an assistant this turn | `test_hang_does_not_fire_after_assistant_this_turn` |
 | Job JSON Access Denied is retried, not a worker crash | `tests/test_job_store_save.py` |
+| Job JSON parse skips pydantic `model_validate_json` and huge files | `test_list_all_uses_json_loads_not_model_validate_json`, `test_list_all_skips_oversized_job_json` |
+| `list_all` cache lasts `CACHE_TTL_SECONDS` and drops on save | `test_list_all_cache_and_save_invalidates` |
 | Hang does not fire if list_messages fails after an assistant | `test_hang_does_not_fire_when_list_fails_after_assistant` |
 | Queue JSON replace retries Access Denied | `test_queue_survives_replace_access_denied` |
 | Atomic tmp write retries; total lock still raises | `test_atomic_retries_tmp_write`, `test_atomic_raises_when_replace_and_inplace_fail` |
@@ -73,7 +75,11 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Windows process JSON empty/invalid does not raise | `test_parse_windows_process_json_empty_and_invalid` |
 | Windows cwd walk is only for clone-tool images | `test_windows_cwd_candidate_is_clone_tools_only` |
 | Job-end skips the process scan when the clone was never created | `test_stop_job_holders_skips_scan_when_clone_missing` |
-| Windows job-end does not snapshot every Win32_Process | `test_iter_windows_processes_does_not_snapshot` |
+| Windows job-end does not snapshot every Win32_Process | `test_iter_windows_processes_does_not_snapshot`, `test_windows_process_rows_never_spawns` |
+| Restart Manager session key is `CCH_RM_SESSION_KEY+1` | `test_rm_session_key_buffer_is_cch_plus_one` |
+| Restart Manager AV in a helper must not kill OSM | `test_restart_manager_helper_failure_does_not_raise` |
+| Windows job-end does not run a second RM query | `test_stop_job_holders_windows_skips_second_rm` |
+| Dashboard `/ws` does not parse every job JSON | `test_ws_uses_live_counts_not_list_all` |
 | No kill path may target OSM or its ancestors | `test_may_kill_never_allows_osm_or_system`, `test_kill_pid_never_sends_signal_to_osm` |
 | n8n `source_branch=-1` is inbound 400 | `test_source_branch_dash_one_is_missing` |
 | System images never get a Windows cwd PEB read | `test_windows_cwd_candidate_is_clone_tools_only` |

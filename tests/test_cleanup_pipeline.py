@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.cleanup.kill import (
     drop_git_locks,
@@ -150,24 +152,87 @@ def test_windows_cwd_candidate_is_clone_tools_only() -> None:
     assert not windows_cwd_candidate("", "")
 
 
-def test_iter_windows_processes_does_not_snapshot(monkeypatch) -> None:
+def test_iter_windows_processes_does_not_snapshot(monkeypatch, tmp_path: Path) -> None:
     from opencode_manager.cleanup import kill as killmod
 
     spawned: list[object] = []
+
+    def capture(*a, **k):
+        spawned.append(a[0] if a else k.get("args"))
+        return SimpleNamespace(returncode=0, stdout=b"[]", stderr=b"")
+
+    monkeypatch.setattr(killmod.subprocess, "run", capture)
+    monkeypatch.setattr(killmod.os, "name", "nt")
+    monkeypatch.setattr(killmod, "file_holder_pids", lambda *_a, **_k: [])
+    clone = tmp_path / "work" / "PROJ-12881"
+    clone.mkdir(parents=True)
+    job = JobRecord(job_id="job_no_snap", jira_id="PROJ-12881")
+
+    assert killmod._windows_process_rows() == []
+    assert list(killmod._iter_windows_processes()) == []
+    assert killmod.reap_path(clone, protect={os.getpid()}) == 0
+    assert killmod.path_has_holders(clone, protect={os.getpid()}) is False
+    stop_job_holders(job, clone)
+
+    for cmd in spawned:
+        joined = " ".join(str(x) for x in (cmd or []))
+        assert "Get-CimInstance" not in joined
+        assert "Win32_Process" not in joined
+
+
+def test_rm_session_key_buffer_is_cch_plus_one() -> None:
+    from opencode_manager.cleanup import kill as killmod
+
+    assert killmod._CCH_RM_SESSION_KEY == 32
+    assert killmod._RM_SESSION_KEY_CHARS == 33
+    buf = killmod._rm_session_key_buffer()
+    assert len(buf) == 33
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Restart Manager is Windows-only")
+def test_windows_restart_manager_session_key_does_not_av(tmp_path: Path) -> None:
+    from opencode_manager.cleanup.kill import _rm_query_pids, _windows_restart_manager_pids
+
+    clone = tmp_path / "PROJ-12881"
+    clone.mkdir()
+    assert isinstance(_rm_query_pids(clone), list)
+    assert isinstance(_windows_restart_manager_pids(clone), list)
+
+
+def test_restart_manager_helper_failure_does_not_raise(tmp_path: Path, monkeypatch) -> None:
+    from opencode_manager.cleanup import kill as killmod
+
+    monkeypatch.setattr(killmod.os, "name", "nt")
+    monkeypatch.delenv("OSM_RM_INPROCESS", raising=False)
     monkeypatch.setattr(
         killmod.subprocess,
         "run",
-        lambda *a, **k: spawned.append(a) or SimpleNamespace(returncode=0, stdout=b"[]", stderr=b""),
+        lambda *_a, **_k: SimpleNamespace(returncode=-1073741819, stdout=b"", stderr=b""),
+    )
+    assert killmod._windows_restart_manager_pids(tmp_path) == []
+
+
+def test_stop_job_holders_windows_skips_second_rm(tmp_path: Path, monkeypatch) -> None:
+    from opencode_manager.cleanup import end as endmod
+
+    called: list[str] = []
+    monkeypatch.setattr(endmod.os, "name", "nt")
+    monkeypatch.setattr(endmod, "kill_job_tree", lambda *_a, **_k: None)
+    monkeypatch.setattr(endmod, "reap_path", lambda *_a, **_k: 0)
+    monkeypatch.setattr(
+        endmod, "kill_file_holders", lambda *_a, **_k: called.append("holders") or 0
     )
     monkeypatch.setattr(
-        killmod,
-        "_windows_process_rows",
-        lambda: (_ for _ in ()).throw(AssertionError("must not snapshot Win32_Process")),
+        endmod, "path_has_holders", lambda *_a, **_k: called.append("scan") or False
     )
-    assert list(killmod._iter_windows_processes()) == []
-    assert spawned == []
+    monkeypatch.setattr(endmod, "drop_git_locks", lambda *_a, **_k: called.append("locks"))
+    clone = tmp_path / "T-1"
+    clone.mkdir()
+    stop_job_holders(JobRecord(job_id="job_rm1", jira_id="T-1"), clone)
+    assert called == ["holders", "locks"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows job-end does not enumerate processes (EDR)")
 def test_reap_path_kills_argv_match(tmp_path: Path) -> None:
     clone = tmp_path / "TICKET"
     clone.mkdir()

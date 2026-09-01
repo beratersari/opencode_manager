@@ -93,6 +93,68 @@ def test_save_and_get_do_not_raise_under_readers(tmp_path: Path) -> None:
     assert store.get(job.job_id) is not None
 
 
+def test_list_all_uses_json_loads_not_model_validate_json(tmp_path: Path, monkeypatch) -> None:
+    store = JobStore(tmp_path)
+    store.save(_job("job_parse"))
+    hits = {"json": 0, "pyd": 0}
+
+    real_loads = __import__("json").loads
+
+    def counted_loads(raw, *a, **k):  # noqa: ANN001
+        hits["json"] += 1
+        return real_loads(raw, *a, **k)
+
+    def boom_validate_json(*_a, **_k):
+        hits["pyd"] += 1
+        raise AssertionError("must not use model_validate_json")
+
+    monkeypatch.setattr("opencode_manager.dashboard.store.json.loads", counted_loads)
+    monkeypatch.setattr(JobRecord, "model_validate_json", boom_validate_json)
+    rows = store.list_all()
+    assert [j.job_id for j in rows] == ["job_parse"]
+    assert hits["json"] >= 1
+    assert hits["pyd"] == 0
+    assert store.get("job_parse") is not None
+    assert hits["pyd"] == 0
+
+
+def test_list_all_skips_oversized_job_json(tmp_path: Path, monkeypatch) -> None:
+    from opencode_manager.dashboard import store as storemod
+
+    store = JobStore(tmp_path)
+    store.save(_job("job_ok"))
+    ok_size = (tmp_path / "job_ok.json").stat().st_size
+    huge = tmp_path / "job_huge.json"
+    huge.write_text("{" + (" " * (ok_size + 32)) + "}", encoding="utf-8")
+    monkeypatch.setattr(storemod, "MAX_JSON_SIZE", ok_size + 1)
+    ids = {j.job_id for j in store.list_all()}
+    assert "job_ok" in ids
+    assert "job_huge" not in ids
+    assert store.get("job_huge") is None
+
+
+def test_list_all_cache_and_save_invalidates(tmp_path: Path, monkeypatch) -> None:
+    store = JobStore(tmp_path)
+    store.save(_job("job_cache"))
+    loads = {"n": 0}
+    real_loads = __import__("json").loads
+
+    def counted_loads(raw, *a, **k):  # noqa: ANN001
+        loads["n"] += 1
+        return real_loads(raw, *a, **k)
+
+    monkeypatch.setattr("opencode_manager.dashboard.store.json.loads", counted_loads)
+    first = store.list_all()
+    second = store.list_all()
+    assert [j.job_id for j in first] == ["job_cache"]
+    assert [j.job_id for j in second] == ["job_cache"]
+    assert loads["n"] == 1
+    store.save(_job("job_cache2"))
+    third = store.list_all()
+    assert {j.job_id for j in third} == {"job_cache", "job_cache2"}
+    assert loads["n"] >= 3
+
+
 class _BoomStore:
     def __init__(self) -> None:
         self.calls = 0

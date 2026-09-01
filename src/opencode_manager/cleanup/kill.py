@@ -53,6 +53,12 @@ _HOST_SHELL_STEMS = frozenset(
     {"python", "python3", "py", "cmd", "powershell", "pwsh"}
 )
 
+# restartmanager.h: CCH_RM_SESSION_KEY = sizeof(GUID)*2 = 32.
+# RmStartSession writes CCH_RM_SESSION_KEY+1 WCHARs (null included).
+# create_unicode_buffer(32) is one wchar short and can AV later.
+_CCH_RM_SESSION_KEY = 32
+_RM_SESSION_KEY_CHARS = _CCH_RM_SESSION_KEY + 1
+
 
 class _PROCESS_BASIC_INFORMATION(ctypes.Structure):
     _fields_ = [
@@ -437,44 +443,15 @@ def _decode_windows_stdout(raw: bytes) -> str:
 
 
 def _windows_process_rows() -> List[dict]:
-    """Best-effort pid + command line + exe. Isolated so tests can stub it."""
-    cmd = [
-        "powershell",
-        "-NoProfile",
-        "-Command",
-        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-        "Get-CimInstance Win32_Process | "
-        "Select-Object ProcessId,CommandLine,ExecutablePath | ConvertTo-Json -Compress",
-    ]
-    try:
-        log_command(logger, cmd, timeout=30)
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        stderr = _decode_windows_stdout(result.stderr or b"")
-        log_command_result(
-            logger,
-            cmd,
-            returncode=result.returncode,
-            stderr=stderr,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.error("command FAIL argv=%s err=%s", " ".join(cmd[:3]), exc)
-        return []
-    except Exception as exc:  # noqa: BLE001
-        logger.error("windows process snapshot failed err=%s", exc)
-        return []
-    text = _decode_windows_stdout(result.stdout or b"")
-    rows = parse_windows_process_json(text)
-    logger.info(
-        "windows process snapshot bytes=%s rows=%s",
-        len(result.stdout or b""),
-        len(rows),
-    )
-    return rows
+    """Never snapshot Win32_Process. Isolated so tests can stub it.
+
+    A live PowerShell `Get-CimInstance Win32_Process` is what EDR
+    treats as malware. After a successful job the clone still exists,
+    job-end used to scan twice, then OSM vanished (`Backend exited`)
+    even though the job was 200. Do not spawn a process here.
+    """
+    logger.info("windows process snapshot skipped (EDR-safe)")
+    return []
 
 
 def _win_k32_ntdll():
@@ -629,9 +606,17 @@ def iter_processes(*, with_fds: bool = False) -> Iterator[ProcInfo]:
 
 
 def reap_path(root: Path, *, protect: Optional[Iterable[int]] = None) -> int:
-    """Kill leftovers whose cwd or argv is this path. Never the manager or protect set."""
+    """Kill leftovers whose cwd or argv is this path. Never the manager or protect set.
+
+    Windows: do not enumerate processes. Leftovers are Restart Manager
+    file holders only (`kill_file_holders`). A Win32_Process snapshot
+    is what EDR kills OSM with after a 200 job (`Backend exited`).
+    """
     if not reap_root_is_safe(root):
         logger.warning("reap_path skip unsafe root=%s", root)
+        return 0
+    if os.name == "nt":
+        logger.info("reap_path skip Windows process scan (EDR-safe) root=%s", root)
         return 0
     base = str(root)
     guarded: Set[int] = set(protected_pids())
@@ -708,7 +693,13 @@ def _win_rstrtmgr():
     return rstrtmgr
 
 
-def _windows_restart_manager_pids(path: Path) -> List[int]:
+def _rm_session_key_buffer():
+    """WCHAR[CCH_RM_SESSION_KEY+1] for RmStartSession. Isolated so tests can check size."""
+    return ctypes.create_unicode_buffer(_RM_SESSION_KEY_CHARS)
+
+
+def _rm_query_pids(path: Path) -> List[int]:
+    """In-process Restart Manager. Only the helper child should call this."""
     if os.name != "nt":
         return []
     try:
@@ -721,7 +712,7 @@ def _windows_restart_manager_pids(path: Path) -> List[int]:
         return []
 
     session = wintypes.DWORD()
-    key = ctypes.create_unicode_buffer(32)
+    key = _rm_session_key_buffer()
     if rstrtmgr.RmStartSession(ctypes.byref(session), 0, key) != 0:
         return []
     handle = int(session.value)
@@ -771,6 +762,63 @@ def _windows_restart_manager_pids(path: Path) -> List[int]:
             rstrtmgr.RmEndSession(handle)
         except Exception:
             pass
+
+
+def _windows_restart_manager_pids(path: Path) -> List[int]:
+    """File holders under path. Child process so a rstrtmgr AV cannot kill OSM."""
+    if os.name != "nt":
+        return []
+    if os.environ.get("OSM_RM_INPROCESS") == "1":
+        return _rm_query_pids(path)
+    cmd = [
+        sys.executable,
+        "-c",
+        (
+            "import json,sys;"
+            "from opencode_manager.cleanup.kill import _rm_query_pids;"
+            "print(json.dumps(_rm_query_pids(sys.argv[1])))"
+        ),
+        str(path),
+    ]
+    env = dict(os.environ)
+    env["OSM_RM_INPROCESS"] = "1"
+    try:
+        log_command(logger, cmd, timeout=8)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=8,
+            check=False,
+            env=env,
+        )
+        log_command_result(
+            logger,
+            cmd,
+            returncode=result.returncode,
+            stderr=_decode_windows_stdout(result.stderr or b""),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("restart manager helper failed path=%s err=%s", path, exc)
+        return []
+    if result.returncode != 0:
+        logger.warning(
+            "restart manager helper exit=%s path=%s",
+            result.returncode,
+            path,
+        )
+        return []
+    try:
+        data = json.loads(_decode_windows_stdout(result.stdout or b"") or "[]")
+    except ValueError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: List[int] = []
+    for item in data:
+        pid = _as_pid(item)
+        if pid:
+            out.append(pid)
+    return out
 
 
 def _guard_set(protect: Optional[Iterable[int]] = None) -> Set[int]:
@@ -828,6 +876,8 @@ def path_has_holders(root: Path, *, protect: Optional[Iterable[int]] = None) -> 
             pid = _as_pid(raw)
             if pid and pid not in guarded:
                 return True
+        if os.name == "nt":
+            return False
         for proc in iter_processes(with_fds=False):
             if proc.pid in guarded:
                 continue

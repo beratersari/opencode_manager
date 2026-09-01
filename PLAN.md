@@ -907,10 +907,17 @@ to be running” and Windows `nul` / AV locks):
 3. Kill leftover processes whose cwd/argv is this clone (Linux
    `/proc` only). On Windows **do not** snapshot every process with
    PowerShell `Get-CimInstance Win32_Process` — EDR kills the
-   manager after a successful job (`Backend exited`). Windows
-   leftovers are Restart Manager file holders only. Do **not**
+   manager after a successful job (`Backend exited`). The
+   `_windows_process_rows` helper must not spawn PowerShell.
+   `reap_path` is a no-op on Windows. Windows leftovers are
+   Restart Manager file holders only. Do **not**
    PEB-read python/cmd/powershell or every PID. Restart Manager must
-   set ctypes `argtypes` / `restype`. A holder-stop exception must
+   set ctypes `argtypes` / `restype`. The RmStartSession session-key
+   buffer is `CCH_RM_SESSION_KEY+1` WCHARs (33); 32 overflows and can
+   AV later (`0xC0000005`). Run that query in a child process so a
+   `rstrtmgr` AV cannot take down OSM. Job-end calls it once.
+   Dashboard `/ws` must not parse the job-history store every tick.
+   A holder-stop exception must
    not skip clone delete or exit the process. Never `taskkill` the
    manager PID, its parent console, or PID ≤ 4. Refuse to reap a
    drive root or a single-component path. `boot()` and `shutdown()`

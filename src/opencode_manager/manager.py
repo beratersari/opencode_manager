@@ -374,6 +374,17 @@ class Manager:
                 self._start_thread(job)
                 return
 
+    def live_counts(self) -> tuple[int, int]:
+        """Dashboard /ws ticks. Do not parse every job JSON here."""
+        with self._lock:
+            running = int(self._running)
+        try:
+            queued = len(self.queue.peek_all())
+        except Exception:  # noqa: BLE001
+            logger.exception("live_counts queue peek failed")
+            queued = 0
+        return running, queued
+
     def job_public(self, job_id: str) -> Optional[Dict[str, Any]]:
         job = self.store.get(job_id)
         if not job:

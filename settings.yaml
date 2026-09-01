@@ -22,8 +22,8 @@ log_level: INFO
 opencode_bin: opencode
 # Seconds with no first assistant answer (busy, not compacting) before hang retry.
 hang_timeout_seconds: 180
-# Seconds allowed for git clone / ls-remote.
-git_clone_timeout_seconds: 300
+# Seconds allowed for git clone / ls-remote (30 minutes).
+git_clone_timeout_seconds: 1800
 # First outer-retry backoff, seconds.
 retry_backoff_seconds: 2
 # Cap on exponential backoff between OpenCode attempts, seconds.

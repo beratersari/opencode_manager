@@ -36,7 +36,7 @@ class Settings:
     log_level: str = "INFO"
     opencode_bin: str = "opencode"
     hang_timeout_seconds: float = 180.0
-    git_clone_timeout_seconds: float = 300.0
+    git_clone_timeout_seconds: float = 1800.0
     retry_backoff_seconds: float = 2.0
     retry_backoff_cap_seconds: float = 30.0
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)

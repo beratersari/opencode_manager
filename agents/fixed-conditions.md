@@ -74,6 +74,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Windows cwd walk is only for clone-tool images | `test_windows_cwd_candidate_is_clone_tools_only` |
 | Job-end skips the process scan when the clone was never created | `test_stop_job_holders_skips_scan_when_clone_missing` |
 | Windows job-end does not snapshot every Win32_Process | `test_iter_windows_processes_does_not_snapshot` |
+| No kill path may target OSM or its ancestors | `test_may_kill_never_allows_osm_or_system`, `test_kill_pid_never_sends_signal_to_osm` |
 | n8n `source_branch=-1` is inbound 400 | `test_source_branch_dash_one_is_missing` |
 | System images never get a Windows cwd PEB read | `test_windows_cwd_candidate_is_clone_tools_only` |
 | Holder-stop error still deletes the clone | `test_job_end_deletes_clone_if_stop_holders_raises` |

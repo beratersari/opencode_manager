@@ -167,16 +167,84 @@ def _as_pid(value: object) -> Optional[int]:
     return pid
 
 
-def protected_pids() -> Set[int]:
-    """Manager and its parent console — never taskkill /T these."""
-    out: Set[int] = {os.getpid()}
+def _parent_pid(pid: int) -> Optional[int]:
+    """Immediate parent of pid. Never raises. Own pid uses getppid()."""
     try:
-        ppid = os.getppid()
-        if ppid and ppid > 4:
-            out.add(int(ppid))
+        if int(pid) == os.getpid():
+            ppid = os.getppid()
+            return int(ppid) if ppid and int(ppid) > 4 else None
     except Exception:  # noqa: BLE001
         pass
+    if os.name != "nt":
+        try:
+            stat = Path(f"/proc/{int(pid)}/stat").read_text(encoding="utf-8")
+            # pid (comm) state ppid ...
+            close = stat.rfind(")")
+            parts = stat[close + 1 :].split()
+            ppid = int(parts[1])
+            return ppid if ppid > 4 else None
+        except Exception:  # noqa: BLE001
+            return None
+    try:
+        from ctypes import wintypes
+
+        kernel32, ntdll = _win_k32_ntdll()
+        handle = kernel32.OpenProcess(0x1000, False, int(pid))  # QUERY_LIMITED
+        if not handle:
+            return None
+        try:
+            pbi = _PROCESS_BASIC_INFORMATION()
+            ret_len = wintypes.ULONG()
+            status = ntdll.NtQueryInformationProcess(
+                handle, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(ret_len)
+            )
+            if status != 0:
+                return None
+            parent = int(pbi.Reserved3 or 0)
+            return parent if parent > 4 else None
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def protected_pids() -> Set[int]:
+    """This process and every ancestor. Never taskkill / SIGKILL these."""
+    out: Set[int] = set()
+    try:
+        current = os.getpid()
+    except Exception:  # noqa: BLE001
+        return out
+    for _ in range(16):
+        try:
+            pid = int(current)
+        except (TypeError, ValueError):
+            break
+        if pid <= 4 or pid in out:
+            break
+        out.add(pid)
+        nxt = _parent_pid(pid)
+        if not nxt:
+            break
+        current = nxt
     return out
+
+
+def may_kill(pid: Optional[int]) -> bool:
+    """False for junk, system PIDs, this process, or any ancestor. All kill paths use this."""
+    resolved = _as_pid(pid)
+    if not resolved:
+        return False
+    try:
+        if resolved == os.getpid():
+            return False
+        if resolved == os.getppid():
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    if resolved in protected_pids():
+        return False
+    return True
 
 
 def reap_root_is_safe(root: Optional[Path]) -> bool:
@@ -200,11 +268,12 @@ def reap_root_is_safe(root: Optional[Path]) -> bool:
 
 
 def kill_pid(pid: Optional[int]) -> None:
+    """Kill one job child. Never this manager or its parents. Only kill entry point."""
     resolved = _as_pid(pid)
     if not resolved:
         return
-    if resolved in protected_pids():
-        logger.warning("refusing to kill protected pid %s", resolved)
+    if not may_kill(resolved):
+        logger.warning("refusing to kill protected pid %s (never kill OSM)", resolved)
         return
     try:
         if os.name == "nt":
@@ -245,8 +314,8 @@ def kill_job_tree(pids: Iterable[Optional[int]]) -> None:
         pid = _as_pid(raw)
         if not pid:
             continue
-        if pid in guarded:
-            logger.warning("refusing to kill protected pid %s", pid)
+        if not may_kill(pid) or pid in guarded:
+            logger.warning("refusing to kill protected pid %s (never kill OSM)", pid)
             continue
         try:
             logger.info("kill process tree pid=%s", pid)

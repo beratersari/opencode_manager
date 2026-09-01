@@ -13,6 +13,8 @@ from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.cleanup.kill import (
     drop_git_locks,
     kill_job_tree,
+    kill_pid,
+    may_kill,
     parse_windows_process_json,
     process_belongs,
     ProcInfo,
@@ -87,6 +89,40 @@ def test_reap_root_is_safe_rejects_drive_and_shallow() -> None:
     assert reap_root_is_safe(Path(r"C:\osm\.temp"))
     assert reap_root_is_safe(Path(r"C:\osm\.temp\TEST-259"))
     assert reap_root_is_safe(Path("/var/lib/osm/.temp/T-1"))
+
+
+def test_may_kill_never_allows_osm_or_system() -> None:
+    assert may_kill(None) is False
+    assert may_kill(0) is False
+    assert may_kill(1) is False
+    assert may_kill(4) is False
+    assert may_kill(-1) is False
+    assert may_kill("nope") is False
+    assert may_kill(os.getpid()) is False
+    assert may_kill(os.getppid()) is False
+    assert os.getpid() in protected_pids()
+    parent = os.getppid()
+    if parent and parent > 4:
+        assert parent in protected_pids()
+
+
+def test_kill_pid_never_sends_signal_to_osm(monkeypatch) -> None:
+    import opencode_manager.cleanup.kill as killmod
+
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        killmod.subprocess,
+        "run",
+        lambda *a, **k: spawned.append(("run", a)) or SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
+    )
+    monkeypatch.setattr(killmod.os, "kill", lambda *a, **k: spawned.append(("kill", a)))
+    monkeypatch.setattr(killmod.os, "killpg", lambda *a, **k: spawned.append(("killpg", a)))
+    kill_pid(os.getpid())
+    kill_pid(os.getppid())
+    kill_pid(1)
+    kill_pid(4)
+    kill_pid(None)
+    assert spawned == []
 
 
 def test_kill_job_tree_refuses_self_ppid_and_junk(monkeypatch) -> None:

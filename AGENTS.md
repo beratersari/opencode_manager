@@ -292,6 +292,13 @@ Never POST a user message while the session is `busy` / compacting.
 
 ### Kill and cleanup
 
+**Never kill OSM.** Every kill (`taskkill`, `SIGKILL`, `killpg`) goes
+through `kill_pid` / `may_kill`. Refuse this process, every ancestor
+(cmd / `start-backend.bat` / console), and PID ≤ 4. This is not
+path-specific: job-end, hang retry, serve-dead, git timeout, boot
+reap, shutdown, file holders. A leftover or holder that is OSM is
+left alone; delete the clone anyway.
+
 Order, always, on the **job-end** path:
 
 1. Abort session (best effort).

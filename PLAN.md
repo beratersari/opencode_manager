@@ -902,7 +902,8 @@ to be running” and Windows `nul` / AV locks):
 1. Abort OpenCode session (best effort).
 2. Force-kill this job’s process tree: git, serve, agent tools
    (`taskkill /F /T` on Windows, `SIGKILL` + process group on Linux).
-   Never kill the manager. Never kill another job’s PIDs.
+   Never kill the manager or any ancestor (`may_kill` / `kill_pid`
+   only). Never kill another job’s PIDs.
 3. Kill leftover processes whose cwd/argv is this clone (Linux
    `/proc` only). On Windows **do not** snapshot every process with
    PowerShell `Get-CimInstance Win32_Process` — EDR kills the

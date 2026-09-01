@@ -25,6 +25,7 @@ from opencode_manager.opencode.session import (
     session_is_compacting,
     snapshot_chat,
     unknown_model_message,
+    looks_like_unknown_model_error,
     _last_finish,
 )
 from opencode_manager.settings import Settings
@@ -170,12 +171,22 @@ def run_opencode_job(
                             "serve-dead",
                             f"directory instance not ready: {exc}",
                         ) from exc
-                try:
-                    known_models = client.list_known_models()
-                except Exception as exc:  # noqa: BLE001
-                    logger.info("model list check skipped: %s", exc)
-                    known_models = []
-                if known_models and not model_is_known(job.model, known_models):
+                known_models: list[str] = []
+                inventory_ok = False
+                list_models = getattr(client, "list_known_models", None)
+                if callable(list_models):
+                    try:
+                        remain = max(5.0, deadline - time.time())
+                        try:
+                            known_models = list_models(timeout=min(60.0, remain))
+                        except TypeError:
+                            known_models = list_models()
+                        inventory_ok = True
+                    except Exception as exc:  # noqa: BLE001
+                        logger.info("model list check skipped: %s", exc)
+                if inventory_ok and (
+                    not known_models or not model_is_known(job.model, known_models)
+                ):
                     raise JobFailed(500, unknown_model_message(job.model, known_models))
                 inbound = job.session_id or None
                 already_bound = bool(job.session_bound)
@@ -362,6 +373,8 @@ def _post_user(
         client.post_message(job.session_id, text, model=job.model, agent=job.agent_mode)
     except Exception as exc:  # noqa: BLE001
         logger.error("user message POST failed prompt_id=%s err=%s", prompt_id, exc)
+        if looks_like_unknown_model_error(str(exc), job.model):
+            raise JobFailed(500, unknown_model_message(job.model, [])) from exc
         raise AttemptFailed("transport", f"user message POST failed: {exc}") from exc
     job.prompts.append(PromptRow(id=prompt_id, text=text, posted_at=utc_now()))
     if prompt_id == "ORIGINAL":
@@ -455,6 +468,8 @@ def _inner_loop(
             messages = []
             listed_ok = False
         job.chat_snapshot = snapshot_chat(messages, job.session_id)
+        if looks_like_unknown_model_error(str(messages)):
+            raise JobFailed(500, unknown_model_message(job.model, []))
         text = last_assistant_text(messages)
         new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
         if new_assistant and text:

@@ -71,6 +71,80 @@ def test_known_model_ids_from_config_providers() -> None:
     assert "ling-3.0-flash-fin-free" in msg
 
 
+def test_known_model_ids_from_connected_providers() -> None:
+    payload = {
+        "connected": [
+            {"id": "opencode", "models": {"mimo-v2.5-free": {}}},
+        ]
+    }
+    ids = known_model_ids_from_payload(payload)
+    assert "opencode/mimo-v2.5-free" in ids
+    assert not model_is_known("opencode/hy3-free", ids)
+
+
+def test_looks_like_unknown_model_error() -> None:
+    from opencode_manager.opencode.session import looks_like_unknown_model_error
+
+    assert looks_like_unknown_model_error(
+        '{"name":"ProviderModelNotFoundError","data":{"modelID":"hy3-free"}}'
+    )
+    assert looks_like_unknown_model_error("Model not found: opencode/hy3-free", "opencode/hy3-free")
+    assert not looks_like_unknown_model_error("session busy")
+
+
+def test_prompt_async_unknown_model_fails_job_immediately() -> None:
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from opencode_manager.opencode.session import OpenCodeClient
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_a) -> None:  # noqa: ANN002
+            return
+
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length") or "0")
+            if length:
+                self.rfile.read(length)
+            raw = json.dumps(
+                {
+                    "name": "ProviderModelNotFoundError",
+                    "data": {"message": "Model not found: opencode/hy3-free"},
+                }
+            ).encode("utf-8")
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    client = OpenCodeClient(f"http://127.0.0.1:{server.server_address[1]}", "/tmp/clone")
+    started = time.time()
+    try:
+        with pytest.raises(RuntimeError, match="not available"):
+            client.post_message(
+                "ses_x",
+                "do it",
+                model="opencode/hy3-free",
+                agent="build",
+            )
+        assert time.time() - started < 5.0
+    finally:
+        client.close()
+        server.shutdown()
+
+
 def test_assess_incomplete_tool_calls() -> None:
     messages = [{"info": {"role": "assistant", "finish": "tool-calls"}, "parts": []}]
     assert assess_idle(messages) == "incomplete"

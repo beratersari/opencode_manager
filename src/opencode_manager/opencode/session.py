@@ -55,18 +55,24 @@ def known_model_ids_from_payload(data: Any) -> List[str]:
     if not isinstance(data, dict):
         return out
 
-    providers = data.get("providers")
-    if providers is None:
-        providers = data.get("all")
-    if isinstance(providers, dict):
-        for pid, body in providers.items():
-            _walk_provider(str(pid), body)
-    elif isinstance(providers, list):
-        for row in providers:
-            if not isinstance(row, dict):
-                continue
-            pid = str(row.get("id") or row.get("providerID") or "")
-            _walk_provider(pid, row)
+    def _walk_block(block: Any) -> None:
+        if isinstance(block, dict):
+            if "models" in block or "id" in block or "providerID" in block:
+                pid = str(block.get("id") or block.get("providerID") or "")
+                _walk_provider(pid, block)
+                return
+            for pid, body in block.items():
+                if isinstance(body, dict):
+                    _walk_provider(str(pid), body)
+        elif isinstance(block, list):
+            for row in block:
+                if isinstance(row, dict):
+                    pid = str(row.get("id") or row.get("providerID") or "")
+                    _walk_provider(pid, row)
+
+    for key in ("connected", "providers", "all", "data"):
+        if key in data:
+            _walk_block(data.get(key))
 
     default = data.get("default")
     if isinstance(default, dict):
@@ -98,6 +104,25 @@ def unknown_model_message(requested: str, known: Sequence[str]) -> str:
     more = f" (+{len(known) - 12} more)" if len(known) > 12 else ""
     extra = f" Available: {sample}{more}." if sample else ""
     return f"model {requested!r} is not available on this OpenCode serve.{extra}"
+
+
+def looks_like_unknown_model_error(body: str, requested: str = "") -> bool:
+    """OpenCode 1.18 often wraps this as UnknownError / ProviderModelNotFoundError."""
+    low = (body or "").lower()
+    if any(
+        token in low
+        for token in (
+            "model not found",
+            "providermodelnotfound",
+            "modelnotfounderror",
+            "unknown model",
+            "is not available on this opencode serve",
+        )
+    ):
+        return True
+    req = (requested or "").strip().lower()
+    return bool(req and req in low and ("model" in low or "provider" in low))
+
 
 QUESTION_HINTS = (
     "shall i",
@@ -363,30 +388,40 @@ class OpenCodeClient:
             time.sleep(0.4)
         raise TimeoutError(f"opencode directory instance not ready last={last}")
 
-    def list_known_models(self) -> List[str]:
+    def list_known_models(self, *, timeout: float = 15.0) -> List[str]:
         """Model ids this serve will accept (``provider/id``). Empty if unknown."""
-        ids: List[str] = []
-        for path in ("/config/providers", "/provider"):
-            try:
-                response = self.http.get(path, headers=self.headers, timeout=15.0)
-            except Exception:
-                continue
-            if response.status_code >= 400:
-                continue
-            try:
-                ids.extend(known_model_ids_from_payload(response.json()))
-            except Exception:
-                continue
-            if ids:
-                break
-        seen = set()
-        out: List[str] = []
-        for mid in ids:
-            if mid in seen:
-                continue
-            seen.add(mid)
-            out.append(mid)
-        return out
+        deadline = time.time() + max(0.1, float(timeout))
+        last: List[str] = []
+        while time.time() < deadline:
+            ids: List[str] = []
+            for path in ("/config/providers", "/provider"):
+                remain = max(0.5, deadline - time.time())
+                try:
+                    response = self.http.get(
+                        path, headers=self.headers, timeout=min(remain, 15.0)
+                    )
+                except Exception:
+                    continue
+                if response.status_code >= 400:
+                    continue
+                try:
+                    ids.extend(known_model_ids_from_payload(response.json()))
+                except Exception:
+                    continue
+                if ids:
+                    break
+            seen = set()
+            out: List[str] = []
+            for mid in ids:
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                out.append(mid)
+            if out:
+                return out
+            last = out
+            time.sleep(0.4)
+        return last
 
     def session_payload(self, session_id: str) -> Dict[str, Any]:
         """GET /session/:id body. Empty on error. No per-poll log line."""
@@ -523,8 +558,14 @@ class OpenCodeClient:
                 status=response.status_code,
                 body=response.text,
             )
+            if looks_like_unknown_model_error(response.text, model):
+                raise RuntimeError(unknown_model_message(model, []))
             logger.info("prompt_async -> HTTP %s; falling back to /message", response.status_code)
+        except RuntimeError:
+            raise
         except Exception as exc:  # noqa: BLE001
+            if looks_like_unknown_model_error(str(exc), model):
+                raise
             log_http(logger, "POST", f"/session/{session_id}/prompt_async", err=exc, ok=False)
             logger.info("prompt_async failed (%s); falling back to /message", exc)
 

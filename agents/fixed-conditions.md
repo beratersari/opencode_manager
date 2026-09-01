@@ -42,6 +42,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | `.` / `..` / slashes are inbound 400 (no shared folder) | `test_unsafe_jira_id_is_400`, `test_clone_path_rejects_dot_slash_and_collision` |
 | OpenCode `busy` is not compact; `time.compacting` is | `test_opencode_busy_is_not_compacting_without_time_field` |
 | Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
+| Hang does not fire after an assistant this turn | `test_hang_does_not_fire_after_assistant_this_turn` |
+| Job JSON Access Denied is retried, not a worker crash | `tests/test_job_store_save.py` |
 
 ## Branch existence and origin
 

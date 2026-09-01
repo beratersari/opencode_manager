@@ -73,7 +73,11 @@ def _backoff(settings: Settings, attempt_index: int) -> None:
 
 
 def _save(store: JobStore, job: JobRecord) -> None:
-    store.save(job)
+    """History write must not kill a live OpenCode turn (Windows file lock)."""
+    try:
+        store.save(job)
+    except Exception:  # noqa: BLE001
+        logger.exception("job store save failed job=%s", job.job_id)
 
 
 def run_opencode_job(
@@ -98,21 +102,40 @@ def run_opencode_job(
 
     def close_serve() -> None:
         nonlocal handle, client
-        logger.info("close serve session=%s pid=%s", job.session_id or "", handle.pid if handle else job.serve_pid)
-        if client is not None:
-            if usable_session_id(job.session_id):
-                logger.info("abort session %s", job.session_id)
-                client.abort(job.session_id)
-            client.close()
-            client = None
-        stop_serve(handle)
-        if handle is None and job.serve_pid:
-            kill_pid(job.serve_pid)
-        handle = None
-        job.serve_pid = None
-        job.serve_port = None
-        job.serve_base_url = ""
-        _save(store, job)
+        try:
+            logger.info(
+                "close serve session=%s pid=%s",
+                job.session_id or "",
+                handle.pid if handle else job.serve_pid,
+            )
+            if client is not None:
+                if usable_session_id(job.session_id):
+                    logger.info("abort session %s", job.session_id)
+                    try:
+                        client.abort(job.session_id)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("abort during close_serve failed")
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001
+                    logger.exception("client close during close_serve failed")
+                client = None
+            try:
+                stop_serve(handle)
+            except Exception:  # noqa: BLE001
+                logger.exception("stop_serve during close_serve failed")
+            if handle is None and job.serve_pid:
+                try:
+                    kill_pid(job.serve_pid)
+                except Exception:  # noqa: BLE001
+                    logger.exception("kill leftover serve_pid failed")
+            handle = None
+            job.serve_pid = None
+            job.serve_port = None
+            job.serve_base_url = ""
+            _save(store, job)
+        except Exception:  # noqa: BLE001
+            logger.exception("close_serve failed job=%s", job.job_id)
 
     try:
         for attempt in range(1, attempts + 1):
@@ -525,6 +548,12 @@ def _inner_loop(
 
         if busy:
             awaiting_turn = False
+            # Mid-generation (assistant already this turn) is the attempt
+            # clock, not hang. Do not start or run the hang watchdog.
+            if new_assistant:
+                hang_started = None
+                time.sleep(1.0)
+                continue
             if hang_started is None:
                 hang_started = time.time()
                 hang_clock_logs += 1

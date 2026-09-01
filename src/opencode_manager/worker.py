@@ -9,7 +9,7 @@ from typing import Callable, Optional, Protocol
 
 from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
-from opencode_manager.dashboard.store import JobStore
+from opencode_manager.dashboard.store import JobStore, persist_job
 from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
 from opencode_manager.git.detect import classify_host
 from opencode_manager.log import clip, get_logger, log_fail
@@ -47,7 +47,7 @@ class OpenCodeRunner:
         dest = None
         dest = clone_path_for(self.settings.work_dir, job.jira_id)
         job.clone_path = str(dest)
-        self.store.save(job)
+        persist_job(self.store, job)
         kind = classify_host(job.repo_url)
         logger.info(
             "pipeline git start host_kind=%s clone_path=%s branch=%s timeout=%ss",
@@ -182,10 +182,7 @@ def finish_job(
     job.completed_at = utc_now()
     if terminal.status_code != 200:
         job.error_message = terminal.text
-    try:
-        store.save(job)
-    except Exception:  # noqa: BLE001
-        logger.exception("finish_job save failed job=%s", job.job_id)
+    persist_job(store, job)
     logger.info(
         "job terminal status=%s callback_status=%s session=%s send_callback=%s text_len=%s",
         job.status,
@@ -224,7 +221,7 @@ def run_pipeline(
     try:
         job.status = "running"
         job.started_at = job.started_at or utc_now()
-        store.save(job)
+        persist_job(store, job)
         logger.info("pipeline start log_file=%s clone_root=%s", job.log_file, settings.work_dir)
         terminal = runner.run(job, should_stop=should_stop)
         logger.info("pipeline runner returned %s", terminal.status_code)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from opencode_manager.dashboard.store import JobStore
+from opencode_manager.dashboard.store import JobStore, persist_job
 from opencode_manager.log import clip, get_logger, log_fail
 from opencode_manager.models import AttemptRow, JobRecord, PromptRow, utc_now, usable_session_id
 from opencode_manager.opencode import prompts
@@ -74,10 +74,7 @@ def _backoff(settings: Settings, attempt_index: int) -> None:
 
 def _save(store: JobStore, job: JobRecord) -> None:
     """History write must not kill a live OpenCode turn (Windows file lock)."""
-    try:
-        store.save(job)
-    except Exception:  # noqa: BLE001
-        logger.exception("job store save failed job=%s", job.job_id)
+    persist_job(store, job)
 
 
 def run_opencode_job(
@@ -426,6 +423,7 @@ def _inner_loop(
     compact_floor = baseline_compact_n
     last_compact_n = baseline_compact_n if baseline_compact_n is not None else 0
     hang_started: Optional[float] = None
+    answered_this_turn = False
     awaiting_turn = True
     last_phase = ""
     new_assistant_logs = 0
@@ -494,7 +492,13 @@ def _inner_loop(
         if looks_like_unknown_model_error(str(messages)):
             raise JobFailed(500, unknown_model_message(job.model, []))
         text = last_assistant_text(messages)
-        new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
+        new_assistant = False
+        if listed_ok:
+            new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
+            if new_assistant:
+                answered_this_turn = True
+        elif answered_this_turn:
+            new_assistant = True
         if new_assistant and text:
             job.text = text
         _save(store, job)
@@ -507,10 +511,15 @@ def _inner_loop(
         new_compacts = compact_n - (compact_floor if compact_floor is not None else 0)
         # INTENTIONAL: a new assistant this turn (id ≠ baseline) is progress
         # for the rest of the wait. Hang is "never started answering".
-        if msg_n != last_msg_n or compact_n != last_compact_n or compacting or new_assistant:
+        if listed_ok and (
+            msg_n != last_msg_n or compact_n != last_compact_n or compacting or new_assistant
+        ):
             last_progress = time.time()
             last_msg_n = msg_n
             last_compact_n = compact_n
+            hang_started = None
+        elif not listed_ok and (answered_this_turn or compacting):
+            last_progress = time.time()
             hang_started = None
         if new_assistant:
             awaiting_turn = False
@@ -549,8 +558,8 @@ def _inner_loop(
         if busy:
             awaiting_turn = False
             # Mid-generation (assistant already this turn) is the attempt
-            # clock, not hang. Do not start or run the hang watchdog.
-            if new_assistant:
+            # clock, not hang. Latch survives a later list_messages failure.
+            if answered_this_turn or new_assistant:
                 hang_started = None
                 time.sleep(1.0)
                 continue

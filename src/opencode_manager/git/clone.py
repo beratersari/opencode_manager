@@ -9,6 +9,7 @@ from typing import Callable, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 from opencode_manager.cleanup.kill import kill_pid
+from opencode_manager.dashboard.store import persist_job
 from opencode_manager.git.auth import (
     argv_helper_off,
     creds_for_job,
@@ -100,16 +101,16 @@ def _track_pid(job: Optional["JobRecord"], pid: Optional[int], store: Optional["
         return
     if int(pid) not in job.extra_pids:
         job.extra_pids.append(int(pid))
-        if store is not None:
-            store.save(job)
+        if store is not None and not persist_job(store, job):
+            logger.warning("could not persist extra_pids after track pid=%s", pid)
 
 
 def _untrack_pid(job: Optional["JobRecord"], pid: Optional[int], store: Optional["JobStore"]) -> None:
     if job is None or not pid:
         return
     job.extra_pids = [p for p in job.extra_pids if p != int(pid)]
-    if store is not None:
-        store.save(job)
+    if store is not None and not persist_job(store, job):
+        logger.warning("could not persist extra_pids after untrack pid=%s", pid)
 
 
 def _run_git(

@@ -7,6 +7,8 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from opencode_manager.atomic import write_text_atomic
+
 
 class JobQueue:
     def __init__(self, path: Path) -> None:
@@ -24,9 +26,7 @@ class JobQueue:
         return data if isinstance(data, list) else []
 
     def _save(self, rows: List[Dict[str, Any]]) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(rows, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+        write_text_atomic(self.path, json.dumps(rows, indent=2))
 
     def enqueue(self, row: Dict[str, Any]) -> None:
         with self._lock:

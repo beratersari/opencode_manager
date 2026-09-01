@@ -44,6 +44,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
 | Hang does not fire after an assistant this turn | `test_hang_does_not_fire_after_assistant_this_turn` |
 | Job JSON Access Denied is retried, not a worker crash | `tests/test_job_store_save.py` |
+| Hang does not fire if list_messages fails after an assistant | `test_hang_does_not_fire_when_list_fails_after_assistant` |
+| Queue JSON replace retries Access Denied | `test_queue_survives_replace_access_denied` |
 
 ## Branch existence and origin
 

@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, protect_pids, stop_job_holders
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
-from opencode_manager.dashboard.store import JobStore
+from opencode_manager.dashboard.store import JobStore, persist_job
 from opencode_manager.git.clone import GitError, clone_path_for
 from opencode_manager.log import get_logger, job_log_filename
 from opencode_manager.log_context import bind, clear
@@ -311,7 +311,7 @@ class Manager:
                 self._running += 1
                 job.status = "running"
                 job.started_at = utc_now()
-                self.store.save(job)
+                persist_job(self.store, job)
                 logger.info("dispatch now (slot free) started_at=%s", job.started_at)
                 self._start_thread(job)
                 text = "Job accepted and is now in progress."

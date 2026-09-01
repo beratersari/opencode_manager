@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import threading
-import time
 from pathlib import Path
 from typing import List, Optional
 
+from opencode_manager.atomic import write_text_atomic
 from opencode_manager.log import get_logger
 from opencode_manager.models import JobRecord, utc_now
 
 logger = get_logger()
-_SAVE_ATTEMPTS = 8
 
 
 class JobStore:
@@ -26,39 +24,15 @@ class JobStore:
         return self.root / f"{safe}.json"
 
     def save(self, job: JobRecord) -> None:
-        """Atomic write. Retry Windows Access Denied when the json is being read."""
+        """Atomic write. Retries Windows Access Denied when the json is being read."""
         job.updated_at = utc_now()
         payload = job.model_dump_json(indent=2)
         with self._lock:
-            path = self._path(job.job_id)
-            tmp = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            last_exc: Optional[BaseException] = None
-            try:
-                for attempt in range(1, _SAVE_ATTEMPTS + 1):
-                    try:
-                        os.replace(tmp, path)
-                        return
-                    except OSError as exc:
-                        last_exc = exc
-                        if attempt < _SAVE_ATTEMPTS:
-                            time.sleep(0.05 * attempt)
-                try:
-                    path.write_text(payload, encoding="utf-8")
-                    logger.warning(
-                        "job store replace failed; wrote in place job=%s err=%s",
-                        job.job_id,
-                        last_exc,
-                    )
-                    return
-                except OSError as exc:
-                    last_exc = exc
-                raise last_exc or OSError("job store save failed")
-            finally:
-                try:
-                    tmp.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            write_text_atomic(self._path(job.job_id), payload)
+
+    def try_save(self, job: JobRecord) -> bool:
+        """Same as save, but a lock must not abort a live job."""
+        return persist_job(self, job)
 
     def get(self, job_id: str) -> Optional[JobRecord]:
         path = self._path(job_id)
@@ -86,3 +60,16 @@ class JobStore:
             if job.jira_id == jira_id and job.status in {"queued", "running"}:
                 return job
         return None
+
+
+def persist_job(store: object, job: JobRecord) -> bool:
+    """Save job history. Never raise — Windows file locks must not kill work."""
+    try:
+        saver = getattr(store, "save", None)
+        if saver is None:
+            return False
+        saver(job)
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("job store save failed job=%s", getattr(job, "job_id", ""))
+        return False

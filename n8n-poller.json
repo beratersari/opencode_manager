@@ -584,7 +584,7 @@
     },
     {
       "parameters": {
-        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($('When Executed by Another Workflow').first().json.working_mode === \"Plan\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
+        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($input.first().json.working_mode === \"Plan\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

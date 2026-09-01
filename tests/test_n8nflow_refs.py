@@ -131,8 +131,9 @@ def test_build_osm_request_maps_plan_and_build_case_sensitively(path: Path) -> N
     assert "working_mode:" not in code
     stringify = next(n for n in data["nodes"] if n["name"] == "strginfyInputText1")
     sjs = str(stringify["parameters"].get("jsCode") or "")
-    assert 'working_mode === "Plan"' in sjs
+    assert '$input.first().json.working_mode === "Plan"' in sjs
     assert 'json["agent"]' not in sjs
+    assert 'json.agent' not in sjs
 
 
 @pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)

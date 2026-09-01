@@ -34,11 +34,11 @@ def _remote_heads(dest: Path) -> List[str]:
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
 
-def test_clone_argv_is_clone_url_dest_only(tmp_path: Path, monkeypatch) -> None:
-    recorded: List[List[str]] = []
+def test_clone_argv_is_clone_url_dot_in_ticket_folder(tmp_path: Path, monkeypatch) -> None:
+    recorded: List[tuple[List[str], Any]] = []
 
-    def fake_run(args, **_k):  # noqa: ANN001
-        recorded.append(list(args))
+    def fake_run(args, **kwargs):  # noqa: ANN001
+        recorded.append((list(args), kwargs.get("cwd")))
 
         class _R:
             returncode = 0
@@ -50,13 +50,15 @@ def test_clone_argv_is_clone_url_dest_only(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("opencode_manager.git.clone._run_git_maybe_prompt", fake_run)
     monkeypatch.setattr("opencode_manager.git.clone._run_git", fake_run)
     monkeypatch.setattr("opencode_manager.git.clone._scrub_origin", lambda *_a, **_k: None)
-    dest = tmp_path / "clone"
+    dest = tmp_path / "PROJ-1"
     clone_repo("https://gitlab.example/g/r.git", dest, "feature/KAN-9", timeout=10.0)
-    clone_calls = [a for a in recorded if a and a[0] == "clone"]
-    assert clone_calls == [["clone", "https://gitlab.example/g/r.git", str(dest)]]
-    joined = [" ".join(a) for a in recorded]
+    clone_calls = [(a, cwd) for a, cwd in recorded if a and a[0] == "clone"]
+    assert clone_calls == [(["clone", "https://gitlab.example/g/r.git", "."], dest)]
+    assert dest.is_dir()
+    joined = [" ".join(a) for a, _ in recorded]
     assert not any("--branch" in j or "--single-branch" in j for j in joined)
-    assert not any(a and a[0] == "checkout" for a in recorded)
+    assert not any(str(dest) in j for j in joined)
+    assert not any(a and a[0] == "checkout" for a, _ in recorded)
 
 
 def test_clone_does_not_checkout_source_branch(tmp_path: Path) -> None:
@@ -65,7 +67,9 @@ def test_clone_does_not_checkout_source_branch(tmp_path: Path) -> None:
     dest = tmp_path / "clone"
     clone_repo(file_url(src), dest, "develop", timeout=30.0)
     assert dest.is_dir()
+    assert (dest / ".git").exists()
     assert (dest / "README.md").is_file()
+    assert not any(p.is_dir() and (p / ".git").exists() for p in dest.iterdir() if p.name != ".git")
     assert _head(dest) == "main"
     remotes = _remote_heads(dest)
     assert any(r.endswith("/develop") for r in remotes)

@@ -814,10 +814,11 @@ change clone auth.
    OpenCode). Mid-job outer retry: leave the existing tree. Boot does
    not delete leftover trees. Job-end always hard-deletes the same
    path again (success, fail, or git-phase error).
-4. Do **not** checkout `source_branch`. OSM only `git clone <url> dest`
-   (no `--branch`, no `--single-branch`, no `git checkout`). Git may
-   land on the remote default HEAD. The OpenCode agent checks out
-   `source_branch`. No “create from main”.
+4. Do **not** checkout `source_branch`. Create the ticket folder,
+   `cd` into it, and run `git clone <url> .` (not
+   `git clone <url> dest`). No `--branch`, no `--single-branch`, no
+   `git checkout`. Git may land on the remote default HEAD. The
+   OpenCode agent checks out `source_branch`. No “create from main”.
 5. Do **not** run `git submodule update`. Clone + origin
    scrub only. A `.gitmodules` file is left as the remote recorded it.
    Set `GIT_LFS_SKIP_SMUDGE=1` so clone does not download LFS
@@ -1257,7 +1258,7 @@ build them).
 - [ ] New job: if that stable path exists, sequential hard-delete it first, then clone. Not on boot. Not on mid-job retry.
 - [ ] Same `jira_id` ⇒ same folder; different `jira_id` ⇒ different folder.
 - [ ] Same ticket with a different repo or branch still uses that folder (delete, then clone).
-- [ ] Do not checkout `source_branch`; `git clone <url> dest` only. The OpenCode agent checks it out.
+- [ ] Do not checkout `source_branch`. From the ticket folder: `git clone <url> .` (not `git clone <url> dest`). The OpenCode agent checks the branch out.
 - [ ] Do not init or update git submodules.
 - [ ] Do not download Git LFS blobs (`GIT_LFS_SKIP_SMUDGE=1`).
 - [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote`.

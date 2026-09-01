@@ -94,6 +94,40 @@ def test_poller_flow_polls_osm_jobs_not_callback() -> None:
     expr = str(still["parameters"]["conditions"]["conditions"][0]["leftValue"])
     assert "poll_max_seconds" in expr
     assert "live" in expr
+    assert "job_" in expr
+    assert "retry_blip" in expr
+    assert "status_code) >= 500" not in expr
+    poll = next(n for n in data["nodes"] if n["name"] == "normalizePoll")
+    poll_js = str(poll["parameters"].get("jsCode") or "")
+    for code in ("200", "202", "404", "500", "504"):
+        assert code in poll_js
+    ack = next(n for n in data["nodes"] if n["name"] == "ackIs202")
+    ack_expr = str(ack["parameters"]["conditions"]["conditions"][0]["leftValue"])
+    assert "job_" in ack_expr
+    assert "202" in ack_expr
+
+
+@pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
+def test_ack_non_202_goes_to_return_ack_fail(path: Path) -> None:
+    """400/409/503 must not Wait or poll — n8n would hang with no callback."""
+    data = _flow(path)
+    post = next(n for n in data["nodes"] if n["name"] == "sendRequestToAI1")
+    opts = post["parameters"]["options"]["response"]["response"]
+    assert opts.get("neverError") is True
+    assert opts.get("fullResponse") is True
+    assert post.get("onError") == "continueRegularOutput"
+    assert post.get("alwaysOutputData") is True
+    norm = next(n for n in data["nodes"] if n["name"] == "normalizeAck")
+    js = str(norm["parameters"].get("jsCode") or "")
+    assert "statusCode" in js
+    assert "400" in js
+    lanes = data["connections"]["ackIs202"]["main"]
+    assert lanes[0][0]["node"] in {"waitForOsmCallback", "waitPollInterval"}
+    assert lanes[1][0]["node"] == "returnAckFail"
+    fail = next(n for n in data["nodes"] if n["name"] == "returnAckFail")
+    blob = json.dumps(fail)
+    assert "is_success" in blob
+    assert "false" in blob.lower() or "False" in blob
 
 
 @pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)

@@ -555,6 +555,7 @@
           "timeout": 30000,
           "response": {
             "response": {
+              "fullResponse": true,
               "neverError": true,
               "responseFormat": "json"
             }
@@ -571,7 +572,8 @@
       "name": "sendRequestToAI1",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
-      "notes": "OSM POST /jobs ack only. neverError so 400/409/503 still return the envelope. 202 started and 202 queued both wait for the one callback."
+      "retryOnFail": false,
+      "notes": "OSM POST /jobs ack only. fullResponse+neverError so HTTP 400/409/503 still output (no throw). 202 → Wait. Anything else → returnAckFail (no callback, do not hang)."
     },
     {
       "parameters": {
@@ -599,7 +601,7 @@
           "conditions": [
             {
               "id": "aa11bb22-cc33-4dd4-8ee5-ff6677889900",
-              "leftValue": "={{ Number($json.status_code || $json.body && $json.body.status_code) }}",
+              "leftValue": "={{ Number($json.status_code) }}",
               "rightValue": 202,
               "operator": {
                 "type": "number",
@@ -657,7 +659,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  callback_url: $execution.resumeUrl,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -667,11 +669,11 @@
       ],
       "id": "a0b1c2d3-e4f5-4678-8901-23456789abcd",
       "name": "buildOsmRequest",
-      "notes": "Maps stringify output to OSM POST /jobs. timeout_in_seconds and retry_count come from remoteComputerInfo1. PAT and model hardcoded."
+      "notes": "Maps stringify output to OSM POST /jobs. timeout_in_seconds and retry_count come from remoteComputerInfo1. Model is hardcoded."
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+        "jsCode": "const j = $input.first().json || {};\nconst body = (j.body && typeof j.body === 'object') ? j.body : {};\nconst err = j.error && typeof j.error === 'object' ? j.error : null;\nconst http = Number(j.statusCode || j.status || (err && (err.httpCode || err.statusCode)) || body.status_code || 0);\nlet text = body.text || '';\nif (!text && body.detail != null) text = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);\nif (!text && err) text = err.message || String(err);\nif (!text) text = (typeof j.error === 'string' ? j.error : '') || j.message || '';\nconst code = Number(body.status_code || http || 0);\nreturn [{ json: {\n  text: text || (code && code !== 202 ? 'OSM rejected the job (HTTP ' + code + ')' : 'OSM ack missing status_code'),\n  session_id: body.session_id || '',\n  status_code: code === 202 ? 202 : (code || 400),\n  jira_id: body.jira_id || '',\n  job_id: body.job_id || '',\n}}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -708,7 +710,7 @@
             {
               "id": "ackfail-desc",
               "name": "={{ $('staticVariableNames1').item.json.description }}",
-              "value": "={{ $json.text }}",
+              "value": "={{ '[' + String($json.status_code || 400) + '] ' + ($json.text || 'OSM rejected the job') }}",
               "type": "string"
             },
             {

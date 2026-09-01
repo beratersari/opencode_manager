@@ -129,6 +129,7 @@
           "timeout": 60000,
           "response": {
             "response": {
+              "fullResponse": true,
               "neverError": true,
               "responseFormat": "json"
             }
@@ -149,7 +150,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nconst status = Number(env.status_code || j.statusCode || 0);\nconst ok = status === 200;\nreturn [{ json: {\n  [names.session_info]: ok ? 'deleted' : 'updated',\n  [names.is_success]: ok,\n  text: env.text || j.message || j.error || '',\n  session_id: ok ? (env.session_id || src.session_id || '') : (src.session_id || ''),\n  status_code: status,\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
+        "jsCode": "const names = $('staticVariableNames1').first().json;\nconst src = $('When Executed by Another Workflow').first().json;\nconst j = $input.first().json || {};\nconst body = (j.body && typeof j.body === 'object') ? j.body : {};\nconst err = j.error && typeof j.error === 'object' ? j.error : null;\nconst env = (body.status_code != null || body.text) ? body : j;\nconst http = Number(j.statusCode || j.status || (err && (err.httpCode || err.statusCode)) || 0);\nconst status = Number(env.status_code || http || 0);\nconst ok = status === 200;\nlet text = env.text || '';\nif (!text && env.detail != null) text = typeof env.detail === 'string' ? env.detail : JSON.stringify(env.detail);\nif (!text && err) text = err.message || String(err);\nreturn [{ json: {\n  [names.session_info]: ok ? 'deleted' : 'updated',\n  [names.is_success]: ok,\n  text: text || (ok ? 'session deleted' : 'OSM session delete failed (HTTP ' + (status || http || 400) + ')'),\n  session_id: ok ? (env.session_id || src.session_id || '') : (src.session_id || ''),\n  status_code: status || (ok ? 200 : 400),\n  jira_id: env.jira_id || src.issue_id || '',\n}}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -298,7 +299,7 @@
       ],
       "id": "e4ce800f-cb00-4117-8195-a28818fb1200",
       "name": "isCallback200",
-      "notes": "OSM terminal 200 only. 404/500/504 and poll budget spent (still 202) go to returnAckFail."
+      "notes": "Success path only for envelope 200. Terminal 404 (missing branch), 500 (error), 504 (timeout), leftover 202 (poll budget), 400/409/503 → returnAckFail."
     },
     {
       "parameters": {
@@ -567,6 +568,7 @@
           "timeout": 30000,
           "response": {
             "response": {
+              "fullResponse": true,
               "neverError": true,
               "responseFormat": "json"
             }
@@ -583,7 +585,8 @@
       "name": "sendRequestToAI1",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
-      "notes": "OSM POST /jobs ack only. neverError so 400/409/503 still return the envelope. 202 started/queued → poll GET /jobs/{id}. No callback_url."
+      "retryOnFail": false,
+      "notes": "OSM POST /jobs ack only. fullResponse+neverError so HTTP 400/409/503 still output (no throw). 202 → poll. Anything else → returnAckFail (do not hang)."
     },
     {
       "parameters": {
@@ -611,11 +614,12 @@
           "conditions": [
             {
               "id": "aa11bb22-cc33-4dd4-8ee5-ff6677889900",
-              "leftValue": "={{ Number($json.status_code || $json.body && $json.body.status_code) }}",
-              "rightValue": 202,
+              "leftValue": "={{ Number($json.status_code) === 202 && String($json.job_id || '').indexOf('job_') === 0 }}",
+              "rightValue": "",
               "operator": {
-                "type": "number",
-                "operation": "equals"
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
@@ -631,7 +635,7 @@
       ],
       "id": "e4ce800f-ack0-4117-8195-a28818fb1e1b",
       "name": "ackIs202",
-      "notes": "202 = started or queued → poll loop. 400 / 409 / 503 → returnAckFail. No callback."
+      "notes": "Poll only when OSM accepted (202) AND returned a job_id. 400/409/503 or missing id → returnAckFail immediately. Never GET /jobs/ with an empty id."
     },
     {
       "parameters": {
@@ -658,6 +662,7 @@
           "timeout": 30000,
           "response": {
             "response": {
+              "fullResponse": true,
               "neverError": true,
               "responseFormat": "json"
             }
@@ -678,7 +683,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text || j.body.job_id))\n  ? j.body : j;\nconst ack = $('normalizeAck').first().json || {};\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || ack.jira_id || '',\n  job_id: env.job_id || ack.job_id || '',\n  live: env.live === true,\n  status: env.status || '',\n}}];\n"
+        "jsCode": "const j = $input.first().json || {};\nconst body = (j.body && typeof j.body === 'object') ? j.body : {};\nconst err = j.error && typeof j.error === 'object' ? j.error : null;\nconst ack = $('normalizeAck').first().json || {};\nconst http = Number(j.statusCode || j.status || (err && (err.httpCode || err.statusCode)) || 0);\nconst env = (body.status_code != null || body.text || body.job_id || body.live != null) ? body : j;\nlet text = env.text || '';\nif (!text && env.detail != null) text = typeof env.detail === 'string' ? env.detail : JSON.stringify(env.detail);\nif (!text && err) text = err.message || String(err);\nif (!text) text = (typeof j.error === 'string' ? j.error : '') || j.message || '';\nconst jobId = String(env.job_id || ack.job_id || '');\nlet code = Number(env.status_code || 0);\nif (http === 202) code = 202;\nelse if (http === 200 && env.status_code != null) code = Number(env.status_code);\nelse if (http === 404) code = 404;\nelse if (code === 0 && http) code = http;\nif (!jobId && code === 202) code = 400;\nconst terminal = [200, 404, 500, 504].indexOf(code) >= 0 && http !== 202 && env.live !== true;\nconst retry_blip = !terminal && http >= 500 && http < 600;\nconst live = !terminal && jobId.indexOf('job_') === 0 && (env.live === true || code === 202);\nreturn [{ json: {\n  text: text || (live ? '' : (code === 504 ? 'OSM job timed out' : 'OSM poll returned no envelope')),\n  session_id: env.session_id || '',\n  status_code: code || (live ? 202 : 400),\n  jira_id: env.jira_id || ack.jira_id || '',\n  job_id: jobId,\n  live: live,\n  retry_blip: retry_blip,\n  status: env.status || '',\n  http_status: http,\n}}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -702,7 +707,7 @@
           "conditions": [
             {
               "id": "still-live-202",
-              "leftValue": "={{ ($json.live === true || Number($json.status_code) === 202 || Number($json.status_code) === 0 || (Number($json.status_code) >= 500 && Number($json.status_code) < 600)) && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.poll_max_seconds) || (Math.max(1, Number($('remoteComputerInfo1').item.json.timeout)) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count)) + 600)) }}",
+              "leftValue": "={{ String($json.job_id || '').indexOf('job_') === 0 && ($json.live === true || Number($json.status_code) === 202 || $json.retry_blip === true) && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.poll_max_seconds) || (Math.max(1, Number($('remoteComputerInfo1').item.json.timeout)) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count)) + 600)) }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -723,11 +728,11 @@
       ],
       "id": "f2a3b4c5-d6e7-4890-9bcd-stillinprogress1",
       "name": "stillInProgress",
-      "notes": "Loop while OSM says live (202 / live / GET 5xx blip) and elapsed < poll_max_seconds. OSM owns timeout*retry_count. Cap only stops a hung OSM. Then isCallback200."
+      "notes": "Loop only while the job is live (envelope 202 / live) or HTTP GET 5xx with retry_blip. Terminal envelope 200/404/500/504 stops even if the number is 5xx. Then isCallback200."
     },
     {
       "parameters": {
-        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  PAT: '',\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -741,7 +746,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = $input.first().json || {};\nconst env = (j.body && typeof j.body === 'object' && (j.body.status_code || j.body.text))\n  ? j.body : j;\nreturn [{ json: {\n  text: env.text || j.message || j.error || '',\n  session_id: env.session_id || '',\n  status_code: Number(env.status_code || j.statusCode || 0),\n  jira_id: env.jira_id || '',\n  job_id: env.job_id || '',\n}}];\n"
+        "jsCode": "const j = $input.first().json || {};\nconst body = (j.body && typeof j.body === 'object') ? j.body : {};\nconst err = j.error && typeof j.error === 'object' ? j.error : null;\nconst http = Number(j.statusCode || j.status || (err && (err.httpCode || err.statusCode)) || body.status_code || 0);\nlet text = body.text || '';\nif (!text && body.detail != null) text = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);\nif (!text && err) text = err.message || String(err);\nif (!text) text = (typeof j.error === 'string' ? j.error : '') || j.message || '';\nconst code = Number(body.status_code || http || 0);\nreturn [{ json: {\n  text: text || (code && code !== 202 ? 'OSM rejected the job (HTTP ' + code + ')' : 'OSM ack missing status_code'),\n  session_id: body.session_id || '',\n  status_code: code === 202 ? 202 : (code || 400),\n  jira_id: body.jira_id || '',\n  job_id: body.job_id || '',\n}}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -778,7 +783,7 @@
             {
               "id": "ackfail-desc",
               "name": "={{ $('staticVariableNames1').item.json.description }}",
-              "value": "={{ $json.text }}",
+              "value": "={{ '[' + String($json.status_code || 400) + '] ' + ($json.text || 'OSM rejected the job') }}",
               "type": "string"
             },
             {

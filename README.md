@@ -16,7 +16,9 @@ Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md).
    socket for clone or OpenCode.
 3. Treat inbound **202** as accepted (started or queued). Either wait
    for the callback **or** omit `callback_url` and poll
-   `GET /jobs/{job_id}` until HTTP 200.
+   `GET /jobs/{job_id}` until HTTP 200. **400 / 409 / 503 get no
+   callback** — do not enter a Wait node. The shipped n8n flows send
+   those acks to **returnAckFail** immediately (`is_success: false`).
 4. Use a stable `jira_id` per ticket. A second POST for the same id while
    that job is running or queued is **409** and gets **no** callback.
 5. After the job is terminal (callback arrived, or you know it failed), the
@@ -27,14 +29,14 @@ Two ready n8n sub-workflows (same OSM, pick one):
 | File | How it waits |
 |---|---|
 | [n8n-callback.json](n8n-callback.json) | Sends `callback_url` (`$execution.resumeUrl`). **waitForOsmCallback** is a Wait webhook. |
-| [n8n-poller.json](n8n-poller.json) | Omits `callback_url`. Sleeps `poll_interval`, then `GET /jobs/{id}` until the job is terminal (or `poll_max_seconds`). |
+| [n8n-poller.json](n8n-poller.json) | Omits `callback_url`. See the poller status table below. |
 
 Both keep **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
 **OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1**. Import
 and set `remoteIP` / `remotePort` (4096) on **remoteComputerInfo1**.
 That node also has `timeout`, `retry_count`, and (poller only)
 `poll_interval` / `poll_max_seconds`. **buildOsmRequest** hardcodes
-`PAT` and `model`.
+`model`.
 
 **n8n-callback** has **no hardcoded webhook URL**. n8n creates a new
 Wait resume URL each run. **buildOsmRequest** copies it into the OSM
@@ -42,6 +44,20 @@ body:
 
 ```javascript
 callback_url: $execution.resumeUrl,
+
+**n8n-poller status handling** (re-import the JSON after changing this):
+
+| OSM reply | What the poller does |
+|---|---|
+| POST **202** + `job_*` | Sleep `poll_interval`, then `GET /jobs/{id}` |
+| POST **400** / **409** / **503** | **returnAckFail** immediately (no poll) |
+| GET **202** / `live: true` | Keep polling |
+| GET HTTP **5xx** with no terminal body | `retry_blip` — poll again until `poll_max_seconds` |
+| GET envelope **200** | Success path (`isTextExist1` → LLM) |
+| GET envelope **404** / **500** / **504** | **returnAckFail** (missing branch / error / timeout). Does **not** keep polling. |
+| GET **404** unknown id | **returnAckFail** |
+| DELETE /sessions **200** | `is_success: true` |
+| DELETE **400** / **409** / **500** / **503** | `is_success: false`, keep inbound `session_id` |
 ```
 
 `$execution.resumeUrl` belongs to the Wait node **waitForOsmCallback**
@@ -101,7 +117,7 @@ There is never a `queued` or `in_progress` callback. `{…}` below is filled in.
 | **400** | `SSH repo_url is rejected` | `git@` or `ssh://` | No |
 | **400** | `repo_url must be http(s) or file` | Other scheme | No |
 | **400** | `model must be provider/id` | Not `provider/id` | No |
-| **400** | `unknown agent_mode: {agent}` | Not `build` / `plan` / `general` / `explore` | No |
+| **400** | `unknown agent_mode: {agent}` | Not `build` / `plan` (`planner`) / `general` / `explore` | No |
 | **400** | `callback_url must be an absolute http(s) URL` | Missing scheme or host | No |
 | **400** | `callback_url host is not allowed` | Host not in `callback_allowed_hosts` (ignored when that list is `[]` / `*` / `all`) | No |
 | **400** | `timeout_in_seconds and retry_count must be integers` | Non-integer | No |
@@ -118,7 +134,7 @@ Only after inbound **202**. `status_code` on this POST is never 202.
 | **404** | `source_branch '{branch}' does not exist on the remote` | Branch missing on the remote |
 | **500** | `manager shutting down` | Shutdown, or the job was stopped mid-flight |
 | **500** | `could not remove leftover clone at {path}` | Stable clone path could not be deleted before clone |
-| **500** | `git failed: {error}` | Clone / `ls-remote` failed (never includes a PAT) |
+| **500** | `git failed: {error}` | Clone / `ls-remote` failed (userinfo redacted) |
 | **500** | `model '{provider/id}' is not available on this OpenCode serve. Available: {sample}.` | Model missing from `GET /config/providers` |
 | **500** | `model still asking after UNATTENDED_NUDGE` | Still asking after the one nudge |
 | **500** | `compact leftover after COMPACT_LOOP_NUDGE` | Compact leftover after the compact nudge |
@@ -142,12 +158,11 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 
 | Field | Required | Notes |
 |---|---|---|
-| `repo_url` | yes | HTTPS (or `file://`). No `git@` / `ssh://`. |
-| `PAT` | no | Only for a private remote. Omit or `""` for public HTTPS. |
+| `repo_url` | yes | HTTPS (or `file://`). Cloned as given. No `git@` / `ssh://`. |
 | `source_branch` | yes | Must already exist on the remote. |
 | `prompt` | yes | Sent once, as the first user message. |
 | `model` | yes | `provider/id`, e.g. `opencode/mimo-v2.5-free`. |
-| `agent_mode` | yes | `build`, `plan`, `general`, or `explore`. |
+| `agent_mode` | yes | `build`, `plan` (alias `planner`), `general`, or `explore`. `agent_type` / `agent` are accepted as the same field. |
 | `timeout_in_seconds` | yes | One OpenCode attempt (not clone / cleanup). |
 | `retry_count` | yes | Max attempts, first included. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Folder name for the clone. |
@@ -156,14 +171,13 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 
 ## curl
 
-Start a job (private GitLab / Azure DevOps: send `PAT`. Public: omit it or use `""`):
+Start a job:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:4096/jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "repo_url": "https://gitlab.example.com/group/repo.git",
-    "PAT": "",
     "source_branch": "main",
     "prompt": "Add tests for the login handler. Do not ask questions.",
     "model": "opencode/mimo-v2.5-free",

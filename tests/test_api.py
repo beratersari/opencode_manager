@@ -130,6 +130,7 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
         lambda b: b.pop("jira_id"),
         lambda b: b.pop("timeout_in_seconds"),
         lambda b: b.__setitem__("source_branch", "  "),
+        lambda b: b.__setitem__("source_branch", "-1"),
         lambda b: b.__setitem__("timeout_in_seconds", 0),
         lambda b: b.__setitem__("timeout_in_seconds", "nope"),
         lambda b: b.__setitem__("repo_url", "git@host:g/r.git"),

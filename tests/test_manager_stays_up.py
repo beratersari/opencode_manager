@@ -42,7 +42,7 @@ def _body(**overrides):
         "source_branch": "develop",
         "prompt": "do work",
         "model": "ollama/Restricted-Kimi-K2.6",
-        "agent_mode": "plan",
+        "agent_mode": "planner",
         "timeout_in_seconds": 30,
         "retry_count": 1,
         "jira_id": "TEST-259",
@@ -141,6 +141,23 @@ def test_windows_process_rows_garbage_bytes(monkeypatch) -> None:
         lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=b"\xff\xfe{", stderr=b""),
     )
     assert _windows_process_rows() == []
+
+
+def test_stop_job_holders_skips_scan_when_clone_missing(tmp_path: Path, monkeypatch) -> None:
+    clone = tmp_path / "work" / "PROJ-12881"
+    called: list[str] = []
+    monkeypatch.setattr("opencode_manager.cleanup.end.kill_job_tree", lambda *_a, **_k: called.append("tree"))
+    monkeypatch.setattr(
+        "opencode_manager.cleanup.end.reap_path",
+        lambda *_a, **_k: called.append("reap") or 0,
+    )
+    monkeypatch.setattr(
+        "opencode_manager.cleanup.end.kill_file_holders",
+        lambda *_a, **_k: called.append("holders") or 0,
+    )
+    job = JobRecord(job_id="job_missing", jira_id="PROJ-12881")
+    stop_job_holders(job, clone)
+    assert called == ["tree"]
 
 
 def test_reap_path_survives_iter_and_belongs_errors(tmp_path: Path, monkeypatch) -> None:

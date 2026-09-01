@@ -51,7 +51,7 @@ are wrong.
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
 | 6 | Git auth | **Direct clone of `repo_url`.** No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=`. **Linux:** helper off. |
-| 7 | Source branch | Must exist on the remote. Missing field on the body → inbound **400**. Missing on the remote → inbound **202**, then callback **404**. Do not invent a branch from `main`. |
+| 7 | Source branch | Must exist on the remote. Missing field or n8n `-1` on the body → inbound **400**. Missing on the remote → inbound **202**, then callback **404**. Do not invent a branch from `main`. Job-end must not crash the manager. |
 | 8 | Codex | Never. OpenCode only. |
 
 If any row is wrong, the implementation will be wrong in a hard-to-undo way.

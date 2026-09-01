@@ -101,7 +101,11 @@ def test_kill_job_tree_refuses_self_ppid_and_junk(monkeypatch) -> None:
 def test_windows_cwd_candidate_is_clone_tools_only() -> None:
     assert windows_cwd_candidate(r"C:\Program Files\Git\cmd\git.exe", "")
     assert windows_cwd_candidate("", "opencode serve --hostname 127.0.0.1 --port 4100")
-    assert windows_cwd_candidate("", r'"C:\osm\.venv\Scripts\python.exe" -m opencode_manager.app')
+    assert not windows_cwd_candidate(
+        "", r'"C:\osm\.venv\Scripts\python.exe" -m opencode_manager.app'
+    )
+    assert not windows_cwd_candidate("", "powershell -NoProfile -Command Get-CimInstance")
+    assert not windows_cwd_candidate(r"C:\Windows\System32\cmd.exe", "")
     assert windows_cwd_candidate("", "node ./scripts/run.js")
     assert not windows_cwd_candidate(r"C:\Windows\System32\svchost.exe", "")
     assert not windows_cwd_candidate("", r"C:\Program Files\Google\Chrome\Application\chrome.exe")

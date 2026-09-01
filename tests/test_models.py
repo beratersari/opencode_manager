@@ -118,6 +118,19 @@ def test_valid_body():
     assert validate_request_fields(_ok()) is None
 
 
+def test_source_branch_dash_one_is_missing():
+    from opencode_manager.models import JobRequest
+
+    assert validate_request_fields(_ok(source_branch="-1"))
+    assert validate_request_fields(_ok(source_branch="  -1  "))
+    try:
+        JobRequest.model_validate(_ok(source_branch="-1"))
+    except Exception as exc:
+        assert "source_branch" in str(exc)
+    else:
+        raise AssertionError("source_branch=-1 must be rejected")
+
+
 def test_unsafe_jira_id_is_400():
     for jira_id in (".", "..", "PROJ/99", "../etc", "a b"):
         assert validate_request_fields(_ok(jira_id=jira_id)), jira_id

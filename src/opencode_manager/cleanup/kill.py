@@ -25,6 +25,8 @@ _CWD_READ_CAP = 32768
 
 # Only these images get a Windows cwd (PEB) read. Opening every PID
 # with PROCESS_VM_READ looks like malware; corporate EDR kills us.
+# Never PEB-read the manager tree: python / cmd / powershell host
+# start-backend.bat and this process. EDR kills OSM on those opens.
 _CLONE_TOOL_STEMS = frozenset(
     {
         "git",
@@ -32,15 +34,6 @@ _CLONE_TOOL_STEMS = frozenset(
         "node",
         "bun",
         "deno",
-        "python",
-        "python3",
-        "py",
-        "cmd",
-        "powershell",
-        "pwsh",
-        "bash",
-        "sh",
-        "busybox",
         "rg",
         "fd",
         "npm",
@@ -51,7 +44,13 @@ _CLONE_TOOL_STEMS = frozenset(
         "go",
         "java",
         "gradle",
+        "bash",
+        "sh",
+        "busybox",
     }
+)
+_HOST_SHELL_STEMS = frozenset(
+    {"python", "python3", "py", "cmd", "powershell", "pwsh"}
 )
 
 
@@ -108,7 +107,10 @@ def _image_stem(path_or_argv: str) -> str:
 
 def windows_cwd_candidate(exe: str, argv: str) -> bool:
     """True when this image might be a leftover in a clone (git/serve/tools)."""
-    return _image_stem(exe) in _CLONE_TOOL_STEMS or _image_stem(argv) in _CLONE_TOOL_STEMS
+    stems = {_image_stem(exe), _image_stem(argv)}
+    if stems & _HOST_SHELL_STEMS:
+        return False
+    return bool(stems & _CLONE_TOOL_STEMS)
 
 
 def parse_windows_process_json(text: str) -> List[dict]:
@@ -349,7 +351,7 @@ def _iter_windows_processes() -> Iterator[ProcInfo]:
         argv = str(row.get("argv") or "")
         exe = str(row.get("exe") or "")
         cwd = None
-        if windows_cwd_candidate(exe, argv):
+        if pid not in protected_pids() and windows_cwd_candidate(exe, argv):
             try:
                 cwd = _windows_cwd(pid)
             except Exception:  # noqa: BLE001
@@ -446,7 +448,7 @@ def _windows_cwd(pid: int) -> Optional[str]:
     """Best-effort CurrentDirectory via prototyped NtQuery/ReadProcessMemory."""
     if os.name != "nt":
         return None
-    if not pid or int(pid) <= 4 or int(pid) == os.getpid():
+    if not pid or int(pid) <= 4 or int(pid) in protected_pids():
         return None
     try:
         from ctypes import wintypes

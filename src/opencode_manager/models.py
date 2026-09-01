@@ -53,6 +53,14 @@ def usable_session_id(value: Optional[str]) -> Optional[str]:
     return text
 
 
+def usable_source_branch(value: Optional[str]) -> Optional[str]:
+    """Remote branch name, or None. n8n sends -1 / empty when it has no branch."""
+    text = (value or "").strip()
+    if not text or text == "-1":
+        return None
+    return text
+
+
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -84,6 +92,14 @@ class JobRequest(BaseModel):
     @classmethod
     def _session(cls, value: Optional[str]) -> Optional[str]:
         return usable_session_id(value)
+
+    @field_validator("source_branch")
+    @classmethod
+    def _branch(cls, value: str) -> str:
+        text = usable_source_branch(value)
+        if not text:
+            raise ValueError("source_branch must be a real remote branch")
+        return text
 
     @field_validator("jira_id")
     @classmethod
@@ -263,6 +279,8 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         return "timeout_in_seconds must be >= 1"
     if not _JIRA_ID_RE.match(str(body["jira_id"]).strip()):
         return "jira_id must be a Windows-safe ticket id"
+    if usable_source_branch(str(body.get("source_branch") or "")) is None:
+        return "missing required field: source_branch"
     return None
 
 

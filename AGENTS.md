@@ -138,9 +138,11 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   **500**. A leftover inbound `PAT` key is ignored.
 - Reject `git@` / `ssh://`.
 - `source_branch` must exist on the remote. Do not create a branch
-  from `main`. Missing field on the body → inbound **400**. Missing
-  on the remote → inbound **202**, worker checks, callback **404**.
-  Never return a sync 404 for a missing remote ref.
+  from `main`. Missing field or n8n placeholder `-1` on the body →
+  inbound **400**. Missing on the remote → inbound **202**, worker
+  checks, callback **404**. Never return a sync 404 for a missing
+  remote ref. Job-end must not crash the manager (no process scan
+  when the clone was never created; never PEB-read python/cmd).
 - One settings root: `data_dir` (Windows `C:\osm`, Linux
   `/var/lib/osm`). Clones live under `{data_dir}/.temp`. Folder name is the **ticket id**
   (`jira_id`, Windows-safe: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`).

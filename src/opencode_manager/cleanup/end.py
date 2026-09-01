@@ -63,6 +63,13 @@ def stop_job_holders(
     if clone is None:
         return
     try:
+        exists = clone.exists()
+    except OSError:
+        exists = True
+    if not exists:
+        logger.info("clone missing; skip process scan clone=%s", clone)
+        return
+    try:
         reap_path(clone, protect=guarded)
     except Exception:  # noqa: BLE001
         logger.exception("reap_path failed clone=%s", clone)

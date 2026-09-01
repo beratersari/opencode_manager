@@ -63,6 +63,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Reap kills a process whose argv mentions the clone | `test_reap_path_kills_argv_match` |
 | Windows process JSON empty/invalid does not raise | `test_parse_windows_process_json_empty_and_invalid` |
 | Windows cwd walk is only for clone-tool images | `test_windows_cwd_candidate_is_clone_tools_only` |
+| Job-end skips the process scan when the clone was never created | `test_stop_job_holders_skips_scan_when_clone_missing` |
+| n8n `source_branch=-1` is inbound 400 | `test_source_branch_dash_one_is_missing` |
 | System images never get a Windows cwd PEB read | `test_iter_windows_processes_skips_cwd_for_system_images` |
 | Holder-stop error still deletes the clone | `test_job_end_deletes_clone_if_stop_holders_raises` |
 | `stop_job_holders` continues after `reap_path` fails | `test_stop_job_holders_survives_reap_error` |

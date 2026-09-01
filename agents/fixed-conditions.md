@@ -61,6 +61,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Linux still disables `credential.helper` | `test_linux_still_disables_credential_helper` |
 | Git child PID is tracked on the job while the process is live | `test_run_git_tracks_and_untracks_pid` |
 | Direct clone leaves a clean stored origin | `test_clone_repo_leaves_clean_origin` |
+| OSM clones only; never checks out `source_branch` | `tests/test_clone_no_checkout.py` |
 | Origin scrub keeps `host:port` after userinfo | `test_direct_clone_scrubs_stored_userinfo_and_keeps_port` |
 
 ## Kill / boot / shutdown

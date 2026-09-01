@@ -81,7 +81,7 @@ class OpenCodeRunner:
                 return Terminal(404, f"source_branch {job.source_branch!r} does not exist on the remote")
             if should_stop():
                 return Terminal(500, "manager shutting down")
-            logger.info("source_branch exists; cloning")
+            logger.info("source_branch exists; clone only (agent will checkout %s)", job.source_branch)
             clone_repo(
                 job.repo_url,
                 dest,

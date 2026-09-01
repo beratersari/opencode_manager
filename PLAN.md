@@ -272,7 +272,7 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 | Field | Required | Meaning |
 |---|---|---|
 | `repo_url` | yes | HTTPS clone URL. Cloned as given. SSH rejected. A leftover `PAT` key is ignored. |
-| `source_branch` | yes | Remote branch that must already exist. Start point of the clone. |
+| `source_branch` | yes | Remote branch that must already exist. OSM does not check it out; the OpenCode agent does. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
@@ -788,9 +788,9 @@ change clone auth.
 
 1. Build the no-prompt git env (Windows stored creds if present).
 2. In the **worker** (after the inbound **202**), `git ls-remote --heads`
-   (or clone then checkout) to prove `source_branch` exists. If it does
+   to prove `source_branch` exists. If it does
    not: cleanup anything already created, callback **404**, stop. Do
-   not invent a branch from `main`.
+   not invent a branch from `main`. Do not `git checkout` it.
 3. Clone under `work_dir` into a short **stable** Windows-safe path
    whose identity is the **ticket id** only (e.g.
    `{work_dir}/{jira_id}`). The dest must be a **strict child** of
@@ -814,10 +814,13 @@ change clone auth.
    OpenCode). Mid-job outer retry: leave the existing tree. Boot does
    not delete leftover trees. Job-end always hard-deletes the same
    path again (success, fail, or git-phase error).
-4. Checkout `source_branch` exactly. No “create from main”.
-5. Do **not** run `git submodule update`. Clone + checkout + origin
+4. Do **not** checkout `source_branch`. OSM only `git clone <url> dest`
+   (no `--branch`, no `--single-branch`, no `git checkout`). Git may
+   land on the remote default HEAD. The OpenCode agent checks out
+   `source_branch`. No “create from main”.
+5. Do **not** run `git submodule update`. Clone + origin
    scrub only. A `.gitmodules` file is left as the remote recorded it.
-   Set `GIT_LFS_SKIP_SMUDGE=1` so checkout does not download LFS
+   Set `GIT_LFS_SKIP_SMUDGE=1` so clone does not download LFS
    objects (pointer files only).
 
 **Locked:** missing remote branch is **202 + callback 404**. Existence
@@ -1254,7 +1257,7 @@ build them).
 - [ ] New job: if that stable path exists, sequential hard-delete it first, then clone. Not on boot. Not on mid-job retry.
 - [ ] Same `jira_id` ⇒ same folder; different `jira_id` ⇒ different folder.
 - [ ] Same ticket with a different repo or branch still uses that folder (delete, then clone).
-- [ ] Checkout `source_branch` exactly.
+- [ ] Do not checkout `source_branch`; `git clone <url> dest` only. The OpenCode agent checks it out.
 - [ ] Do not init or update git submodules.
 - [ ] Do not download Git LFS blobs (`GIT_LFS_SKIP_SMUDGE=1`).
 - [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote`.

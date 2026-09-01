@@ -280,17 +280,19 @@ def ls_remote_has_branch(
 def clone_repo(
     repo_url: str,
     dest: Path,
-    source_branch: str,
+    source_branch: str = "",
     *,
     timeout: float,
     job: Optional["JobRecord"] = None,
     store: Optional["JobStore"] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
+    """Clone only. Do not checkout `source_branch` — the OpenCode agent does that."""
     logger.info(
-        "git params op=clone dest=%s branch=%s timeout=%ss win_stored_creds=%s repo=%s",
+        "git params op=clone dest=%s no_checkout=1 source_branch=%s timeout=%ss "
+        "win_stored_creds=%s repo=%s",
         dest,
-        source_branch,
+        source_branch or "(agent)",
         timeout,
         uses_windows_stored_creds(),
         redact(repo_url),
@@ -300,20 +302,13 @@ def clone_repo(
     try:
         env = _env_for_job(job)
         _run_git_maybe_prompt(
-            ["clone", "--branch", source_branch, "--single-branch", repo_url, str(dest)],
+            ["clone", repo_url, str(dest)],
             repo_url=repo_url,
             env=env,
             timeout=timeout,
             **git_kw,
         )
         env = _env_for_job(job)
-        _run_git(
-            ["checkout", source_branch],
-            env=env,
-            cwd=dest,
-            timeout=min(60.0, timeout),
-            **git_kw,
-        )
         _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
     finally:
         forget_job_creds(job.job_id if job else None)

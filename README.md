@@ -159,7 +159,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 | Field | Required | Notes |
 |---|---|---|
 | `repo_url` | yes | HTTPS (or `file://`). Cloned as given. No `git@` / `ssh://`. |
-| `source_branch` | yes | Must already exist on the remote. |
+| `source_branch` | yes | Must already exist on the remote. OSM does not check it out; the OpenCode agent does. |
 | `prompt` | yes | Sent once, as the first user message. |
 | `model` | yes | `provider/id`, e.g. `opencode/mimo-v2.5-free`. |
 | `agent_mode` | yes | `planner` or `orchestrator`. n8n maps `working_mode` before POST. |

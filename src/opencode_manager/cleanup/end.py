@@ -10,8 +10,11 @@ from opencode_manager.cleanup.kill import (
     drop_git_locks,
     kill_file_holders,
     kill_job_tree,
+    kill_pid,
+    may_kill,
     path_has_holders,
     protected_pids,
+    query_windows_restart_manager,
     reap_path,
 )
 from opencode_manager.cleanup.rmtree import hard_delete
@@ -75,12 +78,13 @@ def stop_job_holders(
     except Exception:  # noqa: BLE001
         logger.exception("reap_path failed clone=%s", clone)
     try:
-        kill_file_holders(clone, protect=guarded)
+        # Windows: do not call RM here. delete_clone_path tries rd first;
+        # RM runs only if the folder is still there (at most two children).
+        if os.name != "nt":
+            kill_file_holders(clone, protect=guarded)
     except Exception:  # noqa: BLE001
         logger.exception("kill_file_holders failed clone=%s", clone)
     try:
-        # Windows: one Restart Manager query (inside kill_file_holders).
-        # A second RmStartSession is what doubled the native hit after a 200.
         if os.name == "nt":
             drop_git_locks(clone)
             return
@@ -90,6 +94,51 @@ def stop_job_holders(
         drop_git_locks(clone)
     except Exception:  # noqa: BLE001
         logger.exception("holder/lock pass failed clone=%s", clone)
+
+
+def retry_windows_delete_if_held(
+    clone: Path,
+    *,
+    protect: Optional[Iterable[int]] = None,
+) -> bool:
+    """If the clone remains, ask RM (new child). Retry once only if that child died."""
+    guarded = protect_pids(protect)
+    helper_died = False
+    for attempt in (1, 2):
+        try:
+            exists = clone.exists()
+        except OSError:
+            exists = True
+        if not exists:
+            return True
+        if attempt == 2 and not helper_died:
+            logger.info("rm helper survived; not retrying RM clone=%s", clone)
+            return False
+        logger.info("restart manager leftover clone attempt=%s/2 clone=%s", attempt, clone)
+        try:
+            result = query_windows_restart_manager(clone)
+        except Exception:  # noqa: BLE001
+            logger.exception("restart manager query failed clone=%s", clone)
+            result = None
+        helper_died = bool(result is None or result.died)
+        if result is not None:
+            for raw in result.pids:
+                if raw in guarded or not may_kill(raw):
+                    continue
+                try:
+                    logger.info("kill leftover holder pid=%s clone=%s", raw, clone)
+                    kill_pid(raw)
+                except Exception:  # noqa: BLE001
+                    logger.exception("kill leftover holder failed pid=%s", raw)
+        try:
+            if hard_delete(clone):
+                return True
+        except Exception:  # noqa: BLE001
+            logger.exception("hard_delete after RM failed clone=%s", clone)
+    try:
+        return not clone.exists()
+    except OSError:
+        return False
 
 
 def delete_clone_path(clone: Optional[Path], *, reason: str) -> bool:
@@ -109,6 +158,16 @@ def delete_clone_path(clone: Optional[Path], *, reason: str) -> bool:
         still = clone.exists()
     except OSError:
         still = True
+    if still and os.name == "nt":
+        try:
+            ok = retry_windows_delete_if_held(clone)
+        except Exception:  # noqa: BLE001
+            logger.exception("retry_windows_delete_if_held failed clone_path=%s", clone)
+            ok = False
+        try:
+            still = clone.exists()
+        except OSError:
+            still = True
     if still:
         logger.error("clone still present after %s delete clone_path=%s", reason, clone)
     else:

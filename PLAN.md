@@ -915,8 +915,10 @@ to be running” and Windows `nul` / AV locks):
    set ctypes `argtypes` / `restype`. The RmStartSession session-key
    buffer is `CCH_RM_SESSION_KEY+1` WCHARs (33); 32 overflows and can
    AV later (`0xC0000005`). Run that query in a child process so a
-   `rstrtmgr` AV cannot take down OSM. Job-end calls it once.
-   Dashboard `/ws` must not parse the job-history store every tick.
+   `rstrtmgr` AV cannot take down OSM. Job-end tries `rd` first. RM
+   runs only if the clone remains. If the child dies and the folder is
+   still there, one more child (max two). No retry when the helper
+   exits 0. Dashboard `/ws` must not parse the job-history store every tick.
    A holder-stop exception must
    not skip clone delete or exit the process. Never `taskkill` the
    manager PID, its parent console, or PID ≤ 4. Refuse to reap a

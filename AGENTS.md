@@ -316,8 +316,11 @@ Order, always, on the **job-end** path:
    calls must set ctypes argtypes. The RmStartSession key buffer is
    `CCH_RM_SESSION_KEY+1` WCHARs (33), not 32. Query RM in a **child
    process** so a `rstrtmgr` access violation cannot kill OSM. Job-end
-   runs that query **once** (do not call `path_has_holders` after it
-   on Windows). Dashboard `/ws` uses live slot/queue counts — it must
+   kills the recorded tree, then `rd`. RM runs only if the clone is
+   still there. If that child dies (nonzero / timeout) and the folder
+   remains, spawn **one** more child (max two). Do not retry when the
+   helper exits 0. Do not call `path_has_holders` after RM on Windows.
+   Dashboard `/ws` uses live slot/queue counts — it must
    not `list_all()` every tick. Never `taskkill` the manager PID,
    its parent console, or PID ≤ 4. Do not reap a drive root. A
    holder-stop / delete / boot / shutdown exception must not skip

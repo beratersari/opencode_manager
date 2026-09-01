@@ -212,7 +212,7 @@ def test_restart_manager_helper_failure_does_not_raise(tmp_path: Path, monkeypat
     assert killmod._windows_restart_manager_pids(tmp_path) == []
 
 
-def test_stop_job_holders_windows_skips_second_rm(tmp_path: Path, monkeypatch) -> None:
+def test_stop_job_holders_windows_skips_rm_until_delete(tmp_path: Path, monkeypatch) -> None:
     from opencode_manager.cleanup import end as endmod
 
     called: list[str] = []
@@ -229,7 +229,7 @@ def test_stop_job_holders_windows_skips_second_rm(tmp_path: Path, monkeypatch) -
     clone = tmp_path / "T-1"
     clone.mkdir()
     stop_job_holders(JobRecord(job_id="job_rm1", jira_id="T-1"), clone)
-    assert called == ["holders", "locks"]
+    assert called == ["locks"]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows job-end does not enumerate processes (EDR)")
@@ -286,7 +286,10 @@ def test_stop_job_holders_survives_reap_error(tmp_path: Path, monkeypatch) -> No
     clone.mkdir()
     stop_job_holders(job, clone)
     assert called.get("reap") is True
-    assert called.get("holders") is True
+    if os.name == "nt":
+        assert called.get("holders") is None
+    else:
+        assert called.get("holders") is True
     assert called.get("locks") is True
 
 
@@ -312,3 +315,81 @@ def test_hard_delete_removes_tree(tmp_path: Path) -> None:
     assert delete_clone_path(dest, reason="test")
     assert not dest.exists()
     assert hard_delete(dest)
+
+
+def test_delete_skips_rm_when_folder_already_gone(tmp_path: Path, monkeypatch) -> None:
+    from opencode_manager.cleanup import end as endmod
+    from opencode_manager.cleanup.kill import RmHelperResult
+
+    dest = tmp_path / "gone"
+    dest.mkdir()
+    monkeypatch.setattr(endmod.os, "name", "nt")
+    queries: list[object] = []
+    monkeypatch.setattr(
+        endmod,
+        "query_windows_restart_manager",
+        lambda *_a, **_k: queries.append(1) or RmHelperResult(),
+    )
+    assert delete_clone_path(dest, reason="test")
+    assert queries == []
+
+
+def test_rm_retry_only_when_helper_died_and_folder_remains(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from opencode_manager.cleanup import end as endmod
+    from opencode_manager.cleanup.kill import RmHelperResult
+
+    dest = tmp_path / "stuck"
+    dest.mkdir()
+    monkeypatch.setattr(endmod.os, "name", "nt")
+    deletes = {"n": 0}
+    queries: list[RmHelperResult] = []
+
+    def fake_delete(path):  # noqa: ANN001
+        deletes["n"] += 1
+        if deletes["n"] < 3:
+            return False
+        import shutil
+
+        shutil.rmtree(path)
+        return True
+
+    def fake_rm(_path):
+        if len(queries) == 0:
+            queries.append(RmHelperResult(died=True))
+        else:
+            queries.append(RmHelperResult(pids=[4242], died=False))
+        return queries[-1]
+
+    killed: list[int] = []
+    monkeypatch.setattr(endmod, "hard_delete", fake_delete)
+    monkeypatch.setattr(endmod, "query_windows_restart_manager", fake_rm)
+    monkeypatch.setattr(endmod, "may_kill", lambda pid: True)
+    monkeypatch.setattr(endmod, "kill_pid", lambda pid: killed.append(int(pid)))
+    assert delete_clone_path(dest, reason="retry")
+    assert len(queries) == 2
+    assert killed == [4242]
+    assert not dest.exists()
+
+
+def test_rm_no_second_child_when_helper_survives_empty(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from opencode_manager.cleanup import end as endmod
+    from opencode_manager.cleanup.kill import RmHelperResult
+
+    dest = tmp_path / "stuck2"
+    dest.mkdir()
+    monkeypatch.setattr(endmod.os, "name", "nt")
+    monkeypatch.setattr(endmod, "hard_delete", lambda *_a, **_k: False)
+    queries = {"n": 0}
+
+    def fake_rm(_path):
+        queries["n"] += 1
+        return RmHelperResult(pids=[], died=False)
+
+    monkeypatch.setattr(endmod, "query_windows_restart_manager", fake_rm)
+    assert delete_clone_path(dest, reason="no-retry") is False
+    assert queries["n"] == 1
+    assert dest.exists()

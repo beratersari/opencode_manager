@@ -161,6 +161,14 @@ class ProcInfo:
     fds: List[str] = field(default_factory=list)
 
 
+@dataclass
+class RmHelperResult:
+    """Child Restart Manager outcome. died=True means spawn/timeout/nonzero exit."""
+
+    pids: List[int] = field(default_factory=list)
+    died: bool = False
+
+
 def _as_pid(value: object) -> Optional[int]:
     if value is None or isinstance(value, bool):
         return None
@@ -764,12 +772,12 @@ def _rm_query_pids(path: Path) -> List[int]:
             pass
 
 
-def _windows_restart_manager_pids(path: Path) -> List[int]:
+def query_windows_restart_manager(path: Path) -> RmHelperResult:
     """File holders under path. Child process so a rstrtmgr AV cannot kill OSM."""
     if os.name != "nt":
-        return []
+        return RmHelperResult()
     if os.environ.get("OSM_RM_INPROCESS") == "1":
-        return _rm_query_pids(path)
+        return RmHelperResult(pids=_rm_query_pids(path), died=False)
     cmd = [
         sys.executable,
         "-c",
@@ -799,26 +807,30 @@ def _windows_restart_manager_pids(path: Path) -> List[int]:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("restart manager helper failed path=%s err=%s", path, exc)
-        return []
+        return RmHelperResult(died=True)
     if result.returncode != 0:
         logger.warning(
             "restart manager helper exit=%s path=%s",
             result.returncode,
             path,
         )
-        return []
+        return RmHelperResult(died=True)
     try:
         data = json.loads(_decode_windows_stdout(result.stdout or b"") or "[]")
     except ValueError:
-        return []
+        return RmHelperResult()
     if not isinstance(data, list):
-        return []
+        return RmHelperResult()
     out: List[int] = []
     for item in data:
         pid = _as_pid(item)
         if pid:
             out.append(pid)
-    return out
+    return RmHelperResult(pids=out, died=False)
+
+
+def _windows_restart_manager_pids(path: Path) -> List[int]:
+    return query_windows_restart_manager(path).pids
 
 
 def _guard_set(protect: Optional[Iterable[int]] = None) -> Set[int]:

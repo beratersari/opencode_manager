@@ -78,7 +78,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Windows job-end does not snapshot every Win32_Process | `test_iter_windows_processes_does_not_snapshot`, `test_windows_process_rows_never_spawns` |
 | Restart Manager session key is `CCH_RM_SESSION_KEY+1` | `test_rm_session_key_buffer_is_cch_plus_one` |
 | Restart Manager AV in a helper must not kill OSM | `test_restart_manager_helper_failure_does_not_raise` |
-| Windows job-end does not run a second RM query | `test_stop_job_holders_windows_skips_second_rm` |
+| Windows job-end does not RM until delete fails | `test_stop_job_holders_windows_skips_rm_until_delete`, `test_delete_skips_rm_when_folder_already_gone` |
+| RM child retry only if helper died and folder remains | `test_rm_retry_only_when_helper_died_and_folder_remains`, `test_rm_no_second_child_when_helper_survives_empty` |
 | Dashboard `/ws` does not parse every job JSON | `test_ws_uses_live_counts_not_list_all` |
 | No kill path may target OSM or its ancestors | `test_may_kill_never_allows_osm_or_system`, `test_kill_pid_never_sends_signal_to_osm` |
 | n8n `source_branch=-1` is inbound 400 | `test_source_branch_dash_one_is_missing` |

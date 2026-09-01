@@ -297,16 +297,14 @@ def clone_repo(
         uses_windows_stored_creds(),
         redact(repo_url),
     )
-    dest.mkdir(parents=True, exist_ok=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
     git_kw = dict(job=job, store=store, should_stop=should_stop)
     try:
         env = _env_for_job(job)
-        # Ticket folder is cwd. Do not pass dest on argv (`git clone <url> dest`).
         _run_git_maybe_prompt(
-            ["clone", repo_url, "."],
+            ["clone", repo_url, str(dest)],
             repo_url=repo_url,
             env=env,
-            cwd=dest,
             timeout=timeout,
             **git_kw,
         )

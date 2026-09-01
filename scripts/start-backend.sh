@@ -64,4 +64,11 @@ if [[ ! -f "$ROOT/web/dist/index.html" ]]; then
 fi
 
 echo "Starting manager (Ctrl+C to stop)..."
-exec "$OSM_PY" -m opencode_manager.app
+mkdir -p "$ROOT/logs"
+set +e
+"$OSM_PY" -m opencode_manager.app
+ec=$?
+set -e
+echo "Backend exited. code=${ec}"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) exit=${ec}" >> "$ROOT/logs/wrapper-exit.log"
+exit "$ec"

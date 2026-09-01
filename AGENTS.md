@@ -328,6 +328,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 
 - Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 - **App log** (whole process): `{data_dir}/logs/app.log`.
+- **Crash log**: `{data_dir}/logs/crash.log` (uncaught exceptions,
+  signals, faulthandler, clean vs abrupt exit). If Windows security
+  kills the process, Python cannot write; the start script appends
+  the exit code to `{project}/logs/wrapper-exit.log`.
 - **Per-job logs**: `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
   (accept time, UTC). One file per job. `job_id` and `jira_id`
   also stay on each line.

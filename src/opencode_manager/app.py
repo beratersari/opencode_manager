@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from opencode_manager.api import attach_spa, router
+from opencode_manager.crash import install_crash_logging, mark_clean_shutdown
 from opencode_manager.log import get_logger, setup_logging
 from opencode_manager.manager import Manager
 from opencode_manager.models import utc_now
@@ -29,6 +30,8 @@ def create_app(
         app_log=settings.app_log_path,
         level=settings.log_level,
     )
+    crash_path = install_crash_logging(settings.job_log_dir)
+    get_logger().info("crash log %s (AV kill will only show in wrapper-exit.log)", crash_path)
     manager = Manager(settings, runner=runner)
 
     @asynccontextmanager
@@ -39,6 +42,7 @@ def create_app(
             manager.shutdown()
         except Exception:  # noqa: BLE001
             get_logger().exception("lifespan shutdown failed")
+        mark_clean_shutdown()
 
     app = FastAPI(title="OpenCode Session Manager", lifespan=lifespan)
     app.state.manager = manager

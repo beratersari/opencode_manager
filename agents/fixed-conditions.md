@@ -70,6 +70,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | `stop_job_holders` continues after `reap_path` fails | `test_stop_job_holders_survives_reap_error` |
 | Job-end / boot / kill explosions leave the API up | `tests/test_manager_stays_up.py` |
 | Many bad/good inbound and worker failures leave the API up | `tests/test_stay_up_matrix.py` |
+| Extensive good/bad HTTP + worker crash-input matrix | `tests/test_crash_inputs.py` |
 | Boot kills leftover recorded `serve_pid` | `test_boot_kills_recorded_serve_pid` |
 | Shutdown kills `extra_pids`, sends one `500`, then `POST /jobs` is `503` | `test_shutdown_kills_extra_pids_and_rejects_submit` |
 | Missing dequeued store row does not stall the queue | `test_on_done_skips_missing_queue_row` |

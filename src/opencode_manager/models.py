@@ -49,6 +49,14 @@ def mint_job_id() -> str:
     return "job_" + uuid.uuid4().hex[:16]
 
 
+def usable_session_id(value: Optional[str]) -> Optional[str]:
+    """Live OpenCode id, or None. n8n sends -1 / empty to mean create new."""
+    text = (value or "").strip()
+    if not text or text == "-1" or not text.startswith("ses_"):
+        return None
+    return text
+
+
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -79,10 +87,7 @@ class JobRequest(BaseModel):
     @field_validator("session_id")
     @classmethod
     def _session(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        text = value.strip()
-        return text or None
+        return usable_session_id(value)
 
     @field_validator("jira_id")
     @classmethod
@@ -203,6 +208,11 @@ class JobRecord(BaseModel):
     chat_snapshot: List[Dict[str, Any]] = Field(default_factory=list)
     extra_pids: List[int] = Field(default_factory=list)
     log_file: str = ""
+
+    @field_validator("session_id")
+    @classmethod
+    def _live_session(cls, value: Optional[str]) -> str:
+        return usable_session_id(value) or ""
 
     def public_dict(self) -> Dict[str, Any]:
         data = self.model_dump()

@@ -357,8 +357,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   queued.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
   (live serve or snapshot), per-job log lines for that
-  `job_id`, then that job’s OpenCode serve log. Chat must work after the clone is gone. After the serve
-  is dead, `/api/jobs/:id/chat` is **this job’s snapshot** — do not
+  `job_id`, then that job’s OpenCode serve log. Chat must work after
+  the clone is gone. Live `/chat` calls OpenCode only when
+  `session_id` is `ses_*`. Empty / `-1` / other placeholders are no
+  session — do not GET `/session/-1/message`. After the serve is
+  dead, `/api/jobs/:id/chat` is **this job’s snapshot** — do not
   replace it from global `opencode.db` by `session_id` (later jobs
   reuse the same `ses_*` / clone path). Filling missing tool
   `output` on snapshot message ids is ok; never append later turns.

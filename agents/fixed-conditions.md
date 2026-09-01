@@ -105,6 +105,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Error/Completed filters paginate the filtered set, not page-then-filter | `test_jobs_filter_paginates_filtered_set` |
 | Queue search honors `jira_id` | `test_queue_jira_filter` |
 | Finished-job `/chat` does not mix later turns from a shared `ses_*` | `test_chat_api_does_not_mix_later_session_turns` |
+| Live `/chat` does not GET OpenCode `/session/-1/message` | `test_live_chat_does_not_call_opencode_with_dash_one_session`, `test_client_skips_http_for_unusable_session`, `test_inbound_dash_one_session_is_treated_as_none` |
 
 ## Logs
 

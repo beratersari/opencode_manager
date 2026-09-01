@@ -70,6 +70,14 @@ def test_unknown_agent_400(tmp_settings: Settings) -> None:
         assert res.status_code == 400
 
 
+def test_inbound_session_dash_one_is_accepted_as_none(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=_body(session_id="-1", jira_id="ARI-259"))
+        assert res.status_code == 202
+        assert res.json()["session_id"] == ""
+        assert res.json()["job_id"].startswith("job_")
+
+
 def test_planner_agent_is_accepted(tmp_settings: Settings) -> None:
     with _client(tmp_settings) as client:
         res = client.post("/jobs", json=_body(agent_mode="planner", jira_id="PLAN-1"))

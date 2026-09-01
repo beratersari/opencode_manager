@@ -132,6 +132,22 @@ def test_session_delete_fields():
     assert validate_session_delete_fields({"jira_id": "../x", "session_id": "ses_abc"})
 
 
+def test_inbound_dash_one_session_is_treated_as_none():
+    from opencode_manager.models import JobRecord, JobRequest, usable_session_id
+
+    assert usable_session_id("-1") is None
+    assert usable_session_id("  -1  ") is None
+    assert usable_session_id("") is None
+    assert usable_session_id("0") is None
+    assert usable_session_id("null") is None
+    assert usable_session_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") is None
+    assert usable_session_id("ses_abc") == "ses_abc"
+    req = JobRequest.model_validate(_ok(session_id="-1"))
+    assert req.session_id is None
+    stored = JobRecord(job_id="job_x", jira_id="ARI-259", session_id="-1")
+    assert stored.session_id == ""
+
+
 def test_retry_count_zero_is_coerced_by_request():
     from opencode_manager.models import JobRequest
 

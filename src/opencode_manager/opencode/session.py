@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import httpx
 
 from opencode_manager.log import clip, get_logger, log_fail, log_http
-from opencode_manager.models import parse_model
+from opencode_manager.models import parse_model, usable_session_id
 
 logger = get_logger()
 
@@ -344,7 +344,7 @@ class OpenCodeClient:
 
     def session_payload(self, session_id: str) -> Dict[str, Any]:
         """GET /session/:id body. Empty on error. No per-poll log line."""
-        if not session_id:
+        if not usable_session_id(session_id):
             return {}
         try:
             response = self.http.get(f"/session/{session_id}", headers=self.headers, timeout=10.0)
@@ -359,6 +359,8 @@ class OpenCodeClient:
         return data if isinstance(data, dict) else {}
 
     def get_session(self, session_id: str) -> httpx.Response:
+        if not usable_session_id(session_id):
+            raise ValueError("session_id must be a live OpenCode ses_* id")
         path = f"/session/{session_id}"
         try:
             response = self.http.get(path, headers=self.headers, timeout=15.0)
@@ -409,6 +411,8 @@ class OpenCodeClient:
         return {}
 
     def list_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        if not usable_session_id(session_id):
+            return []
         path = f"/session/{session_id}/message"
         try:
             response = self.http.get(
@@ -435,6 +439,8 @@ class OpenCodeClient:
     ) -> None:
         import threading
 
+        if not usable_session_id(session_id):
+            raise RuntimeError("session_id is not a live OpenCode ses_* id")
         provider, model_id = parse_model(model)
         body = {
             "agent": agent,
@@ -533,6 +539,8 @@ class OpenCodeClient:
         raise RuntimeError("user message POST was not accepted by OpenCode")
 
     def abort(self, session_id: str) -> None:
+        if not usable_session_id(session_id):
+            return
         path = f"/session/{session_id}/abort"
         try:
             response = self.http.post(path, headers=self.headers, timeout=15.0)

@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from opencode_manager.models import JobRecord
+from opencode_manager.models import JobRecord, usable_session_id
 from opencode_manager.opencode.session import OpenCodeClient, snapshot_chat
 
 
@@ -41,7 +41,7 @@ def load_session_messages_from_db(
     session_id: str, *, db_path: Optional[Path] = None
 ) -> List[Dict[str, Any]]:
     """Rebuild OpenCode {info, parts} rows from the global opencode.db."""
-    if not session_id:
+    if not usable_session_id(session_id):
         return []
     paths = [db_path] if db_path is not None else _opencode_db_candidates()
     for path in paths:
@@ -135,11 +135,12 @@ def _merge_tool_outputs(
 
 def job_chat_payload(job: JobRecord) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = list(job.chat_snapshot or [])
-    if job.live and job.serve_base_url and job.session_id and job.clone_path:
+    sid = usable_session_id(job.session_id)
+    if job.live and job.serve_base_url and sid and job.clone_path:
         try:
             client = OpenCodeClient(job.serve_base_url, job.clone_path)
             try:
-                messages = snapshot_chat(client.list_messages(job.session_id), job.session_id)
+                messages = snapshot_chat(client.list_messages(sid), sid)
             finally:
                 client.close()
         except Exception:
@@ -147,21 +148,21 @@ def job_chat_payload(job: JobRecord) -> Dict[str, Any]:
     # Finished jobs use this job's snapshot. The global opencode.db is keyed
     # by session_id; later jobs reuse the same ses_* / clone path, so replacing
     # the transcript from the db mixes another run into this job_id.
-    if job.session_id and messages and _tools_missing_output(messages):
-        raw = load_session_messages_from_db(job.session_id)
+    if sid and messages and _tools_missing_output(messages):
+        raw = load_session_messages_from_db(sid)
         if raw:
-            messages = _merge_tool_outputs(messages, snapshot_chat(raw, job.session_id))
+            messages = _merge_tool_outputs(messages, snapshot_chat(raw, sid))
     return {
         "job_id": job.job_id,
-        "session_ids": [job.session_id] if job.session_id else [],
+        "session_ids": [sid] if sid else [],
         "sessions": [
             {
-                "session_id": job.session_id,
+                "session_id": sid,
                 "directory": job.clone_path,
                 "message_count": len(messages),
             }
         ]
-        if job.session_id
+        if sid
         else [],
         "messages": messages,
     }

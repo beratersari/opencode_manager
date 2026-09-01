@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 from opencode_manager.dashboard.store import JobStore
 from opencode_manager.log import clip, get_logger, log_fail
-from opencode_manager.models import AttemptRow, JobRecord, PromptRow, utc_now
+from opencode_manager.models import AttemptRow, JobRecord, PromptRow, utc_now, usable_session_id
 from opencode_manager.opencode import prompts
 from opencode_manager.cleanup.kill import kill_pid
 from opencode_manager.opencode.serve import ServeHandle, serve_log_path, start_serve, stop_serve
@@ -99,7 +99,7 @@ def run_opencode_job(
         nonlocal handle, client
         logger.info("close serve session=%s pid=%s", job.session_id or "", handle.pid if handle else job.serve_pid)
         if client is not None:
-            if job.session_id:
+            if usable_session_id(job.session_id):
                 logger.info("abort session %s", job.session_id)
                 client.abort(job.session_id)
             client.close()

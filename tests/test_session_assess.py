@@ -157,6 +157,70 @@ def test_snapshot_chat_pulls_tool_state_and_reasoning() -> None:
     assert think[0]["text"] == "I will run bash"
 
 
+def test_live_chat_does_not_call_opencode_with_dash_one_session(monkeypatch) -> None:
+    from opencode_manager.dashboard.chat import job_chat_payload
+    from opencode_manager.models import JobRecord
+
+    called: list[str] = []
+
+    class Boom:
+        def __init__(self, *_a, **_k) -> None:
+            called.append("init")
+
+        def list_messages(self, sid: str) -> list:
+            called.append(sid)
+            return []
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("opencode_manager.dashboard.chat.OpenCodeClient", Boom)
+    job = JobRecord(
+        job_id="job_50730ae7ef434dca",
+        jira_id="ARI-259",
+        live=True,
+        serve_base_url="http://127.0.0.1:4096",
+        clone_path="/tmp/ARI-259",
+        session_id="-1",
+    )
+    assert job.session_id == ""
+    payload = job_chat_payload(job)
+    assert payload["session_ids"] == []
+    assert payload["sessions"] == []
+    assert payload["messages"] == []
+    assert called == []
+
+    # Leftover assignment after construct (old store / worker) still must not hit OpenCode.
+    job.session_id = "-1"
+    leftover = job_chat_payload(job)
+    assert leftover["session_ids"] == []
+    assert leftover["sessions"] == []
+    assert called == []
+
+
+def test_client_skips_http_for_unusable_session() -> None:
+    from opencode_manager.opencode.session import OpenCodeClient
+
+    client = OpenCodeClient("http://127.0.0.1:9", "/tmp")
+    hits: list[str] = []
+
+    def _get(*_a, **_k):
+        hits.append("get")
+        raise AssertionError("OpenCode HTTP must not run for session_id=-1")
+
+    def _post(*_a, **_k):
+        hits.append("post")
+        raise AssertionError("OpenCode HTTP must not run for session_id=-1")
+
+    client.http.get = _get  # type: ignore[method-assign]
+    client.http.post = _post  # type: ignore[method-assign]
+    assert client.list_messages("-1") == []
+    assert client.session_payload("-1") == {}
+    client.abort("-1")
+    assert hits == []
+    client.close()
+
+
 def test_job_chat_refills_tool_output_from_opencode_db(tmp_path, monkeypatch) -> None:
     import sqlite3
 

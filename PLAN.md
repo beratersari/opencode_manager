@@ -276,7 +276,7 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
-| `agent_mode` | yes | OpenCode agent id. Only `planner` and `orchestrator`. n8n maps `working_mode` (`Plan` → `planner`, `build` → `orchestrator`, case-sensitive) and does not send `working_mode`. Anything else → **400**. |
+| `agent_mode` | yes | OpenCode agent id. Only `planner` and `orchestrator`. n8n maps `working_mode` (`plan` → `planner`, `build` → `orchestrator`, case-insensitive) and does not send `working_mode`. Anything else → **400**. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. Must already be a Windows-safe folder name: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`. `.`, `..`, slashes, and other characters are inbound **400** so two tickets cannot share `{work_dir}/{jira_id}` or delete `{work_dir}` itself. |

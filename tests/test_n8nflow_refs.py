@@ -120,18 +120,18 @@ def test_parse_all_need_info_has_no_agent_field(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
-def test_build_osm_request_maps_plan_and_build_case_sensitively(path: Path) -> None:
+def test_build_osm_request_maps_plan_and_build_case_insensitively(path: Path) -> None:
     data = _flow(path)
     build = next(n for n in data["nodes"] if n["name"] == "buildOsmRequest")
     code = str(build["parameters"].get("jsCode") or "")
-    assert "Plan: 'planner'" in code
+    assert "plan: 'planner'" in code
     assert "build: 'orchestrator'" in code
-    assert "toLowerCase" not in code
+    assert "toLowerCase()" in code
     assert "agent_mode: agentMap[mode]" in code
     assert "working_mode:" not in code
     stringify = next(n for n in data["nodes"] if n["name"] == "strginfyInputText1")
     sjs = str(stringify["parameters"].get("jsCode") or "")
-    assert '$input.first().json.working_mode === "Plan"' in sjs
+    assert 'toLowerCase() === "plan"' in sjs
     assert 'json["agent"]' not in sjs
     assert 'json.agent' not in sjs
 

@@ -191,9 +191,10 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Request `model` (`provider/id`) is required. Send it on every
   user message as `{ providerID, modelID }`. No settings default.
 - Only two OpenCode agents on `agent_mode`: `planner` and
-  `orchestrator`. n8n maps `working_mode` itself (`Plan` →
-  `planner`, `build` → `orchestrator`, case-sensitive) and does
-  not send `working_mode` to OSM. Anything else → inbound **400**.
+  `orchestrator`. n8n maps `working_mode` itself (`Plan` / `plan`
+  → `planner`, `build` / `Build` → `orchestrator`, case-insensitive)
+  and does not send `working_mode` to OSM. Anything else → inbound
+  **400**.
 - OpenCode only. No Codex.
 
 ### Session id — two moments

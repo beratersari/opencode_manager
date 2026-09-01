@@ -68,7 +68,7 @@ class OpenCodeRunner:
             if not ls_remote_has_branch(
                 job.repo_url,
                 job.source_branch,
-                pat=job._pat,  # type: ignore[attr-defined]
+                pat=str(getattr(job, "_pat", "") or ""),
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,
@@ -87,7 +87,7 @@ class OpenCodeRunner:
                 job.repo_url,
                 dest,
                 job.source_branch,
-                pat=job._pat,  # type: ignore[attr-defined]
+                pat=str(getattr(job, "_pat", "") or ""),
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,
@@ -134,14 +134,24 @@ class OpenCodeRunner:
             log_fail(logger, "worker crashed", err=exc, clone_path=dest, session=job.session_id)
             return Terminal(500, f"worker crashed: {exc}")
         finally:
+            try:
+                extra = list(job.extra_pids or [])
+            except Exception:  # noqa: BLE001
+                extra = []
             logger.info(
                 "job-end cleanup: kill tree pids=%s then hard-delete clone_path=%s",
-                [job.serve_pid, *job.extra_pids],
+                [job.serve_pid, *extra],
                 dest,
             )
             if dest is not None:
-                stop_job_holders(job, dest)
-                _remove_clone(dest, reason="job-end")
+                try:
+                    stop_job_holders(job, dest)
+                except Exception:  # noqa: BLE001
+                    logger.exception("job-end stop_job_holders failed clone_path=%s", dest)
+                try:
+                    _remove_clone(dest, reason="job-end")
+                except Exception:  # noqa: BLE001
+                    logger.exception("job-end delete clone failed clone_path=%s", dest)
 
 
 def finish_job(
@@ -174,7 +184,10 @@ def finish_job(
     job.completed_at = utc_now()
     if terminal.status_code != 200:
         job.error_message = terminal.text
-    store.save(job)
+    try:
+        store.save(job)
+    except Exception:  # noqa: BLE001
+        logger.exception("finish_job save failed job=%s", job.job_id)
     logger.info(
         "job terminal status=%s callback_status=%s session=%s send_callback=%s text_len=%s",
         job.status,
@@ -184,17 +197,20 @@ def finish_job(
         len(terminal.text or ""),
     )
     if send_callback and job.callback_url:
-        post_callback(
-            settings,
-            Envelope(
-                text=terminal.text,
-                session_id=job.session_id or "",
-                status_code=terminal.status_code,
-                jira_id=job.jira_id,
-                job_id=job.job_id,
-            ),
-            job.callback_url,
-        )
+        try:
+            post_callback(
+                settings,
+                Envelope(
+                    text=terminal.text,
+                    session_id=job.session_id or "",
+                    status_code=terminal.status_code,
+                    jira_id=job.jira_id,
+                    job_id=job.job_id,
+                ),
+                job.callback_url,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("finish_job callback failed job=%s", job.job_id)
 
 
 def run_pipeline(

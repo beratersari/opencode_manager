@@ -42,7 +42,18 @@ async def post_jobs(request: Request) -> JSONResponse:
         redact(str(body.get("repo_url") or "")),
         body.get("session_id") or "",
     )
-    status, envelope = manager.submit(body)
+    try:
+        status, envelope = manager.submit(body)
+    except Exception as exc:  # noqa: BLE001
+        get_logger().exception("POST /jobs crashed")
+        envelope = Envelope(
+            text=f"internal error: {exc}",
+            session_id="",
+            status_code=500,
+            jira_id=str(body.get("jira_id") or ""),
+            job_id="",
+        )
+        return JSONResponse(envelope.model_dump(), status_code=500)
     get_logger().info(
         "inbound POST /jobs ack HTTP %s job_id=%s status_code=%s",
         status,
@@ -73,7 +84,18 @@ async def delete_sessions(request: Request) -> JSONResponse:
         body.get("jira_id"),
         body.get("session_id") or "",
     )
-    status, envelope = manager.delete_session(body)
+    try:
+        status, envelope = manager.delete_session(body)
+    except Exception as exc:  # noqa: BLE001
+        get_logger().exception("DELETE /sessions crashed")
+        envelope = Envelope(
+            text=f"internal error: {exc}",
+            session_id=str(body.get("session_id") or ""),
+            status_code=500,
+            jira_id=str(body.get("jira_id") or ""),
+            job_id="",
+        )
+        return JSONResponse(envelope.model_dump(), status_code=500)
     get_logger().info(
         "inbound DELETE /sessions ack HTTP %s status_code=%s",
         status,
@@ -99,7 +121,11 @@ def api_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ) -> Dict[str, Any]:
-    jobs = _mgr(request).store.list_all()
+    try:
+        jobs = _mgr(request).store.list_all()
+    except Exception:  # noqa: BLE001
+        get_logger().exception("GET /api/jobs list failed")
+        jobs = []
     if jira_id:
         key = jira_id.strip()
         jobs = [j for j in jobs if j.jira_id == key]

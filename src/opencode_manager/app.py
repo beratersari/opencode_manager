@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from opencode_manager.api import attach_spa, router
-from opencode_manager.log import setup_logging
+from opencode_manager.log import get_logger, setup_logging
 from opencode_manager.manager import Manager
 from opencode_manager.models import utc_now
 from opencode_manager.settings import Settings, load_settings
@@ -35,7 +35,10 @@ def create_app(
     async def lifespan(app: FastAPI):
         manager.boot()
         yield
-        manager.shutdown()
+        try:
+            manager.shutdown()
+        except Exception:  # noqa: BLE001
+            get_logger().exception("lifespan shutdown failed")
 
     app = FastAPI(title="OpenCode Session Manager", lifespan=lifespan)
     app.state.manager = manager

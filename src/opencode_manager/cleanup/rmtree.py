@@ -76,42 +76,56 @@ def windows_rd_cmd(path: Path) -> list[str]:
     return ["cmd", "/c", "rd", "/s", "/q", win_extended_path(path)]
 
 
-def hard_delete(path: Path, *, attempts: int = 6) -> bool:
-    if not path.exists():
-        logger.info("hard-delete skip (missing) %s", path)
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
         return True
-    logger.info("hard-delete start %s attempts=%s", path, attempts)
-    delay = 0.2
-    for n in range(attempts):
-        if os.name == "nt":
-            _windows_del_reserved(path)
-            cmd = windows_rd_cmd(path)
-            log_command(logger, cmd)
-            result = subprocess.run(cmd, capture_output=True, check=False, text=True)
-            log_command_result(
-                logger,
-                cmd,
-                returncode=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-            )
-        else:
-            def _onerror(func, name, _exc):  # noqa: ARG001
-                _chmod_writable(Path(name))
-                try:
-                    func(name)
-                except OSError:
-                    pass
 
-            try:
-                shutil.rmtree(path, onerror=_onerror)
-            except OSError:
-                pass
-        if not path.exists():
-            logger.info("hard-delete ok on try %s/%s %s", n + 1, attempts, path)
+
+def hard_delete(path: Path, *, attempts: int = 6) -> bool:
+    try:
+        if not _exists(path):
+            logger.info("hard-delete skip (missing) %s", path)
             return True
-        logger.warning("hard-delete still present try %s/%s %s", n + 1, attempts, path)
-        time.sleep(delay)
-        delay = min(delay * 2, 2.0)
-    log_fail(logger, "hard-delete left remnants", path=path, attempts=attempts)
-    return not path.exists()
+        logger.info("hard-delete start %s attempts=%s", path, attempts)
+        delay = 0.2
+        for n in range(attempts):
+            try:
+                if os.name == "nt":
+                    _windows_del_reserved(path)
+                    cmd = windows_rd_cmd(path)
+                    log_command(logger, cmd)
+                    result = subprocess.run(cmd, capture_output=True, check=False)
+                    log_command_result(
+                        logger,
+                        cmd,
+                        returncode=result.returncode,
+                        stdout=(result.stdout or b"").decode("utf-8", errors="replace"),
+                        stderr=(result.stderr or b"").decode("utf-8", errors="replace"),
+                    )
+                else:
+                    def _onerror(func, name, _exc):  # noqa: ARG001
+                        _chmod_writable(Path(name))
+                        try:
+                            func(name)
+                        except OSError:
+                            pass
+
+                    try:
+                        shutil.rmtree(path, onerror=_onerror)
+                    except OSError:
+                        pass
+            except Exception:  # noqa: BLE001
+                logger.exception("hard-delete attempt failed path=%s", path)
+            if not _exists(path):
+                logger.info("hard-delete ok on try %s/%s %s", n + 1, attempts, path)
+                return True
+            logger.warning("hard-delete still present try %s/%s %s", n + 1, attempts, path)
+            time.sleep(delay)
+            delay = min(delay * 2, 2.0)
+        log_fail(logger, "hard-delete left remnants", path=path, attempts=attempts)
+        return not _exists(path)
+    except Exception:  # noqa: BLE001
+        logger.exception("hard-delete raised path=%s", path)
+        return not _exists(path)

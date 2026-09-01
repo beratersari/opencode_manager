@@ -897,6 +897,18 @@ to be running” and Windows `nul` / AV locks):
    (`taskkill /F /T` on Windows, `SIGKILL` + process group on Linux).
    Never kill the manager. Never kill another job’s PIDs.
 3. Kill leftover processes whose cwd/argv is this clone.
+   On Windows the snapshot is WMI (`ProcessId` / `CommandLine` /
+   `ExecutablePath`). Cwd is a prototyped PEB read **only** for
+   clone-tool images (git, opencode, node, python, …). Do **not**
+   `OpenProcess` + `ReadProcessMemory` every PID — that is an access
+   violation / EDR kill of the manager (job-end after a failed
+   `ls-remote` was enough). Restart Manager must set ctypes
+   `argtypes` / `restype` (64-bit `HANDLE` / `SIZE_T` are not
+   default `c_int`). A holder-stop exception must not skip clone
+   delete or exit the process. Never `taskkill` the manager PID, its
+   parent console, or PID ≤ 4. Refuse to reap a drive root or a
+   single-component path. `boot()` and `shutdown()` must not raise
+   (a boot exception would keep the ASGI app from starting).
 4. Kill holders of still-open files (Restart Manager on Windows; narrow
    `/proc` fd walk on Linux — do **not** scan all of `/proc` on WSL).
 5. Drop stale `.git/*.lock` only when no holder remains.

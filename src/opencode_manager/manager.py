@@ -63,78 +63,135 @@ class Manager:
             self.settings.job_store_dir,
             self.settings.max_concurrent_jobs,
         )
-        leftover_pids: list[Optional[int]] = []
-        for job in self.store.list_all():
-            if job.status in {"queued", "running"}:
-                leftover_pids.extend([job.serve_pid, *job.extra_pids])
-        if leftover_pids:
-            logger.info("boot kill recorded leftover pids=%s", leftover_pids)
-            kill_job_tree(leftover_pids)
-        killed = reap_work_dir(self.settings.work_dir, protect={os.getpid()})
-        logger.info("boot reap orphans under %s killed=%s", self.settings.work_dir, killed)
-        for job in self.store.list_all():
-            if job.status in {"queued", "running"}:
+        try:
+            leftover_pids: list[Optional[int]] = []
+            try:
+                leftover_jobs = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
+            except Exception:  # noqa: BLE001
+                logger.exception("boot list leftover jobs failed")
+                leftover_jobs = []
+            for job in leftover_jobs:
+                leftover_pids.extend([job.serve_pid, *list(job.extra_pids or [])])
+            if leftover_pids:
+                logger.info("boot kill recorded leftover pids=%s", leftover_pids)
+                try:
+                    kill_job_tree(leftover_pids)
+                except Exception:  # noqa: BLE001
+                    logger.exception("boot kill leftover pids failed")
+            try:
+                killed = reap_work_dir(self.settings.work_dir, protect={os.getpid()})
+            except Exception:  # noqa: BLE001
+                logger.exception("boot reap_work_dir failed")
+                killed = 0
+            logger.info("boot reap orphans under %s killed=%s", self.settings.work_dir, killed)
+            for job in leftover_jobs:
                 bind(job.job_id, job.jira_id, log_file=job.log_file)
                 logger.info("boot leftover %s status=%s -> ERROR (no callback)", job.job_id, job.status)
-                finish_job(
-                    job,
-                    Terminal(500, "process restarted; leftover job was not resumed"),
-                    settings=self.settings,
-                    store=self.store,
-                    send_callback=False,
-                )
+                try:
+                    finish_job(
+                        job,
+                        Terminal(500, "process restarted; leftover job was not resumed"),
+                        settings=self.settings,
+                        store=self.store,
+                        send_callback=False,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("boot leftover finish failed job=%s", job.job_id)
                 clear()
-        leftovers = self.queue.clear()
-        logger.info("boot dropped %s leftover queue rows", len(leftovers))
-        for row in leftovers:
-            job_id = str(row.get("job_id") or "")
-            job = self.store.get(job_id) if job_id else None
-            if job and job.status in {"queued", "running"}:
-                finish_job(
-                    job,
-                    Terminal(500, "process restarted; leftover queued job was not resumed"),
-                    settings=self.settings,
-                    store=self.store,
-                    send_callback=False,
-                )
-        self.ready = True
-        logger.info("boot finished")
+            try:
+                leftovers = self.queue.clear()
+            except Exception:  # noqa: BLE001
+                logger.exception("boot queue clear failed")
+                leftovers = []
+            logger.info("boot dropped %s leftover queue rows", len(leftovers))
+            for row in leftovers:
+                job_id = str(row.get("job_id") or "")
+                try:
+                    job = self.store.get(job_id) if job_id else None
+                except Exception:  # noqa: BLE001
+                    logger.exception("boot leftover queue get failed job=%s", job_id)
+                    continue
+                if job and job.status in {"queued", "running"}:
+                    try:
+                        finish_job(
+                            job,
+                            Terminal(500, "process restarted; leftover queued job was not resumed"),
+                            settings=self.settings,
+                            store=self.store,
+                            send_callback=False,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("boot leftover queue finish failed job=%s", job_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("boot failed; still accepting new jobs")
+        finally:
+            self.ready = True
+            logger.info("boot finished")
 
     def shutdown(self) -> None:
         self.stopping = True
         self.ready = False
         logger.info("shutdown: stop accepting jobs; failing live work")
-        queued = self.queue.clear()
-        live = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
-        seen = {j.job_id for j in live}
-        for row in queued:
-            job_id = str(row.get("job_id") or "")
-            if job_id and job_id not in seen:
-                job = self.store.get(job_id)
-                if job:
-                    live.append(job)
-        logger.info("shutdown live jobs=%s", [j.job_id for j in live])
-        protect = protect_pids()
-        for job in live:
-            bind(job.job_id, job.jira_id, log_file=job.log_file)
-            logger.info("shutdown fail job serve_pid=%s extra_pids=%s clone=%s", job.serve_pid, job.extra_pids, job.clone_path)
-            clone = Path(job.clone_path) if job.clone_path else None
-            stop_job_holders(job, clone, protect=protect)
-            finish_job(
-                job,
-                Terminal(500, "manager shutting down"),
-                settings=self.settings,
-                store=self.store,
-                send_callback=True,
-            )
-            delete_clone_path(clone, reason="shutdown")
-            clear()
-        deadline = time.monotonic() + max(60.0, float(self.settings.git_clone_timeout_seconds))
-        for thread in list(self._threads):
-            remaining = max(0.1, deadline - time.monotonic())
-            thread.join(timeout=remaining)
-            if thread.is_alive():
-                logger.error("shutdown: worker thread still alive name=%s", thread.name)
+        try:
+            try:
+                queued = self.queue.clear()
+            except Exception:  # noqa: BLE001
+                logger.exception("shutdown queue clear failed")
+                queued = []
+            try:
+                live = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
+            except Exception:  # noqa: BLE001
+                logger.exception("shutdown list live jobs failed")
+                live = []
+            seen = {j.job_id for j in live}
+            for row in queued:
+                job_id = str(row.get("job_id") or "")
+                if job_id and job_id not in seen:
+                    try:
+                        job = self.store.get(job_id)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("shutdown get queued job failed job=%s", job_id)
+                        continue
+                    if job:
+                        live.append(job)
+            logger.info("shutdown live jobs=%s", [j.job_id for j in live])
+            protect = protect_pids()
+            for job in live:
+                bind(job.job_id, job.jira_id, log_file=job.log_file)
+                logger.info(
+                    "shutdown fail job serve_pid=%s extra_pids=%s clone=%s",
+                    job.serve_pid,
+                    job.extra_pids,
+                    job.clone_path,
+                )
+                clone = Path(job.clone_path) if job.clone_path else None
+                try:
+                    stop_job_holders(job, clone, protect=protect)
+                except Exception:  # noqa: BLE001
+                    logger.exception("shutdown stop_job_holders failed job=%s", job.job_id)
+                try:
+                    finish_job(
+                        job,
+                        Terminal(500, "manager shutting down"),
+                        settings=self.settings,
+                        store=self.store,
+                        send_callback=True,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("shutdown finish_job failed job=%s", job.job_id)
+                try:
+                    delete_clone_path(clone, reason="shutdown")
+                except Exception:  # noqa: BLE001
+                    logger.exception("shutdown delete clone failed job=%s", job.job_id)
+                clear()
+            deadline = time.monotonic() + max(60.0, float(self.settings.git_clone_timeout_seconds))
+            for thread in list(self._threads):
+                remaining = max(0.1, deadline - time.monotonic())
+                thread.join(timeout=remaining)
+                if thread.is_alive():
+                    logger.error("shutdown: worker thread still alive name=%s", thread.name)
+        except Exception:  # noqa: BLE001
+            logger.exception("shutdown failed")
         logger.info("shutdown complete")
 
     def submit(self, body: Dict[str, Any]) -> tuple[int, Envelope]:
@@ -283,8 +340,13 @@ class Manager:
                     should_stop=lambda: self.stopping,
                     send_callback=True,
                 )
+            except Exception:  # noqa: BLE001
+                logger.exception("worker thread died job=%s", job.job_id)
             finally:
-                self._on_done()
+                try:
+                    self._on_done()
+                except Exception:  # noqa: BLE001
+                    logger.exception("_on_done failed job=%s", job.job_id)
 
         thread = threading.Thread(target=_target, name=f"osm-{job.job_id}", daemon=False)
         self._threads.append(thread)
@@ -480,7 +542,10 @@ class Manager:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("DELETE /sessions stop serve failed jira_id=%s err=%s", jira_id, exc)
             if created_dest and dest is not None:
-                delete_clone_path(dest, reason="session-delete-temp")
+                try:
+                    delete_clone_path(dest, reason="session-delete-temp")
+                except Exception:  # noqa: BLE001
+                    logger.exception("DELETE /sessions temp dest cleanup failed jira_id=%s", jira_id)
             with self._lock:
                 self._session_deletes.discard(jira_id)
             clear()

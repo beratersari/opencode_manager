@@ -85,6 +85,23 @@ def test_missing_branch_404_deletes_leftover_dest(tmp_settings: Settings, monkey
     assert not dest.exists()
 
 
+def test_job_end_deletes_clone_if_stop_holders_raises(tmp_settings: Settings, monkeypatch) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    job = _job("T-HOLD")
+    dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
+    dest.mkdir(parents=True)
+    (dest / "stale").write_text("x", encoding="utf-8")
+    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+
+    def boom(*_a, **_k) -> None:
+        raise RuntimeError("holder stop crashed")
+
+    monkeypatch.setattr("opencode_manager.worker.stop_job_holders", boom)
+    terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
+    assert terminal.status_code == 404
+    assert not dest.exists()
+
+
 def test_opencode_jobfailed_still_deletes_clone(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     job = _job("T-JF")

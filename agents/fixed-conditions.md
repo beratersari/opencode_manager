@@ -57,6 +57,12 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Windows `rd` uses `\\?\\` | `test_win_extended_path_and_rd_cmd` |
 | Reap kills a process whose argv mentions the clone | `test_reap_path_kills_argv_match` |
+| Windows process JSON empty/invalid does not raise | `test_parse_windows_process_json_empty_and_invalid` |
+| Windows cwd walk is only for clone-tool images | `test_windows_cwd_candidate_is_clone_tools_only` |
+| System images never get a Windows cwd PEB read | `test_iter_windows_processes_skips_cwd_for_system_images` |
+| Holder-stop error still deletes the clone | `test_job_end_deletes_clone_if_stop_holders_raises` |
+| `stop_job_holders` continues after `reap_path` fails | `test_stop_job_holders_survives_reap_error` |
+| Job-end / boot / kill explosions leave the API up | `tests/test_manager_stays_up.py` |
 | Boot kills leftover recorded `serve_pid` | `test_boot_kills_recorded_serve_pid` |
 | Shutdown kills `extra_pids`, sends one `500`, then `POST /jobs` is `503` | `test_shutdown_kills_extra_pids_and_rejects_submit` |
 | Missing dequeued store row does not stall the queue | `test_on_done_skips_missing_queue_row` |
@@ -116,5 +122,5 @@ keeps the clone.
 Run:
 
 ```
-pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py tests/test_job_chat_isolation_e2e.py tests/test_inbound_log_redact_e2e.py
+pytest tests/test_fixed_conditions.py tests/test_cleanup_and_serve_boot.py tests/test_git.py tests/test_git_branch_and_origin.py tests/test_cleanup_pipeline.py tests/test_manager_stays_up.py tests/test_shutdown_and_boot_reap.py tests/test_dashboard_filters.py tests/test_job_end_paths_fake.py tests/test_job_end_paths_real.py tests/test_gitlab_pat_origin_scrub_e2e.py tests/test_job_chat_isolation_e2e.py tests/test_inbound_log_redact_e2e.py
 ```

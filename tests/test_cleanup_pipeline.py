@@ -11,10 +11,15 @@ from pathlib import Path
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.cleanup.kill import (
     drop_git_locks,
+    kill_job_tree,
+    parse_windows_process_json,
     process_belongs,
     ProcInfo,
+    protected_pids,
     reap_path,
+    reap_root_is_safe,
     text_mentions_root,
+    windows_cwd_candidate,
 )
 from opencode_manager.cleanup.rmtree import hard_delete, win_extended_path, win_reserved_stem, windows_rd_cmd
 from opencode_manager.models import JobRecord
@@ -46,6 +51,91 @@ def test_text_mentions_root_is_path_prefix() -> None:
     assert not process_belongs(ProcInfo(pid=1, cwd="/tmp/other", argv="sleep 20"), root)
 
 
+def test_parse_windows_process_json_empty_and_invalid() -> None:
+    assert parse_windows_process_json("") == []
+    assert parse_windows_process_json("   ") == []
+    assert parse_windows_process_json("not-json") == []
+    assert parse_windows_process_json("null") == []
+    assert parse_windows_process_json("[]") == []
+    assert parse_windows_process_json("\ufeff") == []
+    assert parse_windows_process_json('{"ProcessId": 7}') == [{"pid": 7, "argv": "", "exe": ""}]
+    assert parse_windows_process_json('{"ProcessId": "nope"}') == [{"pid": 0, "argv": "", "exe": ""}]
+    bom = parse_windows_process_json(
+        '\ufeff{"ProcessId": 8, "CommandLine": "git status", "ExecutablePath": null}'
+    )
+    assert bom == [{"pid": 8, "argv": "git status", "exe": ""}]
+    single = parse_windows_process_json(
+        '{"ProcessId": 4242, "CommandLine": "git status", "ExecutablePath": "C:\\\\git.exe"}'
+    )
+    assert single == [{"pid": 4242, "argv": "git status", "exe": r"C:\git.exe"}]
+    rows = parse_windows_process_json(
+        '[{"ProcessId": 1, "CommandLine": null, "ExecutablePath": "C:\\\\Windows\\\\System32\\\\svchost.exe"},'
+        ' {"processId": "99", "commandLine": "opencode serve", "executablePath": null}]'
+    )
+    assert rows == [
+        {"pid": 1, "argv": "", "exe": r"C:\Windows\System32\svchost.exe"},
+        {"pid": 99, "argv": "opencode serve", "exe": ""},
+    ]
+
+
+def test_reap_root_is_safe_rejects_drive_and_shallow() -> None:
+    assert not reap_root_is_safe(None)
+    assert not reap_root_is_safe(Path("/"))
+    assert not reap_root_is_safe(Path("C:\\"))
+    assert not reap_root_is_safe(Path("C:\\osm"))
+    assert reap_root_is_safe(Path(r"C:\osm\.temp"))
+    assert reap_root_is_safe(Path(r"C:\osm\.temp\TEST-259"))
+    assert reap_root_is_safe(Path("/var/lib/osm/.temp/T-1"))
+
+
+def test_kill_job_tree_refuses_self_ppid_and_junk(monkeypatch) -> None:
+    killed: list[int] = []
+    import opencode_manager.cleanup.kill as killmod
+
+    monkeypatch.setattr(killmod, "kill_pid", lambda pid: killed.append(int(pid)))
+    kill_job_tree([None, 0, 1, 4, os.getpid(), os.getppid(), "nope", -3])
+    assert killed == []
+    assert os.getpid() in protected_pids()
+
+
+def test_windows_cwd_candidate_is_clone_tools_only() -> None:
+    assert windows_cwd_candidate(r"C:\Program Files\Git\cmd\git.exe", "")
+    assert windows_cwd_candidate("", "opencode serve --hostname 127.0.0.1 --port 4100")
+    assert windows_cwd_candidate("", r'"C:\osm\.venv\Scripts\python.exe" -m opencode_manager.app')
+    assert windows_cwd_candidate("", "node ./scripts/run.js")
+    assert not windows_cwd_candidate(r"C:\Windows\System32\svchost.exe", "")
+    assert not windows_cwd_candidate("", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    assert not windows_cwd_candidate("", r"C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE")
+    assert not windows_cwd_candidate("", "")
+
+
+def test_iter_windows_processes_skips_cwd_for_system_images(monkeypatch) -> None:
+    from opencode_manager.cleanup import kill as killmod
+
+    cwd_pids: list[int] = []
+    monkeypatch.setattr(
+        killmod,
+        "_windows_process_rows",
+        lambda: [
+            {"pid": 10, "argv": "", "exe": r"C:\Windows\System32\svchost.exe"},
+            {"pid": 11, "argv": "git status", "exe": r"C:\Program Files\Git\cmd\git.exe"},
+            {"pid": 12, "argv": "Teams.exe", "exe": r"C:\Program Files\Teams\Teams.exe"},
+        ],
+    )
+
+    def fake_cwd(pid: int) -> str:
+        cwd_pids.append(pid)
+        return r"C:\osm\.temp\T"
+
+    monkeypatch.setattr(killmod, "_windows_cwd", fake_cwd)
+    procs = list(killmod._iter_windows_processes())
+    assert cwd_pids == [11]
+    assert [p.pid for p in procs] == [10, 11, 12]
+    assert procs[0].cwd is None
+    assert procs[1].cwd == r"C:\osm\.temp\T"
+    assert procs[2].cwd is None
+
+
 def test_reap_path_kills_argv_match(tmp_path: Path) -> None:
     clone = tmp_path / "TICKET"
     clone.mkdir()
@@ -74,6 +164,33 @@ def test_drop_git_locks_only_lock_files(tmp_path: Path) -> None:
     drop_git_locks(tmp_path)
     assert not lock.exists()
     assert keep.exists()
+
+
+def test_stop_job_holders_survives_reap_error(tmp_path: Path, monkeypatch) -> None:
+    called: dict[str, bool] = {}
+
+    def boom(*_a, **_k) -> int:
+        called["reap"] = True
+        raise RuntimeError("reap failed")
+
+    def holders(*_a, **_k) -> int:
+        called["holders"] = True
+        return 0
+
+    monkeypatch.setattr("opencode_manager.cleanup.end.reap_path", boom)
+    monkeypatch.setattr("opencode_manager.cleanup.end.kill_file_holders", holders)
+    monkeypatch.setattr("opencode_manager.cleanup.end.path_has_holders", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        "opencode_manager.cleanup.end.drop_git_locks",
+        lambda *_a, **_k: called.setdefault("locks", True),
+    )
+    job = JobRecord(job_id="job_x", jira_id="X-1")
+    clone = tmp_path / "X-1"
+    clone.mkdir()
+    stop_job_holders(job, clone)
+    assert called.get("reap") is True
+    assert called.get("holders") is True
+    assert called.get("locks") is True
 
 
 def test_stop_job_holders_kills_extra_pids(tmp_path: Path) -> None:

@@ -817,6 +817,8 @@ change clone auth.
 4. Checkout `source_branch` exactly. No “create from main”.
 5. Do **not** run `git submodule update`. Clone + checkout + origin
    scrub only. A `.gitmodules` file is left as the remote recorded it.
+   Set `GIT_LFS_SKIP_SMUDGE=1` so checkout does not download LFS
+   objects (pointer files only).
 
 **Locked:** missing remote branch is **202 + callback 404**. Existence
 check needs the network; it runs in the worker so the
@@ -1244,6 +1246,7 @@ build them).
 - [ ] Same ticket with a different repo or branch still uses that folder (delete, then clone).
 - [ ] Checkout `source_branch` exactly.
 - [ ] Do not init or update git submodules.
+- [ ] Do not download Git LFS blobs (`GIT_LFS_SKIP_SMUDGE=1`).
 - [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote`.
 - [ ] Track git child PIDs on the job for kill.
 - [ ] No push, no MR, no target branch.

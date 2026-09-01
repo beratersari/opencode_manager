@@ -71,6 +71,8 @@ def isolated_git_env(*, username: str = "", password: str = "") -> Dict[str, str
     """Direct clone env. Windows: GCM, or Basic from a dialog. Linux: helper off."""
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # Pointer files only. Do not download LFS blobs (smudge).
+    env["GIT_LFS_SKIP_SMUDGE"] = "1"
     env.pop("DISPLAY", None)
     env.pop("SSH_ASKPASS", None)
     user = (username or "").strip()

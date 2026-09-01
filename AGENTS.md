@@ -126,7 +126,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - **Direct clone** of the request `repo_url`. There is no `PAT` field
   and no oauth2 / extraHeader rewrite. `git clone --branch … --single-branch
   <url> dest` (then checkout and origin scrub). Do **not** init or
-  update git submodules.
+  update git submodules. Do **not** download Git LFS blobs
+  (`GIT_LFS_SKIP_SMUDGE=1`); leave pointer files on disk.
   `GIT_TERMINAL_PROMPT=0` so git never waits on a hidden console
   username prompt. On **Windows**: first try GCM (`manager`,
   `GCM_INTERACTIVE=auto`) for a stored cred or GCM popup. If git still

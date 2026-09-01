@@ -33,6 +33,7 @@ def test_identity_is_ticket_only():
 def test_direct_clone_env_has_no_auth_rewrite():
     env = isolated_git_env()
     assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GIT_LFS_SKIP_SMUDGE"] == "1"
     keys = " ".join(env[k] for k in env if k.startswith("GIT_CONFIG_KEY_"))
     values = " ".join(env[k] for k in env if k.startswith("GIT_CONFIG_VALUE_"))
     assert "insteadOf" not in keys

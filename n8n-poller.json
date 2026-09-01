@@ -46,7 +46,7 @@
             {
               "id": "c0a1b2c3-d4e5-4f67-8901-pollinterval01",
               "name": "poll_interval",
-              "value": 10,
+              "value": 30,
               "type": "number"
             },
             {
@@ -634,7 +634,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10) }}",
+        "amount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 30) }}",
         "unit": "seconds",
         "options": {}
       },
@@ -701,7 +701,7 @@
           "conditions": [
             {
               "id": "still-live-202",
-              "leftValue": "={{ String($json.job_id || '').indexOf('job_') === 0 && ($json.live === true || Number($json.status_code) === 202 || $json.retry_blip === true) && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 10)) < Math.max(1, Number($('remoteComputerInfo1').item.json.poll_max_seconds) || (Math.max(1, Number($('remoteComputerInfo1').item.json.timeout)) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count)) + 600)) }}",
+              "leftValue": "={{ String($json.job_id || '').indexOf('job_') === 0 && ($json.live === true || Number($json.status_code) === 202 || $json.retry_blip === true) && (($runIndex + 1) * Math.max(1, Number($('remoteComputerInfo1').item.json.poll_interval) || 30)) < Math.max(1, Number($('remoteComputerInfo1').item.json.poll_max_seconds) || (Math.max(1, Number($('remoteComputerInfo1').item.json.timeout)) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count)) + 600)) }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",

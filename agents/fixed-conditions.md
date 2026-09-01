@@ -46,6 +46,10 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Job JSON Access Denied is retried, not a worker crash | `tests/test_job_store_save.py` |
 | Hang does not fire if list_messages fails after an assistant | `test_hang_does_not_fire_when_list_fails_after_assistant` |
 | Queue JSON replace retries Access Denied | `test_queue_survives_replace_access_denied` |
+| Atomic tmp write retries; total lock still raises | `test_atomic_retries_tmp_write`, `test_atomic_raises_when_replace_and_inplace_fail` |
+| Hang still fires if never answered and list_messages is down | `test_hang_still_fires_when_never_answered_and_list_fails` |
+| close_serve abort/stop/save explosions do not escape | `test_close_serve_explosions_do_not_escape` |
+| Running-row save failure still accepts the job | `test_submit_survives_running_row_save_failure` |
 
 ## Branch existence and origin
 

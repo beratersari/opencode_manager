@@ -30,8 +30,11 @@ def create_app(
         app_log=settings.app_log_path,
         level=settings.log_level,
     )
-    crash_path = install_crash_logging(settings.job_log_dir)
-    get_logger().info("crash log %s (AV kill will only show in wrapper-exit.log)", crash_path)
+    try:
+        crash_path = install_crash_logging(settings.job_log_dir)
+        get_logger().info("crash log %s", crash_path)
+    except Exception:  # noqa: BLE001
+        get_logger().exception("crash logging disabled")
     manager = Manager(settings, runner=runner)
 
     @asynccontextmanager

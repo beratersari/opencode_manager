@@ -19,3 +19,8 @@ def test_start_scripts_refresh_web_dist_before_serve() -> None:
     win_fe = (ROOT / "scripts" / "start-frontend.bat").read_text(encoding="utf-8")
     assert "vite.cmd" in win_be
     assert "vite.cmd" in win_fe
+    assert "run-backend.bat" in win_be
+    assert 'cmd /v:on /c' not in win_be
+    runner = (ROOT / "scripts" / "run-backend.bat").read_text(encoding="utf-8")
+    assert "opencode_manager.app" in runner
+    assert "wrapper-exit.log" in runner

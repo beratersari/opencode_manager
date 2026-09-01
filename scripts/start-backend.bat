@@ -69,9 +69,8 @@ if not exist "%ROOT%\web\dist\index.html" (
     echo           Use the CI zip or run python packaging\build_dist.py --in-place.
 )
 
-if not exist "%ROOT%\logs" mkdir "%ROOT%\logs"
 echo Starting manager in window "OSM-Backend"...
-start "OSM-Backend" /D "%ROOT%" cmd /v:on /c "set PATH=%PATH%&& set GIT_TERMINAL_PROMPT=0&& set PYTHONUNBUFFERED=1&& "%OSM_PY%" -m opencode_manager.app & set EC=!ERRORLEVEL! & echo. & echo Backend exited. code=!EC! & echo %DATE% %TIME% exit=!EC!>>"%ROOT%\logs\wrapper-exit.log" & if not !EC!==0 echo If crash.log has ABRUPT EXIT and no traceback, Windows security likely killed the process. & pause"
+start "OSM-Backend" /D "%ROOT%" "%ROOT%\scripts\run-backend.bat"
 
 echo Waiting for API http://127.0.0.1:%DASH_PORT%/api/meta ...
 set /a TRIES=0

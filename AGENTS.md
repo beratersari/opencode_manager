@@ -298,14 +298,16 @@ Order, always, on the **job-end** path:
 2. Force-kill this job’s tree: git, **this** serve, tool children
    (`taskkill /F /T` / `SIGKILL` process group).
 3. Kill leftovers whose cwd/argv is this clone; then file holders.
-   On Windows, cwd is read only for clone-tool images (git, opencode,
-   node, …) via prototyped `OpenProcess` / `NtQuery` / `ReadProcessMemory`.
-   Do not PEB-walk every PID (EDR treats that as malware and kills the
-   manager). Restart Manager calls must set ctypes argtypes. Never
-   `taskkill` the manager PID, its parent console, or PID ≤ 4. Do not
-   reap a drive root. A holder-stop / delete / boot / shutdown
-   exception must not skip clone delete, leave boot unfinished, or
-   take down the process. `boot()` always ends ready to accept jobs.
+   On Windows do **not** snapshot every process (`Get-CimInstance
+   Win32_Process` via PowerShell). That scan, after a successful job
+   whose clone still exists, is killed by EDR (`Backend exited`).
+   Windows leftovers are Restart Manager file holders only. Never
+   PEB-walk python/cmd/powershell or every PID. Restart Manager
+   calls must set ctypes argtypes. Never `taskkill` the manager PID,
+   its parent console, or PID ≤ 4. Do not reap a drive root. A
+   holder-stop / delete / boot / shutdown exception must not skip
+   clone delete, leave boot unfinished, or take down the process.
+   `boot()` always ends ready to accept jobs.
 4. Drop stale `.git/*.lock` only when no holder remains.
 5. Sequential hard-delete with retries (Windows `rd /s /q \\?\…` +
    reserved names; Linux chmod + rmtree).

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.cleanup.kill import (
@@ -113,31 +114,22 @@ def test_windows_cwd_candidate_is_clone_tools_only() -> None:
     assert not windows_cwd_candidate("", "")
 
 
-def test_iter_windows_processes_skips_cwd_for_system_images(monkeypatch) -> None:
+def test_iter_windows_processes_does_not_snapshot(monkeypatch) -> None:
     from opencode_manager.cleanup import kill as killmod
 
-    cwd_pids: list[int] = []
+    spawned: list[object] = []
+    monkeypatch.setattr(
+        killmod.subprocess,
+        "run",
+        lambda *a, **k: spawned.append(a) or SimpleNamespace(returncode=0, stdout=b"[]", stderr=b""),
+    )
     monkeypatch.setattr(
         killmod,
         "_windows_process_rows",
-        lambda: [
-            {"pid": 10, "argv": "", "exe": r"C:\Windows\System32\svchost.exe"},
-            {"pid": 11, "argv": "git status", "exe": r"C:\Program Files\Git\cmd\git.exe"},
-            {"pid": 12, "argv": "Teams.exe", "exe": r"C:\Program Files\Teams\Teams.exe"},
-        ],
+        lambda: (_ for _ in ()).throw(AssertionError("must not snapshot Win32_Process")),
     )
-
-    def fake_cwd(pid: int) -> str:
-        cwd_pids.append(pid)
-        return r"C:\osm\.temp\T"
-
-    monkeypatch.setattr(killmod, "_windows_cwd", fake_cwd)
-    procs = list(killmod._iter_windows_processes())
-    assert cwd_pids == [11]
-    assert [p.pid for p in procs] == [10, 11, 12]
-    assert procs[0].cwd is None
-    assert procs[1].cwd == r"C:\osm\.temp\T"
-    assert procs[2].cwd is None
+    assert list(killmod._iter_windows_processes()) == []
+    assert spawned == []
 
 
 def test_reap_path_kills_argv_match(tmp_path: Path) -> None:

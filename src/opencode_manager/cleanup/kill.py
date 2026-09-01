@@ -343,20 +343,17 @@ def _iter_linux_processes(*, with_fds: bool) -> Iterator[ProcInfo]:
 
 
 def _iter_windows_processes() -> Iterator[ProcInfo]:
-    rows = _windows_process_rows()
-    for row in rows:
-        pid = int(row.get("pid") or 0)
-        if not pid:
-            continue
-        argv = str(row.get("argv") or "")
-        exe = str(row.get("exe") or "")
-        cwd = None
-        if pid not in protected_pids() and windows_cwd_candidate(exe, argv):
-            try:
-                cwd = _windows_cwd(pid)
-            except Exception:  # noqa: BLE001
-                cwd = None
-        yield ProcInfo(pid=pid, cwd=cwd, argv=argv or exe)
+    """Do not enumerate every Win32_Process.
+
+    `Get-CimInstance Win32_Process` via PowerShell (and PEB-walking the
+    result) is what EDR treats as malware. After a *successful* job the
+    clone exists, job-end used to scan twice, then the manager process
+    vanished (`Backend exited`) even though the job was 200.
+    Windows leftovers are Restart Manager file holders only.
+    """
+    logger.info("windows leftover process snapshot skipped (EDR-safe)")
+    return
+    yield  # pragma: no cover — keep this a generator
 
 
 def _decode_windows_stdout(raw: bytes) -> str:

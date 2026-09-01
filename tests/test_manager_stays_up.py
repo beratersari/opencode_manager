@@ -512,7 +512,7 @@ def test_windows_cwd_not_queried_for_system_while_app_runs(tmp_settings: Setting
         assert res.status_code == 202
         _wait_job(client, res.json()["job_id"])
         _assert_app_alive(client)
-    assert set(cwd_hits) == {99}
+    assert cwd_hits == []
     assert windows_cwd_candidate(r"C:\Windows\System32\svchost.exe", "") is False
 
 

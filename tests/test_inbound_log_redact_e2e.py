@@ -18,7 +18,7 @@ def _body(repo_url: str, **overrides) -> dict:
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 5,
         "retry_count": 1,
         "jira_id": "LOG-1",

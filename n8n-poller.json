@@ -213,12 +213,6 @@
               "name": "text",
               "value": "={{ $('When Executed by Another Workflow').item.json.task_description }}",
               "type": "string"
-            },
-            {
-              "id": "aa000001-0000-4000-8000-000000000002",
-              "name": "agent",
-              "value": "={{ $('When Executed by Another Workflow').item.json.agent }}",
-              "type": "string"
             }
           ]
         },
@@ -590,7 +584,7 @@
     },
     {
       "parameters": {
-        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($input.first().json[\"agent\"] === \"planner\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
+        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif ($('When Executed by Another Workflow').first().json.working_mode === \"Plan\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -732,7 +726,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || 'build').trim().toLowerCase();\nconst agentMap = { plan: 'plan', planner: 'plan', build: 'build', general: 'general', explore: 'explore' };\nconst body = {\n  repo_url: src.repo_url,\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || 'build',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
+        "jsCode": "const src = $('When Executed by Another Workflow').first().json;\nconst osm = $('remoteComputerInfo1').first().json;\nconst raw = $input.first().json.issueText;\nlet prompt = raw;\nif (typeof raw === 'string') {\n  try { prompt = JSON.parse(raw); } catch (e) { prompt = raw; }\n}\nconst mode = String(src.working_mode || '').trim();\nconst agentMap = { Plan: 'planner', build: 'orchestrator' };\nconst body = {\n  repo_url: src.repo_url,\n  source_branch: src.source_branch_name,\n  prompt: prompt,\n  model: 'opencode/mimo-v2.5-free',\n  agent_mode: agentMap[mode] || '',\n  timeout_in_seconds: Math.max(1, Math.round(Number(osm.timeout))),\n  retry_count: Math.max(1, Math.round(Number(osm.retry_count))),\n  jira_id: src.issue_id,\n  session_id: src.session_id,\n};\nreturn [{ json: { osmBody: body, issueText: raw } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

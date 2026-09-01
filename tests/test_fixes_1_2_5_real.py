@@ -36,7 +36,7 @@ def _body(**overrides):
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/mimo-v2.5-free",
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 30,
         "retry_count": 1,
         "jira_id": "KEEP-2",

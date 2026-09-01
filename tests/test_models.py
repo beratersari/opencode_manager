@@ -12,7 +12,7 @@ def _ok(**overrides):
         "source_branch": "develop",
         "prompt": "do the thing",
         "model": "opencode/hy3-free",
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 60,
         "retry_count": 0,
         "jira_id": "PROJ-1",
@@ -38,18 +38,26 @@ def test_bad_model():
 
 def test_unknown_agent():
     assert "agent_mode" in (validate_request_fields(_ok(agent_mode="codex")) or "")
+    assert "agent_mode" in (validate_request_fields(_ok(agent_mode="Plan")) or "")
+    assert "agent_mode" in (validate_request_fields(_ok(agent_mode="build")) or "")
+    assert "agent_mode" in (validate_request_fields(_ok(agent_mode="plan")) or "")
 
 
-def test_planner_is_accepted_as_plan():
+def test_only_planner_and_orchestrator_are_accepted():
     from opencode_manager.models import JobRequest, normalize_agent_mode
 
-    assert normalize_agent_mode("planner") == "plan"
-    assert normalize_agent_mode("PLANNER") == "plan"
-    assert normalize_agent_mode("Plan") == "plan"
+    assert normalize_agent_mode("planner") == "planner"
+    assert normalize_agent_mode("orchestrator") == "orchestrator"
+    assert normalize_agent_mode("Plan") is None
+    assert normalize_agent_mode("build") is None
     assert validate_request_fields(_ok(agent_mode="planner")) is None
-    assert validate_request_fields(_ok(agent_mode="PLANNER")) is None
-    req = JobRequest.model_validate(_ok(agent_mode="planner"))
-    assert req.agent_mode == "plan"
+    assert validate_request_fields(_ok(agent_mode="orchestrator")) is None
+    assert JobRequest.model_validate(_ok(agent_mode="planner")).agent_mode == "planner"
+    assert JobRequest.model_validate(_ok(agent_mode="orchestrator")).agent_mode == "orchestrator"
+    body = _ok()
+    del body["agent_mode"]
+    body["working_mode"] = "Plan"
+    assert validate_request_fields(body) == "missing required field: agent_mode"
 
 
 def test_agent_type_field_is_accepted():
@@ -60,7 +68,7 @@ def test_agent_type_field_is_accepted():
     body["agent_type"] = "planner"
     assert validate_request_fields(body) is None
     req = JobRequest.model_validate({**body, "agent_mode": "planner"})
-    assert req.agent_mode == "plan"
+    assert req.agent_mode == "planner"
 
 
 def test_bad_callback():

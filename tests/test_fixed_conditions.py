@@ -219,7 +219,7 @@ def test_clone_path_rejects_dot_slash_and_collision() -> None:
         "source_branch": "d",
         "prompt": "p",
         "model": "a/b",
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 1,
         "retry_count": 1,
         "callback_url": "http://127.0.0.1/x",

@@ -276,7 +276,7 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
-| `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, `explore`). `planner` is an alias for `plan`. `agent_type` / `agent` are accepted as the same field. Unknown → 400. |
+| `agent_mode` | yes | OpenCode agent id. Only `planner` and `orchestrator`. n8n maps `working_mode` (`Plan` → `planner`, `build` → `orchestrator`, case-sensitive) and does not send `working_mode`. Anything else → **400**. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. Must already be a Windows-safe folder name: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`. `.`, `..`, slashes, and other characters are inbound **400** so two tickets cannot share `{work_dir}/{jira_id}` or delete `{work_dir}` itself. |
@@ -852,11 +852,16 @@ See §3.2 for why this is per job and how ports work.
     request creates the instance and can block while OpenCode
     bootstraps the clone. That wait is still serve boot. Do not
     time out `POST /session` at 30s during bootstrap.
-3b. `GET /config/providers` (fallback `GET /provider`). If the request
-    `model` is not in that inventory: fail the job **500** now
-    (`text` names the missing model and lists what this serve has).
-    No user message. No inner loop. No remaining retries. If the
-    inventory cannot be read, skip the check and POST as today.
+3b. `GET /config/providers` (fallback `GET /provider`; parse
+    `connected` / `providers` / `all`). If the request `model` is
+    not in that inventory, or the inventory is readable and empty:
+    fail the job **500** now (`text` names the missing model and
+    lists what this serve has). No user message. No inner loop. No
+    remaining retries. Do not sit on the attempt clock. A later
+    OpenCode `ProviderModelNotFoundError` is the same **500**. If
+    the inventory endpoints error (not a successful empty list),
+    skip the preflight and still treat a later model-not-found
+    as **500**.
 4. Create or resume session; set agent from `agent_mode`.
    Send `x-opencode-directory: <clone>`. On every user-message POST,
    send this job’s `model` as OpenCode `{ providerID, modelID }`
@@ -1196,9 +1201,9 @@ build them).
 - [ ] `GET /jobs/{job_id}`: unknown 404; live 202; terminal HTTP 200 with envelope `status_code`.
 - [ ] Do not infer callback from `Host` / `Origin` / `Referer`.
 - [ ] SSH `repo_url` (`git@`, `ssh://`) → HTTP **400**, no callback.
-- [ ] Unknown `agent_mode` → HTTP **400**, no callback.
+- [ ] `agent_mode` is only `planner` or `orchestrator`. n8n maps `working_mode` and does not send it. Other ids → HTTP **400**.
 - [ ] Missing / empty / not `provider/id` `model` → HTTP **400**, no callback.
-- [ ] After serve health, unknown `model` vs `/config/providers` → job **500**, no user message, no remaining retries.
+- [ ] After serve health, unknown `model` vs `/config/providers` (or readable empty inventory) → job **500**, no user message, no remaining retries, not a timeout.
 - [ ] `retry_count < 1` treated as `1`.
 - [ ] Same `jira_id` already running → HTTP **409**, no callback.
 - [ ] Same `jira_id` already queued → HTTP **409**, no callback.

@@ -178,15 +178,22 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   while OpenCode bootstraps the clone. That wait is serve boot
   (counts toward `timeout_in_seconds`). Do not fail `POST /session`
   at 30s while the instance is still booting.
-- Then check `GET /config/providers` (then `/provider`).
-  If the request `model` is not on this serve: fail the **job**
-  `500` immediately with the available ids. Do not POST a user
-  message. Do not hang-wait. Do not spend remaining `retry_count`.
+- Then check `GET /config/providers` (then `/provider`, including
+  `connected`). If the request `model` is not on this serve, or the
+  inventory is readable and empty: fail the **job** `500` immediately
+  with the available ids. Do not POST a user message. Do not wait
+  for the attempt clock. Do not spend remaining `retry_count`. A
+  later OpenCode `ProviderModelNotFoundError` / "model not found" is
+  the same **500**, not a hang or `504`.
 - Do not run `opencode --auto` as a one-shot CLI. Do not enable
   permission auto-approve.
 - Scope requests with `x-opencode-directory: <clone>`.
 - Request `model` (`provider/id`) is required. Send it on every
   user message as `{ providerID, modelID }`. No settings default.
+- Only two OpenCode agents on `agent_mode`: `planner` and
+  `orchestrator`. n8n maps `working_mode` itself (`Plan` →
+  `planner`, `build` → `orchestrator`, case-sensitive) and does
+  not send `working_mode` to OSM. Anything else → inbound **400**.
 - OpenCode only. No Codex.
 
 ### Session id — two moments

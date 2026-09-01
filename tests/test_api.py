@@ -33,7 +33,7 @@ def _body(**overrides):
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 30,
         "retry_count": 1,
         "jira_id": "PROJ-1",
@@ -84,7 +84,25 @@ def test_planner_agent_is_accepted(tmp_settings: Settings) -> None:
         assert res.status_code == 202
         job_id = res.json()["job_id"]
         detail = client.get(f"/api/jobs/{job_id}").json()["job"]
-        assert detail["agent_mode"] == "plan"
+        assert detail["agent_mode"] == "planner"
+
+
+def test_working_mode_alone_is_400(tmp_settings: Settings) -> None:
+    body = _body(jira_id="PLAN-WM")
+    del body["agent_mode"]
+    body["working_mode"] = "Plan"
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=body)
+        assert res.status_code == 400
+
+
+def test_orchestrator_agent_is_accepted(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=_body(agent_mode="orchestrator", jira_id="BLD-1"))
+        assert res.status_code == 202
+        job_id = res.json()["job_id"]
+        detail = client.get(f"/api/jobs/{job_id}").json()["job"]
+        assert detail["agent_mode"] == "orchestrator"
 
 
 def test_agent_type_planner_is_accepted(tmp_settings: Settings) -> None:
@@ -96,7 +114,7 @@ def test_agent_type_planner_is_accepted(tmp_settings: Settings) -> None:
         assert res.status_code == 202
         job_id = res.json()["job_id"]
         detail = client.get(f"/api/jobs/{job_id}").json()["job"]
-        assert detail["agent_mode"] == "plan"
+        assert detail["agent_mode"] == "planner"
 
 
 def test_bad_model_400(tmp_settings: Settings) -> None:

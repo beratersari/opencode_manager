@@ -10,25 +10,21 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-KNOWN_AGENTS = frozenset({"build", "plan", "general", "explore"})
-# Callers (n8n, testers) often send "planner"; OpenCode's agent id is "plan".
-AGENT_ALIASES = {"planner": "plan"}
-_AGENT_FIELD_KEYS = ("agent_mode", "agent_type", "agent")
+# n8n maps working_mode itself. OSM only accepts these two agent ids.
+KNOWN_AGENTS = frozenset({"planner", "orchestrator"})
+_AGENT_FIELD_KEYS = ("agent_mode", "agent_type")
 
 
 def normalize_agent_mode(value: str) -> Optional[str]:
-    """Lowercase, apply aliases, or None if not a known OpenCode agent."""
-    raw = (value or "").strip().lower()
-    if not raw:
-        return None
-    canon = AGENT_ALIASES.get(raw, raw)
-    if canon not in KNOWN_AGENTS:
-        return None
-    return canon
+    """Accept planner or orchestrator only. Case-sensitive. No working_mode here."""
+    text = (value or "").strip()
+    if text in KNOWN_AGENTS:
+        return text
+    return None
 
 
 def agent_mode_from_body(body: Dict[str, Any]) -> str:
-    """Prefer agent_mode; accept agent_type / agent as the same field."""
+    """Prefer agent_mode; accept agent_type. n8n does not send working_mode."""
     for key in _AGENT_FIELD_KEYS:
         if key in body and body[key] is not None and str(body[key]).strip():
             return str(body[key]).strip()

@@ -108,6 +108,34 @@ def test_poller_flow_polls_osm_jobs_not_callback() -> None:
 
 
 @pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
+def test_parse_all_need_info_has_no_agent_field(path: Path) -> None:
+    data = _flow(path)
+    parse = next(n for n in data["nodes"] if n["name"] == "parseAllNeedInfo1")
+    names = [
+        a.get("name")
+        for a in parse["parameters"]["assignments"]["assignments"]
+    ]
+    assert "agent" not in names
+    assert any("working_mode" in str(name) for name in names)
+
+
+@pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
+def test_build_osm_request_maps_plan_and_build_case_sensitively(path: Path) -> None:
+    data = _flow(path)
+    build = next(n for n in data["nodes"] if n["name"] == "buildOsmRequest")
+    code = str(build["parameters"].get("jsCode") or "")
+    assert "Plan: 'planner'" in code
+    assert "build: 'orchestrator'" in code
+    assert "toLowerCase" not in code
+    assert "agent_mode: agentMap[mode]" in code
+    assert "working_mode:" not in code
+    stringify = next(n for n in data["nodes"] if n["name"] == "strginfyInputText1")
+    sjs = str(stringify["parameters"].get("jsCode") or "")
+    assert 'working_mode === "Plan"' in sjs
+    assert 'json["agent"]' not in sjs
+
+
+@pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
 def test_ack_non_202_goes_to_return_ack_fail(path: Path) -> None:
     """400/409/503 must not Wait or poll — n8n would hang with no callback."""
     data = _flow(path)

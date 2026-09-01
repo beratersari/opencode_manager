@@ -117,7 +117,7 @@ There is never a `queued` or `in_progress` callback. `{…}` below is filled in.
 | **400** | `SSH repo_url is rejected` | `git@` or `ssh://` | No |
 | **400** | `repo_url must be http(s) or file` | Other scheme | No |
 | **400** | `model must be provider/id` | Not `provider/id` | No |
-| **400** | `unknown agent_mode: {agent}` | Not `build` / `plan` (`planner`) / `general` / `explore` | No |
+| **400** | `unknown agent_mode: {agent}` | Not `planner` or `orchestrator` | No |
 | **400** | `callback_url must be an absolute http(s) URL` | Missing scheme or host | No |
 | **400** | `callback_url host is not allowed` | Host not in `callback_allowed_hosts` (ignored when that list is `[]` / `*` / `all`) | No |
 | **400** | `timeout_in_seconds and retry_count must be integers` | Non-integer | No |
@@ -162,7 +162,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 | `source_branch` | yes | Must already exist on the remote. |
 | `prompt` | yes | Sent once, as the first user message. |
 | `model` | yes | `provider/id`, e.g. `opencode/mimo-v2.5-free`. |
-| `agent_mode` | yes | `build`, `plan` (alias `planner`), `general`, or `explore`. `agent_type` / `agent` are accepted as the same field. |
+| `agent_mode` | yes | `planner` or `orchestrator`. n8n maps `working_mode` before POST. |
 | `timeout_in_seconds` | yes | One OpenCode attempt (not clone / cleanup). |
 | `retry_count` | yes | Max attempts, first included. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Folder name for the clone. |

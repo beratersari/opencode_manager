@@ -122,7 +122,7 @@ def test_post_jobs_real_git_and_opencode(tmp_path: Path) -> None:
         "source_branch": SOURCE_BRANCH,
         "prompt": prompt,
         "model": model,
-        "agent_mode": "build",
+        "agent_mode": "orchestrator",
         "timeout_in_seconds": 180,
         "retry_count": 1,
         "jira_id": "LIVE-1",

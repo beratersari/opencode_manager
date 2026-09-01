@@ -106,7 +106,6 @@ class Handler(BaseHTTPRequestHandler):
             callback = _public_base.rstrip("/") + "/callback"
             payload = {
                 "repo_url": (body.get("repo_url") or "").strip(),
-                "PAT": (body.get("PAT") or "").strip(),
                 "source_branch": (body.get("source_branch") or "").strip(),
                 "prompt": body.get("prompt") or "",
                 "model": (body.get("model") or "").strip(),
@@ -125,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
                     "kind": "ack",
                     "http_status": status,
                     "callback_url": callback,
-                    "request": {k: v for k, v in payload.items() if k != "PAT"},
+                    "request": payload,
                     "body": ack,
                 }
             )

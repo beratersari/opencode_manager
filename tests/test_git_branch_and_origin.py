@@ -36,7 +36,7 @@ def test_ls_remote_prefix_output_is_not_a_hit(monkeypatch) -> None:
 
     monkeypatch.setattr("opencode_manager.git.clone._run_git", fake_run)
     assert (
-        ls_remote_has_branch("https://example/r.git", "develop", pat="x", timeout=1.0)
+        ls_remote_has_branch("https://example/r.git", "develop", timeout=1.0)
         is False
     )
 

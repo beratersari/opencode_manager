@@ -47,9 +47,11 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | `ls-remote` `develop` is not a hit for `develop-old` / `dev` | `test_ls_remote_ref_is_exact_heads_name`, `test_ls_remote_prefix_output_is_not_a_hit` |
 | Origin scrub keeps `host:port` | `test_public_git_url_keeps_nondefault_port` |
+| Windows uses stored GCM/wincred or a GCM popup | `test_windows_uses_stored_creds_or_gcm_popup` |
+| Linux still disables `credential.helper` | `test_linux_still_disables_credential_helper` |
 | Git child PID is tracked on the job while the process is live | `test_run_git_tracks_and_untracks_pid` |
-| GitLab PAT `insteadOf` does not fail a clean stored origin | `test_clone_repo_then_gitlab_pat_env_does_not_fail_clean_origin` |
-| GitLab PAT env still scrubs stored userinfo and keeps `host:port` | `test_gitlab_pat_env_scrubs_stored_userinfo_and_keeps_port` |
+| Direct clone leaves a clean stored origin | `test_clone_repo_leaves_clean_origin` |
+| Origin scrub keeps `host:port` after userinfo | `test_direct_clone_scrubs_stored_userinfo_and_keeps_port` |
 
 ## Kill / boot / shutdown
 

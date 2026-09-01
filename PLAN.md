@@ -1,12 +1,12 @@
 # OpenCode Session Manager — Plan
 
 A small Windows/Linux worker that sits between **n8n** and **OpenCode**.
-n8n sends a job. This service clones the repo with the request PAT, runs
+n8n sends a job. This service clones the request `repo_url` directly, runs
 OpenCode in serve mode, drives the session until the task is finished, then
 calls a target API with the result.
 
 This is a smaller slice of [virtual_developer](https://github.com/beratersari/virtual_developer)
-(Yaver). Copy clone/PAT isolation, force-kill, hard delete, the OpenCode
+(Yaver). Copy clone helper-off env, force-kill, hard delete, the OpenCode
 serve control loop, and the **jobs-tab dashboard look** (GET-only). Do
 **not** copy Jira polling, GitLab MRs, Codex, or dashboard write
 actions (cancel, delete, settings, schedules).
@@ -24,7 +24,7 @@ retry? cleanup? file locks on Windows?
 
 You want n8n to do this instead:
 
-1. POST a job (repo, optional PAT, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
+1. POST a job (repo, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
 2. Get an immediate ack (accepted / queued / already running / bad request).
 3. Later receive **exactly one** callback on the **`callback_url` from that request** (the caller, usually an n8n Wait node). That POST is the terminal result — never a “queued” or “started” ping.
 4. On success, the callback `text` is the last OpenCode assistant message.
@@ -50,7 +50,7 @@ are wrong.
 | 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is the **ticket id** (`jira_id`, Windows-safe folder). Dedup is one live job per ticket, so repo and branch are not in the path. Same ticket later ⇒ same folder. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same path ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
-| 6 | Git auth | **Request PAT when present.** Public HTTPS may omit it. No OS credential store, no settings PAT, no SSH. GitLab and TFS/Azure DevOps use different header schemes. |
+| 6 | Git auth | **Direct clone of `repo_url`.** No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=`. **Linux:** helper off. |
 | 7 | Source branch | Must exist on the remote. Missing field on the body → inbound **400**. Missing on the remote → inbound **202**, then callback **404**. Do not invent a branch from `main`. |
 | 8 | Codex | Never. OpenCode only. |
 
@@ -271,13 +271,12 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 
 | Field | Required | Meaning |
 |---|---|---|
-| `repo_url` | yes | HTTPS clone URL. GitLab or TFS/Azure DevOps Git. SSH rejected. |
-| `PAT` | no | Used **only** for this job’s git when the remote needs auth. Omit or empty for a **public** HTTPS repo. Never stored in settings, never logged. Missing/empty is inbound **202**; a private remote then fails in the worker (callback **500**). |
+| `repo_url` | yes | HTTPS clone URL. Cloned as given. SSH rejected. A leftover `PAT` key is ignored. |
 | `source_branch` | yes | Remote branch that must already exist. Start point of the clone. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
-| `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, …). Unknown → 400. |
+| `agent_mode` | yes | OpenCode agent name (`build`, `plan`, `general`, `explore`). `planner` is an alias for `plan`. `agent_type` / `agent` are accepted as the same field. Unknown → 400. |
 | `timeout_in_seconds` | yes | Wall clock for **one OpenCode attempt only** (serve boot + session loop). Not clone, not cleanup, not callbacks. Resets on every outer retry. |
 | `retry_count` | yes | Max **OpenCode attempts** (first included). `3` with timeout `1800` ⇒ up to **5400 seconds** of OpenCode. Not compact-wait. Minimum `1`. |
 | `jira_id` | yes | Dedup key. Ties the run to n8n/Jira. Must already be a Windows-safe folder name: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`. `.`, `..`, slashes, and other characters are inbound **400** so two tickets cannot share `{work_dir}/{jira_id}` or delete `{work_dir}` itself. |
@@ -439,7 +438,7 @@ n8n  --POST /jobs-->  manager
                          └─ 202 started
                                 │
                                 ├─ detect GitLab vs TFS
-                                ├─ clone with request PAT only
+                                ├─ direct clone of repo_url
                                 ├─ if source_branch missing on remote: cleanup + callback 404
                                 ├─ start opencode serve --hostname 127.0.0.1 --port <free> (cwd = clone)
                                 ├─ resume session_id or create
@@ -754,47 +753,40 @@ Always put the live id on every callback.
 
 ## 6. Git
 
-### 6.1 PAT isolation (must)
+### 6.1 Direct clone (must)
 
-virtual_developer already solved the “Windows GCM popped a prompt” class
-of bugs. Copy that pattern, but the PAT comes from **the request** when the
-caller sent one, not from settings/`GITLAB_PAT`. Public HTTPS clones
-may omit `PAT`; then we still disable helpers and send **no** auth
-header.
+Clone the request `repo_url` as given. There is no `PAT` field and no
+oauth2 / `http.extraHeader` rewrite.
 
 For every git child of a job:
 
 - `GIT_TERMINAL_PROMPT=0`
-- GCM / credential helper **off** (`credential.helper=`)
 - no GUI askpass / no `DISPLAY`
-- PAT **not** on `git` argv (so it does not appear in `ps`)
-- rewrite via `GIT_CONFIG_*` insteadOf + askpass / `http.extraHeader`
+- **Windows:** do **not** pass `-c credential.helper=` on the first
+  try. Set `credential.helper=manager` and `GCM_INTERACTIVE=auto`.
+  If that still fails with an auth error, open a **Windows
+  username/password dialog** (`Get-Credential`) and retry once with
+  `http.extraHeader` Basic (password never on argv or in logs).
+  `GIT_TERMINAL_PROMPT=0` still blocks a hidden console prompt.
+  The manager must run in an interactive desktop session (the
+  OSM-Backend window), not as Session 0 / a service, or the dialog
+  cannot appear.
+- **Linux:** `credential.helper=` (empty). No OS store.
 - after clone, origin URL scrubbed of any userinfo. The source of
   truth is stored `remote.origin.url`, not `git remote get-url`
-  (GitLab PAT `insteadOf` rewrites get-url to `oauth2:PAT@host`)
-- PAT redacted from every log and every callback, including
-  username-only Azure `https://PAT@host/…` and `:PAT@`
-- never fall back to the machine credential store if the PAT is wrong —
-  fail with a clear “auth failed” error
+- userinfo redacted from every log and every callback
+  (`user:pass@`, `user@`, `:pass@`)
 
-SSH (`git@`, `ssh://`) is rejected at the API. A PAT cannot authenticate SSH.
+SSH (`git@`, `ssh://`) is rejected at the API.
 
-### 6.2 GitLab vs TFS / Azure DevOps
+### 6.2 Host classify
 
-Detect from `repo_url`. Do not send GitLab’s `oauth2:PAT` to TFS.
-
-| Kind | How we tell | Auth |
-|---|---|---|
-| GitLab | default if not TFS-shaped | username `oauth2`, password = PAT (insteadOf + Basic `oauth2:PAT`) |
-| Azure DevOps Services | `dev.azure.com`, `visualstudio.com` | Basic `base64(":PAT")` extraHeader |
-| TFS / Azure DevOps Server | `/tfs/`, `/_git/`, typical on-prem hosts | same empty-user Basic; on-prem often **requires** empty username |
-
-If a host is ambiguous, prefer TFS rules when the path contains `/_git/`
-or `/tfs/`.
+`classify_host` is logging only (GitLab vs TFS-shaped). It does not
+change clone auth.
 
 ### 6.3 Clone steps
 
-1. Classify host, build isolated git env from **this** PAT.
+1. Build the no-prompt git env (Windows stored creds if present).
 2. In the **worker** (after the inbound **202**), `git ls-remote --heads`
    (or clone then checkout) to prove `source_branch` exists. If it does
    not: cleanup anything already created, callback **404**, stop. Do
@@ -823,11 +815,11 @@ or `/tfs/`.
    not delete leftover trees. Job-end always hard-deletes the same
    path again (success, fail, or git-phase error).
 4. Checkout `source_branch` exactly. No “create from main”.
-5. Submodules: only if present; same PAT env. Fail the job if they fail
-   (do not let OpenCode run on a half tree).
+5. Do **not** run `git submodule update`. Clone + checkout + origin
+   scrub only. A `.gitmodules` file is left as the remote recorded it.
 
 **Locked:** missing remote branch is **202 + callback 404**. Existence
-check needs the PAT and the network; it runs in the worker so the
+check needs the network; it runs in the worker so the
 inbound handler stays fast. n8n must treat 202 as “accepted, wait for
 callback” — including this 404.
 
@@ -981,7 +973,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `log_level` | Minimum level for both sinks |
 | `opencode_bin` | Path or name on PATH |
 | `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting** **and** this turn has not produced an assistant yet. Not the request timeout. |
-| `git_clone_timeout_seconds` | Safety cap for clone / `ls-remote`. Request timeout does not apply to git. |
+| `git_clone_timeout_seconds` | Safety cap for clone / `ls-remote` (default **1800**, 30 minutes). Request timeout does not apply to git. |
 
 No GitLab PAT, no Jira token, no board id, no default model. Those belong to n8n.
 
@@ -993,7 +985,7 @@ Clone the repo for reference only. Do not import it as a dependency.
 
 **Copy / slim down**
 
-- `git_manager` PAT env: askpass, `GIT_CONFIG_*`, helper off, redact
+- `git_manager` no-prompt env: askpass off, Windows stored GCM/wincred, Linux helper off, redact
 - host classification we will **extend** for TFS
 - `process_kill` tree kill, workspace reclaim, lock clearing
 - `temp_fs.force_rmtree` Windows reserved names + `\\?\`
@@ -1051,7 +1043,7 @@ opencode_manager/
     callback.py         # POST to target
     git/
       detect.py         # GitLab vs TFS
-      clone.py          # PAT clone + branch check
+      clone.py          # direct clone + branch check
       auth.py           # isolated env
     opencode/
       serve.py          # start/stop per-job serve
@@ -1239,16 +1231,9 @@ build them).
 
 ### 16.6 Git
 
-- [ ] Classify host: GitLab vs Azure DevOps Services vs TFS / Azure DevOps Server.
-- [ ] Ambiguous URL with `/_git/` or `/tfs/` uses TFS rules.
-- [ ] `PAT` optional: omit/empty for public HTTPS (no auth header). Private remotes without a PAT fail in the worker, not inbound 400.
-- [ ] GitLab auth: username `oauth2`, password = request PAT (`GIT_CONFIG_*` insteadOf + Basic).
-- [ ] Azure DevOps / TFS auth: Basic `base64(":PAT")` extraHeader (empty username).
-- [ ] Never send GitLab `oauth2:PAT` to a TFS / Azure DevOps host.
-- [ ] Every git child: `GIT_TERMINAL_PROMPT=0`, credential helper off, no GUI askpass, no `DISPLAY`.
-- [ ] PAT never appears on `git` argv.
+- [ ] Direct clone of `repo_url`. No request `PAT`. Leftover `PAT` key is ignored.
+- [ ] Every git child: `GIT_TERMINAL_PROMPT=0`, no `DISPLAY`. Windows: GCM `manager`, stored cred or login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=` on Windows. Linux: helper off.
 - [ ] After clone, origin URL has no userinfo.
-- [ ] Wrong PAT fails closed (no OS credential-store fallback).
 - [ ] Worker `ls-remote` (or equivalent) after HTTP 202 to prove `source_branch` exists.
 - [ ] Missing remote branch: cleanup anything created, callback 404, stop.
 - [ ] Clone error or git timeout: same job-end delete, then callback 500. Git-phase failures must not skip the delete `finally`.
@@ -1258,8 +1243,8 @@ build them).
 - [ ] Same `jira_id` ⇒ same folder; different `jira_id` ⇒ different folder.
 - [ ] Same ticket with a different repo or branch still uses that folder (delete, then clone).
 - [ ] Checkout `source_branch` exactly.
-- [ ] If `.gitmodules` exists, update submodules with the same PAT env; fail the job on submodule error.
-- [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote` / submodules.
+- [ ] Do not init or update git submodules.
+- [ ] Honor `git_clone_timeout_seconds` for clone / `ls-remote`.
 - [ ] Track git child PIDs on the job for kill.
 - [ ] No push, no MR, no target branch.
 
@@ -1478,8 +1463,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
   keep the row. Delete the clone as today.
 - Chat snapshot: persist messages while polling and again at job
   end. After kill-serve the snapshot is the transcript.
-- History JSON never contains the PAT. Queue file may still hold
-  PAT for in-process dequeue only; dashboard DTOs strip it.
+- History JSON never contains a leftover `PAT` key or URL userinfo.
 - Same ticket, later POST: **new** `job_id`, new row. List
   shows both. Per-job log file still appends by `jira_id`.
 

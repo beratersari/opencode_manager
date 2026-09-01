@@ -123,15 +123,18 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 
 ### Git
 
-- Clone with the **request PAT** when the caller sent one. `PAT` is
-  optional: omit or leave empty for a **public** HTTPS repo. Disable
-  credential helpers (`GIT_TERMINAL_PROMPT=0`, empty
-  `credential.helper`). PAT must not appear on `git` argv, in logs,
-  or in callbacks. No PAT ⇒ no auth header (do not fall back to the
-  OS credential store). Private remotes without a PAT fail in the
-  worker (callback **500**), not as inbound **400**.
-- GitLab: `oauth2` + PAT. TFS / Azure DevOps: Basic `base64(":PAT")`
-  (empty username). Detect from the URL. Never send GitLab auth to TFS.
+- **Direct clone** of the request `repo_url`. There is no `PAT` field
+  and no oauth2 / extraHeader rewrite. `git clone --branch … --single-branch
+  <url> dest` (then checkout and origin scrub). Do **not** init or
+  update git submodules.
+  `GIT_TERMINAL_PROMPT=0` so git never waits on a hidden console
+  username prompt. On **Windows**: first try GCM (`manager`,
+  `GCM_INTERACTIVE=auto`) for a stored cred or GCM popup. If git still
+  fails with an auth error (`terminal prompts disabled`, 401, …), OSM
+  opens a **Windows username/password dialog** (`Get-Credential`) and
+  retries once with Basic (not on argv, not logged). On Linux, keep
+  `credential.helper` empty (no dialog). Cancel / empty dialog → job
+  **500**. A leftover inbound `PAT` key is ignored.
 - Reject `git@` / `ssh://`.
 - `source_branch` must exist on the remote. Do not create a branch
   from `main`. Missing field on the body → inbound **400**. Missing
@@ -158,9 +161,7 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Track every git child PID on `job.extra_pids` while it is live.
   `ls-remote` matches `refs/heads/{branch}` exactly. After clone,
   origin has no userinfo and keeps `host:port`. Scrub the stored
-  `remote.origin.url` — never `git remote get-url` under the PAT env
-  (`insteadOf` rewrites get-url to `oauth2:PAT@host` even when disk is
-  already clean).
+  `remote.origin.url` — never `git remote get-url` (rewrites can lie).
 
 ### OpenCode
 
@@ -303,10 +304,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   (accept time, UTC). One file per job. `job_id` and `jira_id`
   also stay on each line.
 - Tag every line with `job_id` and `jira_id` (contextvars).
-- Never log the PAT or a URL that still has userinfo. Redact
-  `user:pass@`, Azure-style `user@` (PAT as username), and `:pass@`.
-  Inbound `POST /jobs` logs the redacted `repo_url` only — never the
-  `PAT` field.
+- Never log a URL that still has userinfo. Redact
+  `user:pass@`, Azure-style `user@`, and `:pass@`.
+  Inbound `POST /jobs` logs the redacted `repo_url` only. A leftover
+  `PAT` key is not logged.
 - Create `{data_dir}` layout on startup if missing: `.temp`,
   `.serve`, `logs`, `jobs`, `queue.json`.
 
@@ -350,7 +351,7 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   whole manager log; `GET /api/jobs/:id/serve-log` is
   `{data_dir}/.serve/{job_id}.log` (redacted). Default logs
   `limit=2000` stays for the Logs tab.
-- Persist a history row per `job_id` (no PAT). Keep it after
+- Persist a history row per `job_id`. Keep it after
   clone delete and after boot leftover ERROR. 409 is only running or
   queued.
 - Job detail: meta + attempts, prompts we POSTed, chat transcript
@@ -368,11 +369,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 ## Do not copy from virtual_developer
 
 Jira poller, GitLab MR/`glab`, Codex, dashboard **writes**, Poll /
-Scheduled / Sessions / Storage / Settings tabs, settings PAT map,
+Scheduled / Sessions / Storage / Settings tabs, settings PAT map
+  (this product has no PAT field),
 “create `feature/KEY` from target”, shared long-lived serve, “never
 kill serve”, keeping a dirty clone for reuse.
 
-Do copy: PAT env isolation, process-tree kill, Windows hard delete,
+Do copy: git no-console-prompt env (Windows GCM stored cred or popup), process-tree kill, Windows hard delete,
 compact-wait / one-nudge control loop, outer retry **shape**,
 per-job log context, jobs-tab SPA look (GET-only).
 

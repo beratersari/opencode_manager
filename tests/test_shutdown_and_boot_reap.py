@@ -26,7 +26,6 @@ def _pid_alive(pid: int) -> bool:
 def _body(**overrides):
     data = {
         "repo_url": "https://gitlab.example/g/r.git",
-        "PAT": "not-a-real-pat",
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",
@@ -159,7 +158,7 @@ def test_on_done_skips_missing_queue_row(tmp_settings: Settings, monkeypatch) ->
     try:
         a, _ = manager.submit(_body(jira_id="A-1"))
         assert a == 202
-        manager.queue.enqueue({"job_id": "job_missing", "jira_id": "GHOST-1", "PAT": "x"})
+        manager.queue.enqueue({"job_id": "job_missing", "jira_id": "GHOST-1"})
         b, env_b = manager.submit(_body(jira_id="B-1"))
         assert b == 202
         first_hold.set()

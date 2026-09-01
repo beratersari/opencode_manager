@@ -14,8 +14,7 @@ OSM later --POST /callback-->  this app :8090
 
 ## Run
 
-Manager must already be up on `:4096`. `PAT` is optional on the form
-(public HTTPS repos). Leave it blank when the remote does not need auth.
+Manager must already be up on `:4096`. Clone uses `repo_url` as given.
 
 From the repo root:
 

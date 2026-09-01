@@ -77,7 +77,7 @@ def test_queue_jira_filter(tmp_settings: Settings) -> None:
             {
                 "job_id": "job_a",
                 "jira_id": "AA-1",
-                "PAT": "secret",
+
                 "accepted_at": utc_now(),
                 "model": "opencode/x",
                 "agent_mode": "build",
@@ -87,7 +87,7 @@ def test_queue_jira_filter(tmp_settings: Settings) -> None:
             {
                 "job_id": "job_b",
                 "jira_id": "BB-1",
-                "PAT": "secret",
+
                 "accepted_at": utc_now(),
                 "model": "opencode/x",
                 "agent_mode": "build",

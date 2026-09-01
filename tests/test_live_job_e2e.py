@@ -118,7 +118,7 @@ def test_post_jobs_real_git_and_opencode(tmp_path: Path) -> None:
     )
     body = {
         "repo_url": origin.resolve().as_uri(),
-        "PAT": "unused-for-file-url",
+
         "source_branch": SOURCE_BRANCH,
         "prompt": prompt,
         "model": model,

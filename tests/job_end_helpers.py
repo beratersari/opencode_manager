@@ -32,7 +32,6 @@ def make_job(jira_id: str, **kwargs) -> JobRecord:
     )
     data.update(kwargs)
     job = JobRecord(**data)
-    job._pat = "secret"  # type: ignore[attr-defined]
     return job
 
 

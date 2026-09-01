@@ -32,7 +32,6 @@ def test_giterror_after_dest_created_deletes_clone(tmp_settings: Settings, monke
         source_branch="develop",
         status="running",
     )
-    job._pat = "secret"  # type: ignore[attr-defined]
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
 
     def ls_ok(*_a, **_k) -> bool:
@@ -60,7 +59,6 @@ def test_git_timeout_after_dest_created_deletes_clone(tmp_settings: Settings, mo
         source_branch="develop",
         status="running",
     )
-    job._pat = "secret"  # type: ignore[attr-defined]
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
 
     def boom(*_a, **_k) -> bool:
@@ -84,7 +82,6 @@ def test_missing_branch_404_still_deletes_leftover_dest(tmp_settings: Settings, 
         source_branch="nope",
         status="running",
     )
-    job._pat = "secret"  # type: ignore[attr-defined]
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "stale").write_text("x", encoding="utf-8")
@@ -104,7 +101,6 @@ def test_leftover_clone_removed_before_new_clone(tmp_settings: Settings, monkeyp
         source_branch="develop",
         status="running",
     )
-    job._pat = "secret"  # type: ignore[attr-defined]
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "stale").write_text("old", encoding="utf-8")
@@ -138,7 +134,6 @@ def test_refuse_clone_if_leftover_cannot_be_deleted(tmp_settings: Settings, monk
         source_branch="develop",
         status="running",
     )
-    job._pat = "secret"  # type: ignore[attr-defined]
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True, exist_ok=True)
     cloned = {"n": 0}

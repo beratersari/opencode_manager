@@ -172,10 +172,10 @@ def test_real_git_missing_branch_404_deletes_dest(tmp_settings: Settings) -> Non
 def test_real_git_dev_does_not_match_develop(tmp_settings: Settings) -> None:
     origin = seed_git_repo(tmp_settings.work_dir.parent / "origin2", branch="develop")
     assert (
-        ls_remote_has_branch(file_url(origin), "dev", pat="x", timeout=15.0) is False
+        ls_remote_has_branch(file_url(origin), "dev", timeout=15.0) is False
     )
     assert (
-        ls_remote_has_branch(file_url(origin), "develop", pat="x", timeout=15.0) is True
+        ls_remote_has_branch(file_url(origin), "develop", timeout=15.0) is True
     )
 
 
@@ -199,7 +199,7 @@ def test_real_git_clone_then_opencode_error_deletes(
 def test_real_git_origin_scrub_keeps_port(tmp_path: Path) -> None:
     origin = seed_git_repo(tmp_path / "origin4", branch="develop")
     dest = tmp_path / "clone"
-    clone_repo(file_url(origin), dest, "develop", pat="x", timeout=30.0)
+    clone_repo(file_url(origin), dest, "develop", timeout=30.0)
     _run_git(
         ["remote", "set-url", "origin", "https://oauth2:TOKEN@gitlab.example.com:8443/g/r.git"],
         env=os.environ.copy(),

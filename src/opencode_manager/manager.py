@@ -24,6 +24,7 @@ from opencode_manager.models import (
     mint_job_id,
     poll_payload,
     utc_now,
+    agent_mode_from_body,
     validate_request_fields,
     validate_session_delete_fields,
 )
@@ -46,7 +47,7 @@ class Manager:
         self.stopping = False
         self._lock = threading.RLock()
         self._running = 0
-        self._pats: Dict[str, str] = {}
+
         self._threads: list[threading.Thread] = []
         self._session_deletes: set[str] = set()
         self.session_delete_health_timeout = 30.0
@@ -206,7 +207,7 @@ class Manager:
             )
         err = validate_request_fields(body)
         if err:
-            keys = sorted(str(k) for k in body.keys() if str(k) != "PAT")
+            keys = sorted(str(k) for k in body.keys() if str(k).upper() != "PAT")
             logger.warning(
                 "reject POST /jobs 400: %s keys=%s jira_id=%s model=%s agent=%s branch=%s",
                 err,
@@ -223,9 +224,10 @@ class Manager:
                 jira_id=str(body.get("jira_id") or ""),
                 job_id="",
             )
-        req = JobRequest.model_validate(
-            {**body, "retry_count": max(1, int(body["retry_count"]))}
-        )
+        inbound = {**body, "retry_count": max(1, int(body["retry_count"]))}
+        if not str(inbound.get("agent_mode") or "").strip():
+            inbound["agent_mode"] = agent_mode_from_body(body)
+        req = JobRequest.model_validate(inbound)
         if req.callback_url and not callback_host_allowed(
             req.callback_url, self.settings.callback_allowed_hosts
         ):
@@ -311,9 +313,10 @@ class Manager:
                 job.started_at = utc_now()
                 self.store.save(job)
                 logger.info("dispatch now (slot free) started_at=%s", job.started_at)
-                self._start_thread(job, req.PAT)
+                self._start_thread(job)
                 text = "Job accepted and is now in progress."
             else:
+                payload.pop("PAT", None)
                 self.queue.enqueue(payload)
                 logger.info("queued FIFO (capacity full)")
                 text = "Job accepted and queued."
@@ -327,9 +330,7 @@ class Manager:
                 job_id=job.job_id,
             )
 
-    def _start_thread(self, job: JobRecord, pat: str) -> None:
-        job._pat = pat  # type: ignore[attr-defined]
-
+    def _start_thread(self, job: JobRecord) -> None:
         def _target() -> None:
             try:
                 run_pipeline(
@@ -370,7 +371,7 @@ class Manager:
                     continue
                 self._running += 1
                 logger.info("dequeue %s jira_id=%s running=%s", job.job_id, job.jira_id, self._running)
-                self._start_thread(job, str(nxt.get("PAT") or ""))
+                self._start_thread(job)
                 return
 
     def job_public(self, job_id: str) -> Optional[Dict[str, Any]]:

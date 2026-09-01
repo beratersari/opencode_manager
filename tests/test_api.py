@@ -30,7 +30,6 @@ class FakeRunner:
 def _body(**overrides):
     data = {
         "repo_url": "https://gitlab.example/g/r.git",
-        "PAT": "not-a-real-pat",
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",
@@ -69,6 +68,27 @@ def test_unknown_agent_400(tmp_settings: Settings) -> None:
     with _client(tmp_settings) as client:
         res = client.post("/jobs", json=_body(agent_mode="wizard"))
         assert res.status_code == 400
+
+
+def test_planner_agent_is_accepted(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=_body(agent_mode="planner", jira_id="PLAN-1"))
+        assert res.status_code == 202
+        job_id = res.json()["job_id"]
+        detail = client.get(f"/api/jobs/{job_id}").json()["job"]
+        assert detail["agent_mode"] == "plan"
+
+
+def test_agent_type_planner_is_accepted(tmp_settings: Settings) -> None:
+    body = _body(jira_id="PLAN-2")
+    del body["agent_mode"]
+    body["agent_type"] = "planner"
+    with _client(tmp_settings) as client:
+        res = client.post("/jobs", json=body)
+        assert res.status_code == 202
+        job_id = res.json()["job_id"]
+        detail = client.get(f"/api/jobs/{job_id}").json()["job"]
+        assert detail["agent_mode"] == "plan"
 
 
 def test_bad_model_400(tmp_settings: Settings) -> None:
@@ -174,11 +194,9 @@ def test_callback_host_not_allowed_is_400(tmp_settings: Settings) -> None:
         assert res.json()["job_id"] == ""
 
 
-def test_public_repo_without_pat_is_accepted(tmp_settings: Settings) -> None:
-    body = _body()
-    del body["PAT"]
+def test_job_without_pat_is_accepted(tmp_settings: Settings) -> None:
     with _client(tmp_settings) as client:
-        res = client.post("/jobs", json=body)
+        res = client.post("/jobs", json=_body())
         assert res.status_code == 202
         assert res.json()["job_id"].startswith("job_")
 

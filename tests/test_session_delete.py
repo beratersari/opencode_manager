@@ -36,7 +36,6 @@ class FakeRunner:
 def _job_body(**overrides):
     data = {
         "repo_url": "https://gitlab.example/g/r.git",
-        "PAT": "not-a-real-pat",
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",

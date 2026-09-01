@@ -9,14 +9,12 @@ from opencode_manager.settings import Settings
 
 _AZURE = "AZURE_E2E_PAT_TOKEN_9f3c"
 _GITLAB = "GITLAB_E2E_OAUTH_TOKEN_7a1b"
-_BODY = "BODY_E2E_PAT_TOKEN_4d2e"
 _COLON = "COLON_E2E_PAT_TOKEN_2c8a"
 
 
 def _body(repo_url: str, **overrides) -> dict:
     data = {
         "repo_url": repo_url,
-        "PAT": _BODY,
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/hy3-free",
@@ -48,11 +46,9 @@ def test_azure_username_pat_url_is_redacted_in_app_log(tmp_settings: Settings) -
         detail = client.get(f"/api/jobs/{job_id}").json()
         dumped = str(detail)
         assert _AZURE not in dumped
-        assert _BODY not in dumped
     text = _read_app_log(tmp_settings)
     assert "inbound POST /jobs" in text
     assert _AZURE not in text
-    assert _BODY not in text
     assert "https://***@127.0.0.1:1/" in text
 
 
@@ -80,6 +76,5 @@ def test_gitlab_oauth2_and_colon_userinfo_redacted_in_app_log(tmp_settings: Sett
     text = _read_app_log(tmp_settings)
     assert _GITLAB not in text
     assert _COLON not in text
-    assert _BODY not in text
     assert "https://***:***@127.0.0.1:1/" in text
     assert "https://:***@127.0.0.1:1/" in text

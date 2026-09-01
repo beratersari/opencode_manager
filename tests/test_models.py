@@ -9,7 +9,6 @@ from opencode_manager.models import (
 def _ok(**overrides):
     body = {
         "repo_url": "https://gitlab.example/group/repo.git",
-        "PAT": "secret-token",
         "source_branch": "develop",
         "prompt": "do the thing",
         "model": "opencode/hy3-free",
@@ -39,6 +38,29 @@ def test_bad_model():
 
 def test_unknown_agent():
     assert "agent_mode" in (validate_request_fields(_ok(agent_mode="codex")) or "")
+
+
+def test_planner_is_accepted_as_plan():
+    from opencode_manager.models import JobRequest, normalize_agent_mode
+
+    assert normalize_agent_mode("planner") == "plan"
+    assert normalize_agent_mode("PLANNER") == "plan"
+    assert normalize_agent_mode("Plan") == "plan"
+    assert validate_request_fields(_ok(agent_mode="planner")) is None
+    assert validate_request_fields(_ok(agent_mode="PLANNER")) is None
+    req = JobRequest.model_validate(_ok(agent_mode="planner"))
+    assert req.agent_mode == "plan"
+
+
+def test_agent_type_field_is_accepted():
+    from opencode_manager.models import JobRequest
+
+    body = _ok()
+    del body["agent_mode"]
+    body["agent_type"] = "planner"
+    assert validate_request_fields(body) is None
+    req = JobRequest.model_validate({**body, "agent_mode": "planner"})
+    assert req.agent_mode == "plan"
 
 
 def test_bad_callback():
@@ -93,12 +115,9 @@ def test_unsafe_jira_id_is_400():
         assert validate_request_fields(_ok(jira_id=jira_id)), jira_id
 
 
-def test_missing_or_empty_pat_is_ok():
-    body = _ok()
-    del body["PAT"]
-    assert validate_request_fields(body) is None
-    assert validate_request_fields(_ok(PAT="")) is None
-    assert validate_request_fields(_ok(PAT="   ")) is None
+def test_extra_pat_field_is_ignored_on_validate():
+    assert validate_request_fields(_ok()) is None
+    assert validate_request_fields(_ok(PAT="leftover")) is None
 
 
 def test_parse_model():
@@ -120,10 +139,8 @@ def test_retry_count_zero_is_coerced_by_request():
     assert req.retry_count == 1
 
 
-def test_job_request_allows_omitted_pat():
+def test_job_request_ignores_leftover_pat_field():
     from opencode_manager.models import JobRequest
 
-    body = _ok()
-    del body["PAT"]
-    req = JobRequest.model_validate(body)
-    assert req.PAT == ""
+    req = JobRequest.model_validate(_ok(PAT="leftover-should-drop"))
+    assert "PAT" not in req.model_dump()

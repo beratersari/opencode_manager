@@ -1,4 +1,4 @@
-"""PAT clone + remote branch check."""
+"""Direct clone of the request URL + remote branch check."""
 
 from __future__ import annotations
 
@@ -9,7 +9,17 @@ from typing import Callable, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 from opencode_manager.cleanup.kill import kill_pid
-from opencode_manager.git.auth import argv_helper_off, isolated_git_env
+from opencode_manager.git.auth import (
+    argv_helper_off,
+    creds_for_job,
+    forget_job_creds,
+    host_from_repo_url,
+    isolated_git_env,
+    is_git_auth_error,
+    prompt_windows_credentials,
+    remember_job_creds,
+    uses_windows_stored_creds,
+)
 from opencode_manager.log import (
     clip,
     fmt_cmd,
@@ -182,11 +192,59 @@ def _run_git(
     return result
 
 
+def _env_for_job(job: Optional["JobRecord"]) -> dict:
+    pair = creds_for_job(job.job_id if job else None)
+    if pair:
+        return isolated_git_env(username=pair[0], password=pair[1])
+    return isolated_git_env()
+
+
+def _run_git_maybe_prompt(
+    args: List[str],
+    *,
+    repo_url: str,
+    env: dict,
+    cwd: Optional[Path] = None,
+    timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess:
+    """Run git; on Windows auth failure, show a username/password dialog and retry once."""
+    try:
+        return _run_git(
+            args, env=env, cwd=cwd, timeout=timeout, job=job, store=store, should_stop=should_stop
+        )
+    except GitError as exc:
+        if not uses_windows_stored_creds() or not is_git_auth_error(str(exc)):
+            raise
+        job_id = job.job_id if job else ""
+        if creds_for_job(job_id):
+            raise
+        host = host_from_repo_url(repo_url)
+        logger.info("git needs credentials; prompting Windows dialog host=%s", host)
+        pair = prompt_windows_credentials(host)
+        if not pair:
+            raise GitError(
+                "git authentication required; Windows credential dialog was cancelled or empty"
+            ) from exc
+        remember_job_creds(job_id, pair[0], pair[1])
+        retry_env = isolated_git_env(username=pair[0], password=pair[1])
+        return _run_git(
+            args,
+            env=retry_env,
+            cwd=cwd,
+            timeout=timeout,
+            job=job,
+            store=store,
+            should_stop=should_stop,
+        )
+
+
 def ls_remote_has_branch(
     repo_url: str,
     branch: str,
     *,
-    pat: str,
     timeout: float,
     job: Optional["JobRecord"] = None,
     store: Optional["JobStore"] = None,
@@ -194,20 +252,25 @@ def ls_remote_has_branch(
 ) -> bool:
     logger.info("ls-remote --heads %s refs/heads/%s", redact(repo_url), branch)
     logger.info(
-        "git params op=ls-remote branch=%s pat_set=%s timeout=%ss",
+        "git params op=ls-remote branch=%s timeout=%ss win_stored_creds=%s",
         branch,
-        bool((pat or "").strip()),
         timeout,
+        uses_windows_stored_creds(),
     )
-    env = isolated_git_env(repo_url, pat)
-    result = _run_git(
-        ["ls-remote", "--heads", repo_url, f"refs/heads/{branch}"],
-        env=env,
-        timeout=timeout,
-        job=job,
-        store=store,
-        should_stop=should_stop,
-    )
+    env = _env_for_job(job)
+    try:
+        result = _run_git_maybe_prompt(
+            ["ls-remote", "--heads", repo_url, f"refs/heads/{branch}"],
+            repo_url=repo_url,
+            env=env,
+            timeout=timeout,
+            job=job,
+            store=store,
+            should_stop=should_stop,
+        )
+    except Exception:
+        forget_job_creds(job.job_id if job else None)
+        raise
     found = any(ls_remote_ref_is_branch(line, branch) for line in (result.stdout or "").splitlines())
     logger.info("ls-remote branch %s found=%s", branch, found)
     return found
@@ -218,47 +281,41 @@ def clone_repo(
     dest: Path,
     source_branch: str,
     *,
-    pat: str,
     timeout: float,
     job: Optional["JobRecord"] = None,
     store: Optional["JobStore"] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
     logger.info(
-        "git params op=clone dest=%s branch=%s pat_set=%s timeout=%ss repo=%s",
+        "git params op=clone dest=%s branch=%s timeout=%ss win_stored_creds=%s repo=%s",
         dest,
         source_branch,
-        bool((pat or "").strip()),
         timeout,
+        uses_windows_stored_creds(),
         redact(repo_url),
     )
-    env = isolated_git_env(repo_url, pat)
     dest.parent.mkdir(parents=True, exist_ok=True)
     git_kw = dict(job=job, store=store, should_stop=should_stop)
-    _run_git(
-        ["clone", "--branch", source_branch, "--single-branch", repo_url, str(dest)],
-        env=env,
-        timeout=timeout,
-        **git_kw,
-    )
-    _run_git(
-        ["checkout", source_branch],
-        env=env,
-        cwd=dest,
-        timeout=min(60.0, timeout),
-        **git_kw,
-    )
-    _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
-    gitmodules = dest / ".gitmodules"
-    if gitmodules.is_file():
-        logger.info(".gitmodules present; submodule update")
-        _run_git(
-            ["submodule", "update", "--init", "--recursive"],
+    try:
+        env = _env_for_job(job)
+        _run_git_maybe_prompt(
+            ["clone", "--branch", source_branch, "--single-branch", repo_url, str(dest)],
+            repo_url=repo_url,
             env=env,
-            cwd=dest,
             timeout=timeout,
             **git_kw,
         )
+        env = _env_for_job(job)
+        _run_git(
+            ["checkout", source_branch],
+            env=env,
+            cwd=dest,
+            timeout=min(60.0, timeout),
+            **git_kw,
+        )
+        _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
+    finally:
+        forget_job_creds(job.job_id if job else None)
 
 
 def _stored_origin_url(
@@ -292,9 +349,7 @@ def _scrub_origin(
     store: Optional["JobStore"] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
-    # Isolated GitLab PAT env sets url.<oauth2:PAT@host>/.insteadOf. `git remote
-    # get-url` expands that rewrite, so a clean stored origin looks like it
-    # still has userinfo. The stored config value is what clone left on disk.
+    # Read the stored config value, not `git remote get-url` (rewrites can lie).
     git_kw = dict(env=env, timeout=timeout, job=job, store=store, should_stop=should_stop)
     url = _stored_origin_url(dest, **git_kw)
     if origin_has_userinfo(url):

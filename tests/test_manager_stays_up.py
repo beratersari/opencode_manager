@@ -39,7 +39,6 @@ from opencode_manager.worker import OpenCodeRunner, Terminal, finish_job, run_pi
 def _body(**overrides):
     data = {
         "repo_url": "https://hostname.company.com.tr/test/test_project.git",
-        "PAT": "not-a-real-pat",
         "source_branch": "develop",
         "prompt": "do work",
         "model": "ollama/Restricted-Kimi-K2.6",

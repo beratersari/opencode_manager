@@ -1,4 +1,4 @@
-"""Persisted FIFO of queued jobs (includes PAT for this process only)."""
+"""Persisted FIFO of queued jobs."""
 
 from __future__ import annotations
 

@@ -33,7 +33,6 @@ STUB = Path(__file__).resolve().parent / "helpers" / "opencode_serve_compact.py"
 def _body(**overrides):
     data = {
         "repo_url": "https://github.com/carltongibson/django-filter.git",
-        "PAT": "",
         "source_branch": "develop",
         "prompt": "do work",
         "model": "opencode/mimo-v2.5-free",
@@ -155,7 +154,7 @@ def test_runner_refuses_dot_jira_and_leaves_sibling(tmp_settings: Settings) -> N
         status="running",
         live=True,
     )
-    job._pat = ""  # type: ignore[attr-defined]
+
     try:
         try:
             OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)

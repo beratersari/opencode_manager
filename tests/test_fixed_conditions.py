@@ -44,7 +44,6 @@ def _job(jira_id: str, **kwargs) -> JobRecord:
     )
     data.update(kwargs)
     job = JobRecord(**data)
-    job._pat = "secret"  # type: ignore[attr-defined]
     return job
 
 
@@ -254,7 +253,7 @@ def test_subprocess_timeout_on_ls_remote_becomes_giterror(monkeypatch) -> None:
 
     monkeypatch.setattr("opencode_manager.git.clone.subprocess.Popen", boom)
     with pytest.raises(GitError, match="timed out"):
-        ls_remote_has_branch("https://example/r.git", "develop", pat="x", timeout=1.0)
+        ls_remote_has_branch("https://example/r.git", "develop", timeout=1.0)
 
 
 def test_git_timeout_from_ls_remote_deletes_dest(tmp_settings: Settings, monkeypatch) -> None:

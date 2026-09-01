@@ -68,7 +68,6 @@ class OpenCodeRunner:
             if not ls_remote_has_branch(
                 job.repo_url,
                 job.source_branch,
-                pat=str(getattr(job, "_pat", "") or ""),
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,
@@ -87,7 +86,6 @@ class OpenCodeRunner:
                 job.repo_url,
                 dest,
                 job.source_branch,
-                pat=str(getattr(job, "_pat", "") or ""),
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,

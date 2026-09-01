@@ -8,9 +8,31 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 KNOWN_AGENTS = frozenset({"build", "plan", "general", "explore"})
+# Callers (n8n, testers) often send "planner"; OpenCode's agent id is "plan".
+AGENT_ALIASES = {"planner": "plan"}
+_AGENT_FIELD_KEYS = ("agent_mode", "agent_type", "agent")
+
+
+def normalize_agent_mode(value: str) -> Optional[str]:
+    """Lowercase, apply aliases, or None if not a known OpenCode agent."""
+    raw = (value or "").strip().lower()
+    if not raw:
+        return None
+    canon = AGENT_ALIASES.get(raw, raw)
+    if canon not in KNOWN_AGENTS:
+        return None
+    return canon
+
+
+def agent_mode_from_body(body: Dict[str, Any]) -> str:
+    """Prefer agent_mode; accept agent_type / agent as the same field."""
+    for key in _AGENT_FIELD_KEYS:
+        if key in body and body[key] is not None and str(body[key]).strip():
+            return str(body[key]).strip()
+    return ""
 _MODEL_RE = re.compile(r"^[^/\s]+/[^/\s].*$")
 # Ticket folder. Must be a strict child of work_dir — not ".", "..", or slashes.
 _JIRA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -28,8 +50,9 @@ def mint_job_id() -> str:
 
 
 class JobRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     repo_url: str
-    PAT: str = ""
     source_branch: str
     session_id: Optional[str] = None
     prompt: str
@@ -47,11 +70,6 @@ class JobRequest(BaseModel):
         if not text:
             raise ValueError("field must not be empty")
         return text
-
-    @field_validator("PAT")
-    @classmethod
-    def _optional_pat(cls, value: Optional[str]) -> str:
-        return (value or "").strip()
 
     @field_validator("callback_url")
     @classmethod
@@ -78,6 +96,14 @@ class JobRequest(BaseModel):
     @classmethod
     def _retries(cls, value: int) -> int:
         return 1 if int(value) < 1 else int(value)
+
+    @field_validator("agent_mode")
+    @classmethod
+    def _agent(cls, value: str) -> str:
+        canon = normalize_agent_mode(value)
+        if not canon:
+            raise ValueError(f"unknown agent_mode: {value}")
+        return canon
 
     @field_validator("timeout_in_seconds")
     @classmethod
@@ -193,7 +219,6 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         "source_branch",
         "prompt",
         "model",
-        "agent_mode",
         "timeout_in_seconds",
         "retry_count",
         "jira_id",
@@ -201,6 +226,8 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
     for key in required:
         if key not in body or body[key] is None or str(body[key]).strip() == "":
             return f"missing required field: {key}"
+    if not agent_mode_from_body(body):
+        return "missing required field: agent_mode"
     repo = str(body["repo_url"]).strip()
     lowered = repo.lower()
     if lowered.startswith("git@") or lowered.startswith("ssh://"):
@@ -213,9 +240,9 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         provider, _, name = model.partition("/")
         if not provider or not name:
             return "model must be provider/id"
-    agent = str(body["agent_mode"]).strip()
-    if agent not in KNOWN_AGENTS:
-        return f"unknown agent_mode: {agent}"
+    raw_agent = agent_mode_from_body(body)
+    if normalize_agent_mode(raw_agent) is None:
+        return f"unknown agent_mode: {raw_agent}"
     if "callback_url" in body and body["callback_url"] is not None and str(body["callback_url"]).strip():
         callback = str(body["callback_url"]).strip()
         cb = urlparse(callback)

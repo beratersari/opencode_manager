@@ -30,6 +30,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | `{pid, port}` recorded in `on_spawn` before health wait | `test_serve_pid_recorded_on_spawn_before_health_fails` |
 | `on_spawn` runs before `wait_health` | `test_start_serve_on_spawn_runs_before_wait_health` |
 | Failed health wait kills the child process | `test_start_serve_kills_child_when_health_times_out` |
+| After health, wait for the directory instance before `POST /session` | `test_instance_wait_runs_before_session_create`, `test_wait_directory_retries_until_session_list_returns` |
+| Directory instance timeout is `serve-dead` (not create-fail) | `test_instance_wait_timeout_is_serve_dead` |
 
 ## Clone path
 

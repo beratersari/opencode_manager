@@ -847,6 +847,11 @@ See §3.2 for why this is per job and how ports work.
 3. Wait until `GET /global/health` is 200, or fail this attempt
    (outer retry may apply). Boot time counts toward **this attempt’s**
    `timeout_in_seconds`.
+3a. Wait until the directory instance answers (`GET /session`).
+    Global health is process-level. The first `x-opencode-directory`
+    request creates the instance and can block while OpenCode
+    bootstraps the clone. That wait is still serve boot. Do not
+    time out `POST /session` at 30s during bootstrap.
 3b. `GET /config/providers` (fallback `GET /provider`). If the request
     `model` is not in that inventory: fail the job **500** now
     (`text` names the missing model and lists what this serve has).
@@ -1262,6 +1267,7 @@ build them).
 - [ ] Job HTTP to OpenCode uses only that job’s `serve_base_url`.
 - [ ] Do not publish job-serve ports off localhost.
 - [ ] Wait for `GET /global/health` 200; if boot fails, kill this child and fail this attempt (`serve-dead`). Do not leave the process up.
+- [ ] After health, wait for the directory instance (`GET /session`) before `POST /session`. Global health is not instance-ready.
 - [ ] Serve boot time counts toward **this attempt’s** `timeout_in_seconds`.
 - [ ] Send `x-opencode-directory: <clone>` on OpenCode requests.
 - [ ] Every user-message POST sends this job’s `model` as `{ providerID, modelID }` (split on first `/`). Same model for the whole job. No settings default.

@@ -151,6 +151,25 @@ def run_opencode_job(
                 assert client is not None
                 if not client.health():
                     raise AttemptFailed("serve-dead", "serve health failed")
+                remain = max(5.0, deadline - time.time())
+                wait_directory = getattr(client, "wait_directory", None)
+                if callable(wait_directory):
+                    try:
+                        wait_directory(timeout=remain, should_stop=should_stop)
+                    except TypeError:
+                        wait_directory(timeout=remain)
+                    except RuntimeError as exc:
+                        if "shutting down" in str(exc).lower():
+                            raise JobFailed(500, "manager shutting down") from exc
+                        raise AttemptFailed(
+                            "serve-dead",
+                            f"directory instance not ready: {exc}",
+                        ) from exc
+                    except Exception as exc:  # noqa: BLE001
+                        raise AttemptFailed(
+                            "serve-dead",
+                            f"directory instance not ready: {exc}",
+                        ) from exc
                 try:
                     known_models = client.list_known_models()
                 except Exception as exc:  # noqa: BLE001

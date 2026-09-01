@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
@@ -300,6 +300,12 @@ def assess_idle(messages: List[Dict[str, Any]]) -> str:
     return "incomplete"
 
 
+# First x-opencode-directory request can block while OpenCode bootstraps
+# the clone. /global/health is process-level and does not wait for that.
+_INSTANCE_PROBE_TIMEOUT_S = 120.0
+_SESSION_CREATE_TIMEOUT_S = 120.0
+
+
 class OpenCodeClient:
     def __init__(self, base_url: str, directory: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -316,6 +322,46 @@ class OpenCodeClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    def wait_directory(
+        self,
+        timeout: float,
+        *,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> None:
+        """Block until the clone-scoped instance answers GET /session.
+
+        Serve health is not enough. OpenCode creates the instance on the
+        first ``x-opencode-directory`` request and may hold that call
+        while it bootstraps a large tree.
+        """
+        deadline = time.time() + max(0.1, float(timeout))
+        last: Optional[str] = None
+        logger.info(
+            "instance wait GET /session timeout=%ss directory=%s",
+            timeout,
+            clip(self.directory, 200),
+        )
+        while time.time() < deadline:
+            if should_stop and should_stop():
+                raise RuntimeError("manager shutting down")
+            remain = max(0.2, deadline - time.time())
+            try:
+                response = self.http.get(
+                    "/session",
+                    headers=self.headers,
+                    timeout=min(remain, _INSTANCE_PROBE_TIMEOUT_S),
+                )
+            except Exception as exc:  # noqa: BLE001
+                last = str(exc)
+                time.sleep(0.4)
+                continue
+            if response.status_code < 500:
+                logger.info("instance ready GET /session -> %s", response.status_code)
+                return
+            last = f"HTTP {response.status_code}"
+            time.sleep(0.4)
+        raise TimeoutError(f"opencode directory instance not ready last={last}")
 
     def list_known_models(self) -> List[str]:
         """Model ids this serve will accept (``provider/id``). Empty if unknown."""
@@ -373,7 +419,12 @@ class OpenCodeClient:
     def create_session(self, title: str) -> str:
         logger.info("POST /session title=%s", clip(title, 120))
         try:
-            response = self.http.post("/session", json={"title": title}, headers=self.headers, timeout=30.0)
+            response = self.http.post(
+                "/session",
+                json={"title": title},
+                headers=self.headers,
+                timeout=_SESSION_CREATE_TIMEOUT_S,
+            )
         except Exception as exc:  # noqa: BLE001
             log_http(logger, "POST", "/session", err=exc, ok=False)
             raise

@@ -172,7 +172,13 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - If `GET /global/health` is not 200 in time: kill **this** child,
   fail **this** attempt (`serve-dead`). Outer `retry_count` applies.
   Do not leave the process up.
-- After health, check `GET /config/providers` (then `/provider`).
+- After health, wait until the directory instance answers
+  (`GET /session`). `/global/health` is process-level; the first
+  `x-opencode-directory` request creates the instance and can block
+  while OpenCode bootstraps the clone. That wait is serve boot
+  (counts toward `timeout_in_seconds`). Do not fail `POST /session`
+  at 30s while the instance is still booting.
+- Then check `GET /config/providers` (then `/provider`).
   If the request `model` is not on this serve: fail the **job**
   `500` immediately with the available ids. Do not POST a user
   message. Do not hang-wait. Do not spend remaining `retry_count`.

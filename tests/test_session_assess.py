@@ -1,4 +1,7 @@
 import json
+import time
+
+import pytest
 
 from opencode_manager.opencode.retry import _log_every
 from opencode_manager.opencode.session import (
@@ -155,6 +158,70 @@ def test_snapshot_chat_pulls_tool_state_and_reasoning() -> None:
     assert tools[0]["input"] == {"command": "echo 6"}
     think = [p for p in snap[1]["parts"] if p["type"] == "reasoning"]
     assert think[0]["text"] == "I will run bash"
+
+
+def test_wait_directory_retries_until_session_list_returns() -> None:
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from opencode_manager.opencode.session import OpenCodeClient
+
+    hits = {"n": 0}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_a) -> None:  # noqa: ANN002
+            return
+
+        def do_GET(self) -> None:  # noqa: N802
+            hits["n"] += 1
+            if hits["n"] == 1:
+                self.close_connection = True
+                return
+            raw = json.dumps([]).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    client = OpenCodeClient(f"http://127.0.0.1:{server.server_address[1]}", "/tmp/clone")
+    try:
+        client.wait_directory(timeout=3.0)
+        assert hits["n"] >= 2
+    finally:
+        client.close()
+        server.shutdown()
+
+
+def test_wait_directory_times_out_when_session_list_never_answers() -> None:
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from opencode_manager.opencode.session import OpenCodeClient
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_a) -> None:  # noqa: ANN002
+            return
+
+        def do_GET(self) -> None:  # noqa: N802
+            time.sleep(2.0)
+            self.send_response(503)
+            self.end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    client = OpenCodeClient(f"http://127.0.0.1:{server.server_address[1]}", "/tmp/clone")
+    try:
+        with pytest.raises(TimeoutError, match="directory instance not ready"):
+            client.wait_directory(timeout=0.6)
+    finally:
+        client.close()
+        server.shutdown()
 
 
 def test_live_chat_does_not_call_opencode_with_dash_one_session(monkeypatch) -> None:

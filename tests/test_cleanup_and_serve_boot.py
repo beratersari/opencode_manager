@@ -199,6 +199,131 @@ def test_serve_boot_timeout_uses_retry_count(tmp_settings: Settings, monkeypatch
     assert [row.kind for row in job.attempts] == ["serve-dead", "serve-dead", "serve-dead"]
 
 
+def test_instance_wait_runs_before_session_create(tmp_settings: Settings, monkeypatch) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    clone = tmp_settings.work_dir / "clone"
+    clone.mkdir()
+    job = JobRecord(
+        job_id="job_instwait",
+        jira_id="T-INST",
+        prompt="do it",
+        model="opencode/hy3-free",
+        agent_mode="build",
+        retry_count=1,
+        timeout_in_seconds=30,
+        status="running",
+    )
+    order: list[str] = []
+
+    class _Handle:
+        pid = 4243
+        port = 9
+        base_url = "http://127.0.0.1:9"
+
+    class _Client:
+        def __init__(self, *_a, **_k) -> None:
+            return None
+
+        def health(self) -> bool:
+            order.append("health")
+            return True
+
+        def wait_directory(self, timeout: float, should_stop=None) -> None:  # noqa: ANN001, ARG002
+            order.append("wait")
+
+        def list_known_models(self) -> list[str]:
+            order.append("models")
+            return ["opencode/hy3-free"]
+
+        def resume_or_create(self, inbound, title):  # noqa: ANN001, ARG002
+            order.append("create")
+            raise RuntimeError("stop after create")
+
+        def close(self) -> None:
+            return None
+
+        def abort(self, *_a, **_k) -> None:
+            return None
+
+    monkeypatch.setattr("opencode_manager.opencode.retry.start_serve", lambda **_k: _Handle())
+    monkeypatch.setattr("opencode_manager.opencode.retry.stop_serve", lambda *_a, **_k: None)
+    monkeypatch.setattr("opencode_manager.opencode.retry.OpenCodeClient", _Client)
+    monkeypatch.setattr("opencode_manager.opencode.retry.kill_pid", lambda *_a, **_k: None)
+    with pytest.raises(JobFailed):
+        run_opencode_job(
+            job,
+            settings=tmp_settings,
+            store=store,
+            clone=clone,
+            should_stop=lambda: False,
+        )
+    assert order[:4] == ["health", "wait", "models", "create"]
+
+
+def test_instance_wait_timeout_is_serve_dead(tmp_settings: Settings, monkeypatch) -> None:
+    tmp_settings.retry_backoff_seconds = 0.0
+    tmp_settings.retry_backoff_cap_seconds = 0.0
+    store = JobStore(tmp_settings.job_store_dir)
+    clone = tmp_settings.work_dir / "clone"
+    clone.mkdir()
+    job = JobRecord(
+        job_id="job_instdead",
+        jira_id="T-INSTDEAD",
+        prompt="do it",
+        model="opencode/hy3-free",
+        agent_mode="build",
+        retry_count=2,
+        timeout_in_seconds=30,
+        status="running",
+    )
+    waits = {"n": 0}
+
+    class _Handle:
+        pid = 4244
+        port = 9
+        base_url = "http://127.0.0.1:9"
+
+    class _Client:
+        def __init__(self, *_a, **_k) -> None:
+            return None
+
+        def health(self) -> bool:
+            return True
+
+        def wait_directory(self, timeout: float, should_stop=None) -> None:  # noqa: ANN001, ARG002
+            waits["n"] += 1
+            raise TimeoutError("ReadTimeout")
+
+        def list_known_models(self) -> list[str]:
+            raise AssertionError("must not list models before instance is ready")
+
+        def resume_or_create(self, *_a, **_k):
+            raise AssertionError("must not POST /session before instance is ready")
+
+        def close(self) -> None:
+            return None
+
+        def abort(self, *_a, **_k) -> None:
+            return None
+
+    monkeypatch.setattr("opencode_manager.opencode.retry.start_serve", lambda **_k: _Handle())
+    monkeypatch.setattr("opencode_manager.opencode.retry.stop_serve", lambda *_a, **_k: None)
+    monkeypatch.setattr("opencode_manager.opencode.retry.OpenCodeClient", _Client)
+    monkeypatch.setattr("opencode_manager.opencode.retry.kill_pid", lambda *_a, **_k: None)
+    with pytest.raises(JobFailed) as excinfo:
+        run_opencode_job(
+            job,
+            settings=tmp_settings,
+            store=store,
+            clone=clone,
+            should_stop=lambda: False,
+        )
+    assert excinfo.value.status_code == 500
+    assert waits["n"] == 2
+    assert [row.kind for row in job.attempts] == ["serve-dead", "serve-dead"]
+    assert "directory instance not ready" in (job.attempts[-1].error or "")
+
+
 def test_unknown_model_fails_job_before_prompt(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     clone = tmp_settings.work_dir / "clone"

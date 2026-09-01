@@ -5,7 +5,7 @@ You POST a job. OSM clones the branch, runs a per-job `opencode serve`, and
 POSTs **one** terminal result to the `callback_url` you sent. The product is
 **text** (the last assistant message). The dashboard at `/jobs` is read-only.
 
-Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md).
+Design: [PLAN.md](PLAN.md). Rules: [AGENTS.md](AGENTS.md). Türkçe mimari / dosya rehberi: [README.tr.md](README.tr.md).
 
 ## How another system should use this
 

@@ -363,6 +363,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     `vendor/python/darwin-arm64|darwin-x64/bin/python3`), then install from
     `vendor/python-wheels` and check `web/dist`. Do not use a
     system Python. Recreate `.venv` from scratch each install.
+    On Linux, if `/var/lib/osm` is not writable and
+    `settings.local.yaml` is absent, `install.sh` writes that overlay
+    with `data_dir` = `$XDG_DATA_HOME/osm` or `~/.local/share/osm`.
+    The code default stays `/var/lib/osm`. Do not require root for
+    `./install.sh` then `./start.sh`. Restore `+x` on the zip-root
+    launchers (some extractors drop Unix modes).
   - `install-opencode.bat` / `install-opencode.sh` — OpenCode CLI
     only. Install root is `<user>/.opencode` (Windows:
     `%USERPROFILE%\.opencode`, not AppData). Detect that folder,

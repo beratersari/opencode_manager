@@ -42,6 +42,7 @@ fi
 
 # shellcheck source=osm-lib.sh
 . "$ROOT/scripts/osm-lib.sh"
+osm_chmod_launchers "$ROOT"
 BUNDLED_PY="$(osm_require_bundled_python "$ROOT")" || exit 1
 PYTHON_VERSION="$("$BUNDLED_PY" --version 2>&1)"
 echo "[OK] Bundled $PYTHON_VERSION ($(osm_os_tag))"
@@ -81,6 +82,12 @@ if [[ -d "$WEB_DIST/assets" ]]; then
   echo "[OK] Prebuilt dashboard SPA present: web/dist"
 else
   echo "[WARNING] web/dist/assets missing — UI may not load"
+fi
+
+if [[ "$(osm_os_tag)" == "linux" ]]; then
+  echo
+  echo "Step 4: data_dir..."
+  osm_ensure_linux_data_dir "$ROOT"
 fi
 
 echo

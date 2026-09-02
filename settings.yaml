@@ -14,8 +14,10 @@ callback_retry_count: 3
 callback_allowed_hosts: ["*"]
 # One root for everything OSM writes:
 #   .temp/ clones, .serve/ serve logs, logs/, jobs/, queue.json
-# Windows default: C:\osm
-data_dir: /var/lib/osm
+# Omit data_dir to use the OS default (Windows C:\osm, Linux /var/lib/osm).
+# Override here or in settings.local.yaml (gitignored).
+# On Linux, install.sh writes settings.local.yaml to
+# $XDG_DATA_HOME/osm (or ~/.local/share/osm) when /var/lib/osm is not writable.
 # Minimum log level: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 log_level: INFO
 # OpenCode CLI (PATH name or absolute path).

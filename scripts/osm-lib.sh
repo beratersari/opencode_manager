@@ -50,6 +50,60 @@ osm_require_bundled_python() {
   echo "$path"
 }
 
+# Zip extractors (python -m zipfile, some GUIs) drop Unix +x. Restore launchers.
+osm_chmod_launchers() {
+  local root="$1"
+  local f
+  for f in \
+    install.sh install-opencode.sh start.sh start-backend.sh start-frontend.sh \
+    scripts/install.sh scripts/install-opencode.sh scripts/start.sh \
+    scripts/start-backend.sh scripts/start-frontend.sh scripts/osm-lib.sh
+  do
+    if [[ -f "$root/$f" ]]; then
+      chmod +x "$root/$f" 2>/dev/null || true
+    fi
+  done
+}
+
+# Linux default is /var/lib/osm (needs root once). If this user cannot
+# write it and there is no settings.local.yaml, write one pointing at
+# $XDG_DATA_HOME/osm or ~/.local/share/osm so ./start.sh works.
+osm_ensure_linux_data_dir() {
+  local root="$1"
+  local default_dir="/var/lib/osm"
+  local local_yaml="$root/settings.local.yaml"
+
+  if [[ -f "$local_yaml" ]]; then
+    echo "[OK] settings.local.yaml present (data_dir overlay left as-is)"
+    return 0
+  fi
+
+  if mkdir -p "$default_dir" 2>/dev/null && [[ -w "$default_dir" ]]; then
+    echo "[OK] data_dir $default_dir"
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1 && sudo -n mkdir -p "$default_dir" 2>/dev/null; then
+    sudo -n chown "$(id -u):$(id -g)" "$default_dir" 2>/dev/null || true
+    if [[ -w "$default_dir" ]]; then
+      echo "[OK] created $default_dir (sudo)"
+      return 0
+    fi
+  fi
+
+  local fallback="${XDG_DATA_HOME:-$HOME/.local/share}/osm"
+  mkdir -p "$fallback"
+  cat > "$local_yaml" <<EOF
+# /var/lib/osm is not writable without root.
+# To use the default instead:
+#   sudo mkdir -p /var/lib/osm && sudo chown \$USER /var/lib/osm
+#   rm settings.local.yaml
+data_dir: $fallback
+EOF
+  echo "[WARNING] Cannot write $default_dir (need root once)."
+  echo "          Wrote settings.local.yaml -> $fallback"
+}
+
 # Rebuild web/dist from web/src when local Vite exists (dev tree).
 # Offline zips have no web/node_modules — they keep the shipped dist.
 osm_refresh_web_dist() {

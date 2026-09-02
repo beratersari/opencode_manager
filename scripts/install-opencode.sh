@@ -16,6 +16,7 @@ fi
 cd "$ROOT"
 # shellcheck source=osm-lib.sh
 . "$ROOT/scripts/osm-lib.sh"
+osm_chmod_launchers "$ROOT"
 
 echo "========================================"
 echo "  OpenCode Session Manager"

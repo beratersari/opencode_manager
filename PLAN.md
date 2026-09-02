@@ -961,6 +961,15 @@ Two sinks, **one data root** (`data_dir`):
 
 Create the directories on startup if they do not exist.
 
+Shipped `settings.yaml` omits `data_dir` so the OS default applies
+(do not hardcode `/var/lib/osm` in the Windows zip). On Linux,
+`install.sh` tries `/var/lib/osm`. If that path is not writable and
+`settings.local.yaml` is missing, it writes
+`data_dir: $XDG_DATA_HOME/osm` (or `~/.local/share/osm`) so a
+non-root `./install.sh` / `./start.sh` still works. Passwordless
+`sudo` may create `/var/lib/osm` and chown it instead. The code
+default stays `/var/lib/osm`.
+
 Every line:
 
 ```

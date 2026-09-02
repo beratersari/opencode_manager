@@ -158,6 +158,21 @@ def test_install_sh_picks_os_specific_python() -> None:
     lib = (root / "scripts" / "osm-lib.sh").read_text(encoding="utf-8")
     assert "darwin-arm64" in lib
     assert "darwin-x64" in lib
+    assert "osm_ensure_linux_data_dir" in lib
+    assert "osm_chmod_launchers" in lib
+    assert "osm_ensure_linux_data_dir" in text
+    assert "osm_chmod_launchers" in text
+
+
+def test_shipped_settings_yaml_does_not_force_linux_data_dir() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "settings.yaml").read_text(encoding="utf-8")
+    active = [
+        line
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert not any(line.startswith("data_dir:") for line in active)
 
 
 def test_install_scripts_are_offline_only() -> None:

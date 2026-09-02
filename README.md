@@ -276,7 +276,10 @@ start.bat
 
 `install.bat` / `install.sh` install the manager only: they create
 `.venv` with the bundled `python.exe` / `python3`, then install wheels
-and check the prebuilt SPA. They never hit PyPI or npm. OpenCode is a separate
+and check the prebuilt SPA. They never hit PyPI or npm. On Linux, if
+`/var/lib/osm` is not writable, `install.sh` writes `settings.local.yaml`
+to `$XDG_DATA_HOME/osm` or `~/.local/share/osm` so `./start.sh` works
+without root. OpenCode is a separate
 installer: `install-opencode.*` deletes `<user>/.opencode` (Windows:
 `%USERPROFILE%\.opencode`) and copies `vendor/bin` from scratch.
 `start-frontend` is a Python SPA proxy on `:5173` (not Vite). The manager

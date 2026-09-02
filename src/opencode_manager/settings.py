@@ -65,12 +65,21 @@ class Settings:
         self.apply_layout()
         assert self.work_dir and self.job_log_dir and self.job_store_dir
         assert self.queue_path and self.serve_dir and self.app_log_path
-        self.work_dir.mkdir(parents=True, exist_ok=True)
-        self.job_log_dir.mkdir(parents=True, exist_ok=True)
-        self.job_store_dir.mkdir(parents=True, exist_ok=True)
-        self.serve_dir.mkdir(parents=True, exist_ok=True)
-        self.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        self.app_log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+            self.job_log_dir.mkdir(parents=True, exist_ok=True)
+            self.job_store_dir.mkdir(parents=True, exist_ok=True)
+            self.serve_dir.mkdir(parents=True, exist_ok=True)
+            self.queue_path.parent.mkdir(parents=True, exist_ok=True)
+            self.app_log_path.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError as exc:
+            raise PermissionError(
+                f"Cannot create data_dir layout under {self.data_dir}. "
+                "On Linux either "
+                '`sudo mkdir -p /var/lib/osm && sudo chown "$USER" /var/lib/osm` '
+                "or set data_dir in settings.local.yaml to a writable path. "
+                "install.sh writes that overlay when /var/lib/osm is not writable."
+            ) from exc
 
 
 def _as_path(value: Any, default: Path) -> Path:

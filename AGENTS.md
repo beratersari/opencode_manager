@@ -394,12 +394,17 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   as virtual_developer `web/` (React + Vite + Tailwind + Geist).
 - Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
   No cancel, delete, settings, schedules, or storage actions.
-  **Report issue** on job detail is a local zip download (note +
-  job JSON + prompts + chat + OSM job log + OpenCode serve log).
-  The note is not stored. `GET /api/jobs/:id/logs?limit=0` is the
-  whole manager log; `GET /api/jobs/:id/serve-log` is
-  `{data_dir}/.serve/{job_id}.log` (redacted). Default logs
-  `limit=2000` stays for the Logs tab.
+  **Report issue** is in the sidebar (pick a job or general) and
+  on job detail. Client-built zip from GET data. The note is not
+  stored. Job zip: note, meta, runtime, safe settings, queue,
+  app.log, crash.log, wrapper-exit.log, recent OpenCode CLI logs,
+  job record, parameters, attempts, prompts, chat (json+md), OSM
+  job log, this job's OpenCode serve log, clone/git explanation
+  (no live clone scan — the tree is deleted at job end).
+  `GET /api/report-context` is process extras (redacted, capped).
+  `GET /api/jobs/:id/logs?limit=0` is the whole manager log;
+  `GET /api/jobs/:id/serve-log` is `{data_dir}/.serve/{job_id}.log`
+  (redacted). Default logs `limit=2000` stays for the Logs tab.
 - Persist a history row per `job_id`. Keep it after
   clone delete and after boot leftover ERROR. 409 is only running or
   queued. Job JSON is parsed with `json.loads` + `model_validate`

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchChat, fetchJob, fetchLogs, fetchPrompts, fetchServeLog } from '../../api/client'
+import { downloadIssueReport } from '../../util/downloadReport'
 import type { ChatMessage, JobItem, LogLine, PromptRow } from '../../api/types'
 import { useLive } from '../../app/live'
 import { LiveDot } from '../../ui/LiveDot'
@@ -9,9 +10,7 @@ import { MetaCard } from '../../ui/MetaCard'
 import { ReportIssueDialog } from '../../ui/ReportIssueDialog'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Tabs } from '../../ui/Tabs'
-import { downloadBlob } from '../../util/download'
-import { buildJobReportFiles, reportNoteReady, reportZipName } from '../../util/jobReport'
-import { zipTextFiles } from '../../util/zipStore'
+import { reportNoteReady } from '../../util/jobReport'
 import { JobChatTab } from './JobChatTab'
 
 type Tab = 'overview' | 'prompt' | 'chat' | 'logs'
@@ -89,25 +88,7 @@ export function JobDetailPage() {
       setReportBusy(true)
       setReportError(null)
       try {
-        const [body, p, c, l, serve] = await Promise.all([
-          fetchJob(id),
-          fetchPrompts(id),
-          fetchChat(id),
-          fetchLogs(id, { limit: 0 }),
-          fetchServeLog(id),
-        ])
-        const files = buildJobReportFiles({
-          job: body.job,
-          prompts: p.prompts || [],
-          messages: c.messages || [],
-          logs: l.lines || [],
-          serveLog: serve.text || '',
-          serveLogMissing: serve.missing,
-          note,
-          exportedAt: new Date().toISOString(),
-        })
-        const zip = zipTextFiles(files)
-        downloadBlob(reportZipName(body.job), zip, 'application/zip')
+        await downloadIssueReport({ kind: 'job', jobId: id, note })
         setReportOpen(false)
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to build report')

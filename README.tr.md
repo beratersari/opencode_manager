@@ -788,6 +788,7 @@ Yazma yalnızca `POST /jobs` ve `DELETE /sessions`. Dashboard `/api/*` GET-only;
 | GET | `/api/jobs/{id}/logs?limit=` | Per-job manager log (`0` = tamamı) |
 | GET | `/api/jobs/{id}/serve-log` | OpenCode serve log (redakte) |
 | GET | `/api/queue?jira_id=` | Kuyruk |
+| GET | `/api/report-context` | Issue zip için süreç ekleri (ayarlar, runtime, app/crash log) |
 | GET | `/jobs`, `/jobs/:id` | SPA |
 
 Canlı chat: yalnızca `session_id` `ses_*` ise OpenCode'a gidilir. `-1` / boş ile `/session/-1/message` çağrılmaz.
@@ -801,7 +802,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 - `/` → `/jobs`
 - `/jobs` — All / In flight / Error / Completed / Queue, `jira_id` arama, sayfalama
 - `/jobs/:jobId` — meta, denemeler, prompt'lar, sohbet, OSM log, serve log
-- **Report issue**: yerel zip (not + job JSON + prompt + chat + OSM log + serve log). Not saklanmaz.
+- **Report issue**: kenar çubuğundan iş seçilir (veya genel). Yerel zip (not + meta/runtime/ayarlar/kuyruk + app/crash/wrapper log + job kaydı/parametre/denemeler + prompt + chat json/md + OSM log + serve log + clone açıklaması). Not saklanmaz.
 - Bilinmeyen id önceki işi ekranda bırakmaz
 
 İki sunum:
@@ -915,8 +916,8 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 | `src/pages/jobs/JobDetailPage.tsx` | Detay sekmeleri + report zip |
 | `src/pages/jobs/JobChatTab.tsx` | Sohbet UI |
 | `src/pages/jobs/filters.ts` | Filtre anahtarları |
-| `src/ui/*` | StatusBadge, Tabs, MarkdownBody, ReportIssueDialog, … |
-| `src/util/jobReport.ts` / `zipStore.ts` / `download.ts` | Yerel issue zip |
+| `src/ui/*` | StatusBadge, Tabs, MarkdownBody, ReportIssue, ReportIssueDialog, … |
+| `src/util/jobReport.ts` / `downloadReport.ts` / `zipStore.ts` / `download.ts` | Yerel issue zip |
 | `src/util/chatParts.ts` / `chatMarkup.ts` / `time.ts` | Sohbet parçaları, markdown, zaman |
 | `web/dist/` | Offline / manager'ın sunduğu build |
 

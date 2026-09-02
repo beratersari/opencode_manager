@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from opencode_manager import __version__
 from opencode_manager.dashboard.chat import job_chat_payload
+from opencode_manager.dashboard.report import build_report_context
 from opencode_manager.log import get_logger, read_job_log_lines, redact
 from opencode_manager.manager import Manager
 from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
@@ -226,6 +227,12 @@ def api_queue(request: Request, jira_id: Optional[str] = None) -> Dict[str, Any]
         "queued_count": len(items),
         "server_time": utc_now(),
     }
+
+
+@router.get("/api/report-context")
+def api_report_context(request: Request) -> Dict[str, Any]:
+    """Process extras for the client-built issue zip. GET-only; note is not stored."""
+    return build_report_context(_mgr(request))
 
 
 @router.api_route("/api/{full_path:path}", methods=["POST", "PATCH", "PUT", "DELETE"])

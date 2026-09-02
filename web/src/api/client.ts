@@ -1,4 +1,4 @@
-import type { JobChatPayload, JobItem, JobsPayload, LogLine, PromptRow } from './types'
+import type { JobChatPayload, JobItem, JobsPayload, LogLine, PromptRow, ReportContext } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -61,6 +61,10 @@ export function fetchQueue(opts?: { jiraId?: string }) {
 
 export function fetchMeta() {
   return request<{ version: string; server_time: string; app_name: string }>('/api/meta')
+}
+
+export function fetchReportContext() {
+  return request<ReportContext>('/api/report-context')
 }
 
 export function dashboardWsUrl(): string {

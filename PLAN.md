@@ -1456,11 +1456,17 @@ Windows).
 | **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve, and only if `session_id` is `ses_*` (empty / `-1` / other placeholders are no session — do not GET `/session/-1/message`). After serve is dead: **this job’s** persisted snapshot (never replace from global `opencode.db` by shared `session_id` — later tickets reuse the same `ses_*`). Missing tool output on existing snapshot ids may be filled from the db. Never require the clone to still exist. No Codex path. |
 | **Logs** | OSM job log `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`, then OpenCode serve stdout/stderr `GET /api/jobs/{id}/serve-log`. |
 
-No Stop / Delete. Refresh + live WS only. **Report issue** on
-job detail is a client-built zip from GET data (note, job JSON,
-prompts, chat, OSM log via `GET /api/jobs/{id}/logs?limit=0`,
-OpenCode serve log via `GET /api/jobs/{id}/serve-log`).
-The note is not persisted. No POST.
+No Stop / Delete. Refresh + live WS only. **Report issue** is in
+the sidebar (select a job or general) and on job detail. Client-built
+zip from GET data. The note is not persisted. No POST.
+Job zip: note, meta, runtime, safe settings, queue, `app.log`,
+`crash.log`, `wrapper-exit.log`, recent OpenCode CLI logs, job
+record / parameters / attempts, prompts, chat (`json` + `md`), OSM
+job log (`GET /api/jobs/{id}/logs?limit=0`), this job's serve log
+(`GET /api/jobs/{id}/serve-log`), clone/git explanation (no live
+`git` in the deleted tree). Process extras come from
+`GET /api/report-context` (redacted, capped). General zip is the
+process extras + note only.
 
 **Do not show:** PAT, URLs with userinfo, MR / commit / feature branch /
 delivery, Codex, Jira description, workflow_type, worker backend
@@ -1482,6 +1488,7 @@ not under `/api`.
 | GET | `/api/jobs/{job_id}/logs` | job-log lines for this id. `limit` (default 2000, last N). `limit=0` = whole file (report zip). |
 | GET | `/api/jobs/{job_id}/serve-log` | this job's `opencode serve` stdout/stderr (`{data_dir}/.serve/{job_id}.log`, redacted). `{ text, missing }`. |
 | GET | `/api/queue` | queued rows, optional `jira_id`. No PAT, no `callback_url` secrets required on the card |
+| GET | `/api/report-context` | process extras for the issue zip: safe settings, runtime, queue, capped `app.log` / `crash.log` / wrapper-exit / recent OpenCode CLI logs. No note, no write. |
 | WS | `/ws` | live snapshot: running count, queue count, generation. No settings/poll payload. |
 
 404 if the id is unknown. Never put PAT in a response.
@@ -1509,7 +1516,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Prod: manager serves `web/dist` on the same `listen_port`. Dev: Vite proxies `/api` and `/ws`.
 - [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, started_at, error preview.
 - [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25. List filters paginate on the server; Queue search uses `/api/queue?jira_id=`.
-- [ ] No Delete, no bulk-select, no Stop, no queue Cancel. Report issue is a GET-only zip download on job detail (note not stored).
+- [ ] No Delete, no bulk-select, no Stop, no queue Cancel. Report issue is a GET-only zip download (sidebar job picker + job detail; note not stored).
 - [ ] Job detail tabs: Details, Prompt, Transcript, Logs.
 - [ ] Details shows the §17.3 meta fields, last assistant text, and the attempts table.
 - [ ] Prompt tab lists every user message we POSTed (`ORIGINAL` + orchestrator ids) with exact text.
@@ -1521,7 +1528,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Persist attempt rows (kind, prompt id, error, session_id, time) on each outer retry.
 - [ ] Persist a chat snapshot during the poll loop and at job end.
 - [ ] History JSON and every `/api` body omit the PAT and any URL userinfo.
-- [ ] `GET /api/meta`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/prompts`, `/api/jobs/{id}/chat`, `/api/jobs/{id}/logs` (`limit=0` = whole file), `/api/jobs/{id}/serve-log`, `/api/queue`.
+- [ ] `GET /api/meta`, `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/prompts`, `/api/jobs/{id}/chat`, `/api/jobs/{id}/logs` (`limit=0` = whole file), `/api/jobs/{id}/serve-log`, `/api/queue`, `/api/report-context`.
 - [ ] `WS /ws` pushes running/queue counts (no poll/settings payload).
 - [ ] POST / PATCH / DELETE under `/api` → **405**.
 - [ ] Boot leftover running/queued → history ERROR, no callback; not `409`.

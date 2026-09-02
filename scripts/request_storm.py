@@ -61,6 +61,7 @@ def build_cases() -> List[Tuple[str, str, str, Any]]:
         "/api/jobs?jira_id=STORM-1",
         "/api/queue",
         "/api/queue?jira_id=STORM-1",
+        "/api/report-context",
         "/jobs",
         "/",
     ):
@@ -92,6 +93,7 @@ def build_cases() -> List[Tuple[str, str, str, Any]]:
 
     # Dashboard writes must stay GET-only
     for method, path in (
+        ("POST", "/api/report-context"),
         ("POST", "/api/jobs"),
         ("PATCH", "/api/jobs/x"),
         ("PUT", "/api/jobs/x"),

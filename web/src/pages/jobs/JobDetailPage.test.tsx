@@ -1,7 +1,7 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JobDetailPage } from './JobDetailPage'
 
 const fetchJob = vi.fn()
@@ -9,6 +9,7 @@ const fetchPrompts = vi.fn()
 const fetchChat = vi.fn()
 const fetchLogs = vi.fn()
 const fetchServeLog = vi.fn()
+const fetchReportContext = vi.fn()
 
 vi.mock('../../api/client', () => ({
   fetchJob: (...args: unknown[]) => fetchJob(...args),
@@ -16,6 +17,7 @@ vi.mock('../../api/client', () => ({
   fetchChat: (...args: unknown[]) => fetchChat(...args),
   fetchLogs: (...args: unknown[]) => fetchLogs(...args),
   fetchServeLog: (...args: unknown[]) => fetchServeLog(...args),
+  fetchReportContext: (...args: unknown[]) => fetchReportContext(...args),
 }))
 
 vi.mock('../../app/live', () => ({
@@ -48,6 +50,19 @@ const jobB = {
 }
 
 describe('JobDetailPage', () => {
+  beforeEach(() => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    fetchReportContext.mockResolvedValue({
+      meta: { app_name: 'OpenCode Session Manager' },
+      runtime: {},
+      settings: {},
+      queue: { items: [], queued_count: 0 },
+      app_log: { text: '', missing: true },
+      crash_log: { text: '', missing: true },
+    })
+  })
+
   afterEach(() => {
     cleanup()
     fetchJob.mockReset()
@@ -55,6 +70,8 @@ describe('JobDetailPage', () => {
     fetchChat.mockReset()
     fetchLogs.mockReset()
     fetchServeLog.mockReset()
+    fetchReportContext.mockReset()
+    vi.restoreAllMocks()
   })
 
   it('clears the previous job when the next id 404s', async () => {
@@ -219,6 +236,7 @@ describe('JobDetailPage', () => {
     await waitFor(() => {
       expect(fetchLogs).toHaveBeenCalledWith('job_aaa', { limit: 0 })
       expect(fetchServeLog).toHaveBeenCalledWith('job_aaa')
+      expect(fetchReportContext).toHaveBeenCalled()
     })
   })
 })

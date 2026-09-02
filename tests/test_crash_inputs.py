@@ -102,6 +102,7 @@ def _alive(client: TestClient) -> None:
     assert listing.status_code == 200
     assert "jobs" in listing.json()
     assert client.get("/api/queue").status_code == 200
+    assert client.get("/api/report-context").status_code == 200
 
 
 def _dashboard(client: TestClient, job_id: str) -> None:
@@ -296,8 +297,10 @@ def test_unknown_gets_and_dashboard_writes_keep_app_up(tmp_settings: Settings) -
         assert client.get("/api/jobs?filter=not-a-filter").status_code == 200
         assert client.get("/api/jobs?filter=error&jira_id=../x").status_code == 200
         assert client.get("/api/queue?jira_id=PROJ/99").status_code == 200
+        assert client.get("/api/report-context").status_code == 200
         for method, path in (
             ("POST", "/api/jobs"),
+            ("POST", "/api/report-context"),
             ("PATCH", "/api/jobs/x"),
             ("PUT", "/api/jobs/x"),
             ("DELETE", "/api/jobs/x"),

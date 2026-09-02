@@ -237,6 +237,7 @@ curl -sS 'http://127.0.0.1:4096/api/jobs?jira_id=PROJ-123'
 curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx'
 curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx/chat'
 curl -sS 'http://127.0.0.1:4096/api/jobs/job_xxxxxxxx/logs'
+curl -sS 'http://127.0.0.1:4096/api/report-context'
 ```
 
 ## Run

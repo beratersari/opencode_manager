@@ -79,3 +79,25 @@ export type LogLine = {
   job_id?: string
   jira_id?: string
 }
+
+export type ReportLogBlob = {
+  text: string
+  missing: boolean
+  truncated?: boolean
+  path?: string
+  name?: string
+}
+
+export type ReportContext = {
+  meta?: { app_name?: string; version?: string; server_time?: string }
+  runtime?: Record<string, unknown>
+  settings?: Record<string, unknown>
+  queue?: { items: JobItem[]; queued_count: number }
+  live?: { running: number; queued: number }
+  app_log?: ReportLogBlob
+  crash_log?: ReportLogBlob
+  wrapper_exit_log?: ReportLogBlob
+  opencode_logs?: ReportLogBlob[]
+  serve_logs_present?: string[]
+  server_time?: string
+}

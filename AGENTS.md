@@ -85,7 +85,10 @@ These look like bugs. They are not.
     armed yet, not that the callback was delivered.
 - Dedup key is **`jira_id`**. Running or queued → `409`. Session
   delete in progress for that ticket → `409`. Do not enqueue a
-  second job for the same ticket.
+  second job for the same ticket. A job that already finished in
+  this process must not stay `409` because the last history write
+  failed — overlay the terminal row so poll/`live_for_jira` see it
+  done.
 - Capacity full + **other** tickets → queue. Persist the queue
   (including `callback_url`) so a **running** process can dequeue
   after a slot frees. A process restart does **not** auto-run

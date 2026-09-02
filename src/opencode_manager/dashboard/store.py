@@ -19,6 +19,24 @@ MAX_JSON_SIZE = 50 * 1024 * 1024
 # Other-machine report used 3s. Overlapping /ws + GET /api/jobs +
 # live_for_jira share this window. save() drops the cache first.
 CACHE_TTL_SECONDS = 3.0
+_overlay_lock = threading.Lock()
+_terminal_overlay: dict[str, JobRecord] = {}
+
+
+def remember_unsaved_terminal(job: JobRecord) -> None:
+    """Keep a finished row in memory when the last disk write failed."""
+    with _overlay_lock:
+        _terminal_overlay[job.job_id] = job
+
+
+def clear_unsaved_terminal(job_id: str) -> None:
+    with _overlay_lock:
+        _terminal_overlay.pop(job_id, None)
+
+
+def _overlay_rows(rows: List[JobRecord]) -> List[JobRecord]:
+    with _overlay_lock:
+        return [_terminal_overlay.get(job.job_id, job) for job in rows]
 
 
 class JobStore:
@@ -72,15 +90,17 @@ class JobStore:
     def get(self, job_id: str) -> Optional[JobRecord]:
         path = self._path(job_id)
         with self._lock:
-            if not path.is_file():
-                return None
-            return self._load_record(path)
+            rec = self._load_record(path) if path.is_file() else None
+        with _overlay_lock:
+            if job_id in _terminal_overlay:
+                return _terminal_overlay[job_id]
+        return rec
 
     def list_all(self) -> List[JobRecord]:
         with self._lock:
             now = time.monotonic()
             if self._cache is not None and (now - self._cache_ts) < CACHE_TTL_SECONDS:
-                return list(self._cache)
+                return _overlay_rows(self._cache)
             rows: List[JobRecord] = []
             for path in self.root.glob("*.json"):
                 rec = self._load_record(path)
@@ -89,7 +109,7 @@ class JobStore:
             rows.sort(key=lambda j: j.accepted_at or j.updated_at or "", reverse=True)
             self._cache = rows
             self._cache_ts = now
-            return list(rows)
+            return _overlay_rows(rows)
 
     def live_for_jira(self, jira_id: str) -> Optional[JobRecord]:
         for job in self.list_all():
@@ -105,6 +125,7 @@ def persist_job(store: object, job: JobRecord) -> bool:
         if saver is None:
             return False
         saver(job)
+        clear_unsaved_terminal(getattr(job, "job_id", "") or "")
         return True
     except Exception:  # noqa: BLE001
         logger.exception("job store save failed job=%s", getattr(job, "job_id", ""))

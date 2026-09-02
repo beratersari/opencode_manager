@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
-from opencode_manager.dashboard.store import JobStore, persist_job
+from opencode_manager.dashboard.store import JobStore, persist_job, remember_unsaved_terminal
 from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
 from opencode_manager.git.detect import classify_host
 from opencode_manager.log import clip, get_logger, log_fail
@@ -21,6 +22,7 @@ from opencode_manager.settings import Settings
 logger = get_logger()
 _finish_lock = threading.Lock()
 _finished_ids: set[str] = set()
+_TERMINAL_PERSIST_TRIES = 3
 
 
 @dataclass
@@ -152,6 +154,16 @@ class OpenCodeRunner:
                     logger.exception("job-end delete clone failed clone_path=%s", dest)
 
 
+def _persist_terminal(store: object, job: JobRecord) -> bool:
+    """Retry the last history write. False means disk may still say live."""
+    for attempt in range(1, _TERMINAL_PERSIST_TRIES + 1):
+        if persist_job(store, job):
+            return True
+        if attempt < _TERMINAL_PERSIST_TRIES:
+            time.sleep(0.05 * attempt)
+    return False
+
+
 def finish_job(
     job: JobRecord,
     terminal: Terminal,
@@ -182,7 +194,13 @@ def finish_job(
     job.completed_at = utc_now()
     if terminal.status_code != 200:
         job.error_message = terminal.text
-    persist_job(store, job)
+    if not _persist_terminal(store, job):
+        remember_unsaved_terminal(job)
+        logger.error(
+            "terminal history write failed job=%s status=%s; overlay keeps the ticket from staying live",
+            job.job_id,
+            job.status,
+        )
     logger.info(
         "job terminal status=%s callback_status=%s session=%s send_callback=%s text_len=%s",
         job.status,

@@ -6,6 +6,7 @@ import { useLive } from '../../app/live'
 import { LiveDot } from '../../ui/LiveDot'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge, statusToneClass } from '../../ui/StatusBadge'
+import { formatJobElapsed, jobElapsedWindow, useNow } from '../../util/time'
 import { JOB_FILTERS, type JobListFilter } from './filters'
 
 export function JobsPage() {
@@ -58,6 +59,8 @@ export function JobsPage() {
   }, [load, live.generation])
 
   const rows = filter === 'queue' ? queue : payload?.jobs || []
+  const tick = rows.some((j) => jobElapsedWindow(j).ticking)
+  const now = useNow(tick)
 
   return (
     <section className="space-y-5">
@@ -152,7 +155,10 @@ export function JobsPage() {
                   <StatusBadge status={j.status} size="sm" />
                 </div>
                 <div className="mt-1 font-mono text-[11px] text-text-muted">
-                  {j.job_id} · {j.agent_mode} · {j.model} · {j.started_at || j.accepted_at || ''}
+                  {j.job_id} · {j.agent_mode} · {j.model} · {formatJobElapsed(j, now)}
+                  {j.started_at || j.accepted_at
+                    ? ` · ${j.started_at || j.accepted_at}`
+                    : ''}
                 </div>
                 {j.error_message && <div className="mt-1.5 truncate text-xs text-danger-text">{j.error_message}</div>}
               </div>

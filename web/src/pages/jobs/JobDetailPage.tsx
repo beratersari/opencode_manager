@@ -11,6 +11,7 @@ import { ReportIssueDialog } from '../../ui/ReportIssueDialog'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Tabs } from '../../ui/Tabs'
 import { reportNoteReady } from '../../util/jobReport'
+import { useJobElapsed } from '../../util/time'
 import { JobChatTab } from './JobChatTab'
 
 type Tab = 'overview' | 'prompt' | 'chat' | 'logs'
@@ -31,6 +32,7 @@ export function JobDetailPage() {
   const [reportError, setReportError] = useState<string | null>(null)
 
   const seqRef = useRef(0)
+  const elapsed = useJobElapsed(job)
 
   const load = useCallback(async (id: string, mine: number, opts: { clearOnError: boolean }) => {
     if (!id) return
@@ -117,6 +119,7 @@ export function JobDetailPage() {
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{job?.job_id || 'Job'}</h1>
         <p className="mt-1 font-mono text-xs text-text-muted">
           {job?.agent_mode} · {job?.model} · attempt {job?.attempt}/{job?.retry_count}
+          {elapsed !== '—' ? ` · ${elapsed}` : ''}
         </p>
       </div>
 
@@ -166,7 +169,7 @@ export function JobDetailPage() {
 
       <div className="vd-panel min-h-[50vh] p-5">
         {error && <p className="text-sm text-danger-text">{error}</p>}
-        {job && tab === 'overview' && <Overview job={job} />}
+        {job && tab === 'overview' && <Overview job={job} elapsed={elapsed} />}
         {job && tab === 'prompt' && <PromptTab prompts={prompts} />}
         {job && tab === 'chat' && <JobChatTab messages={messages} live={job.live} />}
         {job && tab === 'logs' && (
@@ -181,7 +184,7 @@ function isTerminalSuccess(job: JobItem): boolean {
   return !job.live && (job.status || '').toLowerCase() === 'success'
 }
 
-function Overview({ job }: { job: JobItem }) {
+function Overview({ job, elapsed }: { job: JobItem; elapsed: string }) {
   const attempts = job.attempts || []
   const showResult = isTerminalSuccess(job) && Boolean(job.text)
   return (
@@ -195,6 +198,7 @@ function Overview({ job }: { job: JobItem }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <MetaCard label="Job id" mono value={job.job_id} />
         <MetaCard label="Status" valueNode={<StatusBadge status={job.status} />} />
+        <MetaCard label="Elapsed" mono value={elapsed} />
         <MetaCard label="Jira" mono value={job.jira_id} />
         <MetaCard label="Agent" value={job.agent_mode || '—'} />
         <MetaCard label="Model" mono value={job.model || '—'} />

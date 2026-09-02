@@ -306,9 +306,43 @@ def test_pipeline_survives_finish_job_save_failure(tmp_settings: Settings, monke
             raise OSError("disk full")
 
     finish_job(job, Terminal(500, "git failed"), settings=tmp_settings, store=BoomStore())  # type: ignore[arg-type]
-    assert calls["n"] == 1
+    assert calls["n"] == 3
     # Second finish must still be attempted by the pipeline if the first
     # marked the id; here we only assert finish_job itself does not raise.
+
+
+def test_finish_save_failure_does_not_409(tmp_settings: Settings, monkeypatch) -> None:
+    """A failed terminal history write must not pin the ticket as live."""
+    real_save = JobStore.save
+
+    def flaky(self, job: JobRecord) -> None:  # noqa: ANN001
+        if job.status in {"success", "error", "timeout", "not_found"}:
+            raise OSError("disk full")
+        return real_save(self, job)
+
+    monkeypatch.setattr(JobStore, "save", flaky)
+
+    class OkRunner:
+        def run(self, job: JobRecord, *, should_stop) -> Terminal:  # noqa: ARG002
+            return Terminal(200, "ok")
+
+    manager = Manager(tmp_settings, runner=OkRunner())
+    manager.boot()
+    try:
+        status, env = manager.submit(_body(jira_id="SAVE-FIN"))
+        assert status == 202
+        for thread in list(manager._threads):
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+        seen = manager.store.get(env.job_id)
+        assert seen is not None
+        assert seen.status == "success"
+        assert seen.live is False
+        again, again_env = manager.submit(_body(jira_id="SAVE-FIN"))
+        assert again == 202
+        assert again_env.job_id != env.job_id
+    finally:
+        manager.stopping = True
 
 
 def test_boot_never_raises_and_still_accepts(tmp_settings: Settings, monkeypatch) -> None:

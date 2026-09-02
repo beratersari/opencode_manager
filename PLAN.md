@@ -1239,6 +1239,7 @@ build them).
 - [ ] FIFO dequeue when a running job becomes terminal.
 - [ ] On dequeue run the same pipeline; do **not** send an `in_progress` callback.
 - [ ] After success / fail / timeout / ERROR, a new POST for that `jira_id` is a new job.
+- [ ] If the last history write fails, do not leave the ticket live for `409`. Retry the write; overlay the terminal row in-process so `live_for_jira` / poll see it done.
 - [ ] While booting: do not start any job, do not dequeue, do not accept `POST /jobs` or `DELETE /sessions`.
 - [ ] On boot: reap orphan processes on `work_dir`; mark leftover running/queued as history ERROR (no callback, no OpenCode); they are not live (`409` off).
 - [ ] On shutdown: stop accepting `/jobs`; kill every job tree; mark running and queued jobs ERROR; terminal callback `500` each; then job-end delete; keep history rows.
@@ -1440,7 +1441,8 @@ Windows).
 **Jobs list** (VD `JobsPage` / `JobsTable`, minus writes)
 
 - Cards: `jira_id`, `job_id`, status badge, live dot, `agent_mode`,
-  `model`, started_at, error preview.
+  `model`, elapsed (`started_at`/`accepted_at` → now while live or
+  queued; → `completed_at` when terminal), started_at, error preview.
 - Filters: All / In flight / Queue / Error / Completed. No Cancelled
   tab (shutdown/boot leftovers are Error). No bulk-select, no Delete,
   no queue Cancel.
@@ -1514,7 +1516,7 @@ Clone delete and boot-no-resume stay. History is a **new** store.
 - [ ] Routes `/`, `/jobs`, `/jobs/:jobId` only. `/` redirects to `/jobs`.
 - [ ] Nav is Jobs only. No Poll / Scheduled / Sessions / Storage / Settings / issue pages.
 - [ ] Prod: manager serves `web/dist` on the same `listen_port`. Dev: Vite proxies `/api` and `/ws`.
-- [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, started_at, error preview.
+- [ ] Jobs list cards: `jira_id`, `job_id`, status, live, `agent_mode`, `model`, elapsed, started_at, error preview.
 - [ ] Filters: All / In flight / Queue / Error / Completed. Search by `jira_id`. Page size 25. List filters paginate on the server; Queue search uses `/api/queue?jira_id=`.
 - [ ] No Delete, no bulk-select, no Stop, no queue Cancel. Report issue is a GET-only zip download (sidebar job picker + job detail; note not stored).
 - [ ] Job detail tabs: Details, Prompt, Transcript, Logs.

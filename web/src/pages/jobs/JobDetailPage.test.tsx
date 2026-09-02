@@ -143,6 +143,27 @@ describe('JobDetailPage', () => {
     expect(screen.getByText('final assistant answer')).toBeTruthy()
   })
 
+  it('shows elapsed from started_at to completed_at', async () => {
+    fetchJob.mockResolvedValue({
+      job: {
+        ...jobA,
+        started_at: '2026-09-02T12:00:00.000Z',
+        completed_at: '2026-09-02T12:01:05.000Z',
+      },
+      system_logs: [],
+    })
+    fetchPrompts.mockResolvedValue({ prompts: [] })
+    fetchChat.mockResolvedValue({ messages: [] })
+    fetchLogs.mockResolvedValue({ lines: [] })
+    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
+
+    renderAt('job_aaa')
+    await waitFor(() => {
+      expect(screen.getByText('Elapsed')).toBeTruthy()
+    })
+    expect(screen.getAllByText('1m 05s').length).toBeGreaterThan(0)
+  })
+
   it('does not treat a finished error as Result', async () => {
     fetchJob.mockResolvedValue({
       job: {

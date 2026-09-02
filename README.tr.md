@@ -2,7 +2,7 @@
 
 n8n (veya herhangi bir HTTP istemcisi) ile **OpenCode** arasında duran küçük bir Windows / Linux işçisi.
 
-n8n bir iş gönderir. OSM `repo_url`'i olduğu gibi klonlar, o işe özel bir `opencode serve` açar, oturumu bitirene kadar sürer, sonucu **metin** olarak geri verir. Ürün bir git push, MR veya dal değildir — son asistan mesajı (veya okunabilir bir hata)dır.
+n8n bir iş gönderir. OSM `repo_url`'i olduğu gibi klonlar, o işe özel bir `opencode serve` açar, session'ı bitirene kadar sürer, sonucu **metin** olarak geri verir. Ürün bir git push, MR veya dal değildir — son asistan mesajı (veya okunabilir bir hata)dır.
 
 Tasarım: [PLAN.md](PLAN.md). Bağlayıcı kurallar: [AGENTS.md](AGENTS.md). İngilizce işletim kılavuzu: [README.md](README.md).
 
@@ -14,7 +14,7 @@ Bu belge projenin **nasıl çalıştığını** anlatır: akış, veri saklama, 
 
 ### Nedir
 
-- n8n ↔ OpenCode **oturum / iş orkestratörü**
+- n8n ↔ OpenCode **session / job orkestratörü**
 - Eşzamanlılık, kuyruk, clone, serve, session resume, retry, process kill, disk temizliği, per-job log
 - Salt okunur bir **Jobs** panosu (`/jobs`)
 
@@ -30,11 +30,11 @@ Kasette "bug gibi duran" ama kasıtlı kararlar:
 
 1. İşin ürünü **metindir**.
 2. İş bitince clone **her zaman silinir** (başarı veya hata).
-3. Chat ile disk arasındaki sapma beklenir: sonraki iş aynı yola temiz clone alır; eski oturum geçmişi silinmiş dosyalardan bahsedebilir.
+3. Chat ile disk arasındaki sapma beklenir: sonraki iş aynı yola temiz clone alır; eski session geçmişi silinmiş dosyalardan bahsedebilir.
 4. Her işe **ayrı** `opencode serve`, benzersiz localhost port.
 5. `callback_url` istek gövdesindedir; `Host` / `Origin`'den tahmin edilmez.
 6. Dashboard yalnızca GET.
-7. Hang saati "bu turda henüz cevap vermeye başlamadı"dır. İlk asistan mesajı gelince hang durur; donmuş üretim `timeout_in_seconds`'tır.
+7. Hang, "mesajı attık, OpenCode çalışıyor diyor ama bu turda henüz tek satır cevap yok" demektir. İlk asistan cümlesi gelince hang biter. Yazarken donması hang değil, deneme süresidir. Ayrıntı: §4.3.
 
 ---
 
@@ -60,7 +60,7 @@ n8n / tester / curl
 │     4. session oluştur / resume       │
 │     5. prompt + poll döngüsü          │
 │     6. finish → callback (opsiyonel)  │
-│     7. serve'i öldür, clone'u sil     │
+│     7. serve'i kill et, clone'u sil     │
 └───────────────────────────────────────┘
         │
         │  tek terminal POST  (callback_url varsa)
@@ -95,12 +95,12 @@ Açılışta `Settings.ensure_dirs()` şu ağacı oluşturur:
 ├── .serve/                         # OpenCode serve stdout/stderr
 │   └── {job_id}.log
 ├── logs/
-│   ├── app.log                     # süreç geneli
+│   ├── app.log                     # process geneli
 │   ├── crash.log                   # yakalanmamış hata / sinyal
 │   └── {jira_id}_{job_id}_{UTC}.log
 ├── jobs/
 │   └── {job_id}.json               # kalıcı geçmiş (clone silinse de kalır)
-└── queue.json                      # FIFO kuyruk (çalışan süreç için)
+└── queue.json                      # FIFO kuyruk (çalışan process için)
 ```
 
 Yerel override: `settings.local.yaml` (gitignore). `OSM_SETTINGS` env ile başka YAML verilebilir.
@@ -113,10 +113,10 @@ Her kabul edilen iş **bir JSON dosyası**. Veritabanı yok. `JobStore` (`src/op
 - Yazma: atomik (`atomic.write_text_atomic` — tmp + `os.replace`, Windows kilitlerinde retry)
 - Okuma: `json.loads` + `JobRecord.model_validate` (`model_validate_json` kullanılmaz)
 - 50 MB üstü satır atlanır
-- `list_all()` 3 saniyelik bellek önbelleği kullanır; `save()` önbelleği düşürür
+- `list_all()` 3 saniyelik in-memory cache kullanır; `save()` cache'i düşürür
 - Dashboard `/ws` her tikte `list_all()` çağırmaz; `Manager.live_counts()` yeter
 
-Clone silinse, süreç yeniden başlasa bile satır **kalır**. Dashboard geçmişi buradan okur.
+Clone silinse, process yeniden başlasa bile satır **kalır**. Dashboard geçmişi buradan okur.
 
 Örnek alanlar (`JobRecord`):
 
@@ -131,7 +131,7 @@ Clone silinse, süreç yeniden başlasa bile satır **kalır**. Dashboard geçmi
 | `session_id` | OpenCode `ses_*` |
 | `clone_path` | `{data_dir}/.temp/{jira_id}` |
 | `serve_pid` / `serve_port` / `serve_base_url` | Bu işin serve'i |
-| `extra_pids` | Canlı git çocukları |
+| `extra_pids` | Canlı git child PID'leri |
 | `original_posted` | ORIGINAL prompt bir kez POSTlandı mı |
 | `session_bound` | Bu işte geçerli bir `ses_*` bağlandı mı |
 | `attempts[]` | Deneme satırları (hang, serve-dead, incomplete, timeout…) |
@@ -145,9 +145,9 @@ Canlı durumlar: `queued`, `running`. Aynı `jira_id` için ikincisi **409**.
 
 ### 3.2 Kuyruk — `queue.json`
 
-Kapasite doluysa (`max_concurrent_jobs`) **başka** ticket'lar FIFO'ya yazılır. `callback_url` dahil tüm istek gövdesi persist edilir ki **aynı çalışan süreç** slot boşalınca dequeue edebilsin.
+Kapasite doluysa (`max_concurrent_jobs`) **başka** ticket'lar FIFO'ya yazılır. `callback_url` dahil tüm istek gövdesi persist edilir ki **aynı çalışan process** slot boşalınca dequeue edebilsin.
 
-**Süreç restart kuyruğu otomatik çalıştırmaz.** Boot leftover'ları ERROR işaretler, kuyruğu boşaltır, callback göndermez.
+**Process restart kuyruğu otomatik çalıştırmaz.** Boot leftover'ları ERROR işaretler, kuyruğu boşaltır, callback göndermez.
 
 `JobQueue` API: `enqueue`, `dequeue` (baştan pop), `peek_all`, `clear`, `public_items` (dashboard).
 
@@ -155,26 +155,27 @@ Kapasite doluysa (`max_concurrent_jobs`) **başka** ticket'lar FIFO'ya yazılır
 
 - Klasör adı yalnızca ticket (`jira_id`). Repo / dal yolda yok.
 - Windows-güvenli: `^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`. `.`, `..`, slash → inbound **400**.
-- Hedef, `.temp` kökünün **sıkı çocuğu** olmalı (kökün kendisi değil).
+- Hedef, `.temp` kökünün **strict child**'ı olmalı (kökün kendisi değil).
 - Yeni iş: yol varsa önce hard-delete, sonra clone. Silinemezse job **500**, OpenCode yok.
 - Mid-job retry clone'u **silmez**.
 - İş bitince (git hatası dahil) yine silinir.
+- Nasıl silindiği, neden önce process'in kill edildiği, Windows kilitleri: **§4.4**.
 
 ### 3.4 Loglar
 
 | Dosya | Ne |
 |---|---|
-| `{data_dir}/logs/app.log` | Tüm süreç |
+| `{data_dir}/logs/app.log` | Tüm process |
 | `{data_dir}/logs/crash.log` | Yakalanmamış exception, sinyal, faulthandler |
 | `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` | İş başına bir dosya (kabul anı, UTC) |
 | `{data_dir}/.serve/{job_id}.log` | O işin `opencode serve` stdout/stderr |
-| `{proje}/logs/wrapper-exit.log` | Windows güvenlik süreci öldürürse start script exit kodu yazar (Python yazamaz) |
+| `{proje}/logs/wrapper-exit.log` | Windows güvenlik yazılımı process'i kill ederse start script exit kodu yazar (Python yazamaz) |
 
 Her satır `job_id` + `jira_id` taşır (`log_context` contextvars). URL'deki `user:pass@`, Azure `user@`, `:pass@` redakte edilir. `PAT` anahtarı loglanmaz.
 
 ### 3.5 OpenCode'un kendi verisi
 
-OSM bir SQLite tutmaz. OpenCode oturumları kullanıcının global `opencode.db` dosyasındadır (`directory` anahtarlı). Aynı clone yolu + geçerli `ses_*` → resume çalışır.
+OSM bir SQLite tutmaz. OpenCode session'ları kullanıcının global `opencode.db` dosyasındadır (`directory` anahtarlı). Aynı clone yolu + geçerli `ses_*` → resume çalışır.
 
 Dashboard, serve öldükten sonra **bu işin** `chat_snapshot`'ını gösterir. Global DB'den aynı `ses_*` ile sonraki işlerin turlarını eklemez (aynı ticket sonra aynı `ses_*` / yolu yeniden kullanır). Eksik tool `output` doldurulabilir; sonraki turlar eklenmez.
 
@@ -209,7 +210,7 @@ Gerekli gövde:
 | `retry_count` | Deneme sayısı (ilki dahil). Min 1. `3` ve `1800` → en fazla 5400s OpenCode. |
 | `jira_id` | Dedup + klasör. |
 | `callback_url` | Opsiyonel. Boş = poll. Varsa mutlak `http(s)`. |
-| `session_id` | Opsiyonel `ses_*`. Boş / `-1` / Codex UUID = yeni oturum aç. |
+| `session_id` | Opsiyonel `ses_*`. Boş / `-1` / Codex UUID = yeni session aç. |
 
 Aynı zarf hem ack hem callback / poll için:
 
@@ -235,7 +236,7 @@ Aynı zarf hem ack hem callback / poll için:
 4. `git clone <url> dest` — `--branch` yok, checkout yok, submodule yok, LFS skip (`GIT_LFS_SKIP_SMUDGE=1`), `GIT_TERMINAL_PROMPT=0`.
 5. Origin userinfo scrub (saklanan `remote.origin.url`; `git remote get-url` yok).
 6. `run_opencode_job` (dış retry + iç poll).
-7. `finally`: bu işin process ağacını öldür, clone'u sil.
+7. `finally`: bu işin process tree'sini kill et, clone'u sil.
 
 Git auth:
 
@@ -245,9 +246,82 @@ Git auth:
 
 ### 4.3 OpenCode'u nasıl yönetiriz
 
-OSM, OpenCode'u **CLI one-shot** (`opencode --auto`) olarak çalıştırmaz. Her iş için ayrı bir HTTP sunucusu açar ve o sunucuyu bir **durum makinesi** ile sürer. Kod: `opencode/serve.py` (süreç), `opencode/session.py` (HTTP istemci + idle kararı), `opencode/retry.py` (dış deneme + iç poll), `opencode/prompts.py` (dört sabit string).
+Bu bölümü, OpenCode'u hiç kullanmamış biri okuyabilsin diye yazıyoruz. Önce kelimeler, sonra OSM'nin ne yaptığı.
 
-İki iç içe döngü vardır. Dış döngü **kaç kez yeni serve / yeni tur** deneneceğini sayar. İç döngü **o tur bitene kadar** OpenCode'u 1 saniyede bir yoklar. `/message` soketini deneme bütçesi boyunca bloklamayız.
+Kod: `opencode/serve.py` (process), `opencode/session.py` (HTTP client + idle kararı), `opencode/retry.py` (dış attempt + iç poll), `opencode/prompts.py` (dört sabit string).
+
+#### Önce kelimeler (OpenCode nedir?)
+
+**OpenCode**, bir kod asistanıdır. ChatGPT gibi bir sohbet: sen yazarsın, o cevaplar; gerekirse diskteki dosyaları okur, düzenler, komut çalıştırır. OSM'nin işi bu sohbeti **insansız** yönetmek: n8n bir görev metni gönderir, OSM onu OpenCode'a verir, bitene kadar bekler, son cevabı geri yollar.
+
+İnsan TUI'de oturup "devam et / evet / hayır" yazmaz. Kimse cevap vermeyecek. Bu yüzden OSM, model soru sorarsa bir kez "sorma, bitir" der; takılırsa yeniden dener; biterse metni alır.
+
+| Kelime | Düz Türkçe |
+|---|---|
+| **serve** | OpenCode'un arka planda açtığı küçük web sunucusu. OSM onunla HTTP konuşur ("yeni mesaj", "durumun ne?", "kes"). Ekranda TUI açılmaz. |
+| **iş başına bir serve** | Her job kendi OpenCode process'ini açar, kendi localhost portunda. İki ticket birbirinin sohbetini / dosyasını paylaşmaz. Biri bitince yalnızca **o** process kill edilir; diğeri çalışmaya devam eder. |
+| **session (`ses_…`)** | O sohbetin kimliği. Mesaj geçmişi burada. Aynı `ses_*` ile kaldığın yerden devam edebilirsin. |
+| **user / assistant** | User = OSM'nin (veya senin) yazdığı mesaj. Assistant = modelin cevabı. |
+| **tur** | OSM bir user mesajı gönderir, model çalışır, durur. Bu bir tur. |
+| **busy** | Model şu an çalışıyor: yazıyor, tool çağırıyor, düşünüyor. Yeni mesaj gönderme. |
+| **idle** | Durdu. Ya işi bitirdi, ya yarım bıraktı, ya soru sordu. OSM şimdi "ne oldu?" diye bakar. |
+| **compacting (özetleme)** | Sohbet çok uzayınca OpenCode eski mesajları tek bir özete sıkıştırır. Dakikalar sürebilir. Sağlıklı ve **normaldir**. Takılma değildir. OSM bekler, üzerine mesaj atmaz. |
+| **hang (takılma)** | OSM bir mesaj gönderdi, OpenCode "çalışıyorum" diyor, ama **bu turda henüz tek satır asistan cevabı yok** ve uzun süredir hiçbir şey değişmiyor. Motor çalışıyor gibi görünür, ilk kelime hiç gelmez. OSM bunu "cevap vermeye hiç başlamadı" diye tanımlar. |
+| **timeout** | Bu denemeye verilen toplam süre (`timeout_in_seconds`) bitti. Model yarıda yazıyor olsa bile süre doldu. Hang'den farkı: hang "hiç başlamadı"; timeout "süre doldu, başlamış olsa da". |
+| **incomplete (yarım kaldı)** | Model durdu (`idle`) ama iş bitmiş sayılmaz: tool çağrısında kesildi, token doldu, `finish` boş. Motor ölü değil, sadece tur eksik. OSM **aynı** OpenCode'a "kalanı bitir" der. |
+| **serve-dead** | OpenCode process'i düştü veya health 200 vermiyor. Konuşacak kimse yok. OSM o process'i kill edip yenisini açar. |
+| **abort** | "Bu turu kes." OSM, serve'i kill etmeden önce nazikçe durdurmayı dener. |
+| **attempt (deneme)** | Dış döngünün bir turu: serve aç (veya aynı serve'i kullan), bir prompt at, iç döngüde bekle. `retry_count = 3` ise en fazla 3 attempt (ilki dahil). |
+| **ORIGINAL** | n8n'in gönderdiği asıl görev metni. Job boyunca **bir kez** gider. |
+
+Günlük benzetme:
+
+- **Serve** = bir odaya kilitlenmiş asistan. Oda = clone klasörü. İş bitince oda boşaltılır, asistan evine gönderilir.
+- **Session** = o asistanla tuttuğun defter. Defter OpenCode'un kendi veritabanında kalır; klasör silinse bile `ses_*` durur. Sonraki iş aynı klasör yoluna temiz clone alır; defter eski (silinmiş) dosyalardan bahsedebilir — bu kasıtlı.
+- **Hang** = "yazıyorum" deyip 3 dakikadır boş sayfa. Sayfaya ilk harf düşünce hang biter.
+- **Timeout** = "bu ödeve 30 dakika" — 30 dolunca kalem düşer, yazıyordun da.
+- **Incomplete** = kalemi bıraktı, cümle yarıda. Aynı kalemi uzatırız: "devam et".
+- **Compact** = defter şişti, asistan 10 dakikalığına özet çıkarıyor. Rahatsız etme.
+
+Hang **değildir:**
+
+- Model uzun uzun kod yazıyor / tool çalıştırıyor (cevap gelmeye başladı → hang saati kapalı).
+- Compact çalışıyor (özetleme ilerleme sayılır).
+- Sohbete yeni mesaj veya yeni compact izi düştü (bir şey oluyor).
+- Süre doldu (o **timeout**).
+- Süreç öldü (o **serve-dead**).
+- Durdu ama iş yarım (o **incomplete**).
+
+#### OSM OpenCode'u nasıl sürer (özet)
+
+OSM, OpenCode'u **tek seferlik komut** (`opencode --auto`) olarak çalıştırmaz. Her iş için ayrı bir HTTP sunucusu açar ve "mesaj at → bekle → ne oldu?" diye bir **durum makinesi** işletir. İnsan gibi sohbet penceresinde oturmaz.
+
+İki iç içe döngü vardır:
+
+1. **Dış döngü** — "kaç kez deneyeceğiz?" (`retry_count`). Serve öldüyse / takıldıysa / süre dolduysa yeni deneme.
+2. **İç döngü** — "bu tur bitti mi?" Yaklaşık saniyede bir OpenCode'a sorar. Mesaj soketini 30 dakika açık tutmaz.
+
+```text
+run_opencode_job                          ← dış döngü (retry_count kez)
+  │
+  ├─ serve yoksa: opencode serve başlat
+  ├─ health + dizin instance + model envanteri
+  ├─ session resume veya create
+  ├─ bir user prompt POST
+  │
+  └─ _inner_loop                          ← iç döngü (~1s poll)
+        GET /global/health
+        GET /session/status
+        GET /session/:id          (compact flag)
+        GET /session/:id/message
+             │
+             ├─ compacting          → bekle, hang yok
+             ├─ busy, asistan geldi → bekle, hang yok (saat: timeout)
+             ├─ busy, asistan yok   → hang saati
+             ├─ POST sonrası idle   → bir kaç tick bekle (busy henüz flip olmamış olabilir)
+             └─ gerçek idle         → assess_idle
+                  success / question / compact_leftover / incomplete
+```
 
 ```text
 run_opencode_job                          ← dış döngü (retry_count kez)
@@ -273,10 +347,14 @@ run_opencode_job                          ← dış döngü (retry_count kez)
 
 #### Neden `opencode serve`, neden iş başına bir tane
 
+OpenCode'u iki türlü çalıştırabilirsin: bir komut yazıp bitmesini beklemek (`opencode --auto`), ya da arka planda bir sunucu açıp ona mesaj atmak (`opencode serve`). OSM ikincisini kullanır — çünkü takılınca kesmek, özetlemeyi beklemek, aynı sohbete ikinci mesajı atmak için sürekli "durumun ne?" diye sorabilmesi gerekir. Tek seferlik komutta bu sohbet API'si yoktur.
+
+Ayrıca **her iş kendi sunucusunu** açar. Hepsi tek bir OpenCode'u paylaşsaydı, bir işin klasörünü silmek için o sunucuyu kill etmek gerekir; diğer ticket'ların sohbeti de giderdi. Windows'ta antivirüs / dosya kilidi yüzünden process'i kill etmek zaten şart. Ayrı process = ayrı oda.
+
 | Seçenek | Neden kullanmıyoruz / kullanıyoruz |
 |---|---|
 | `opencode --auto` | Tek seferlik CLI. Sabit session HTTP API yok. Durum makinesi kurulamaz. |
-| Tek paylaşılan serve | Clone silmek için serve'i öldürmek gerekir; paylaşıksa diğer işler de ölür. Windows kilit / AV yüzünden kill şart. |
+| Tek paylaşılan serve | Clone silmek için serve'i kill etmek gerekir; paylaşıksa diğer işler de ölür. Windows kilit / AV yüzünden kill şart. |
 | **İş başına serve** | Bu iş bitince yalnızca **bu** pid ağacı ölür. Diğer işler etkilenmez. |
 
 Komut her zaman:
@@ -290,7 +368,7 @@ opencode serve --hostname 127.0.0.1 --port <boş port> --print-logs --log-level 
 - `OPENCODE_SERVER_PASSWORD` boşaltılır.
 - `start_new_session=True` — Linux'ta process group, kill izole.
 - stdout/stderr `{data_dir}/.serve/{job_id}.log` (append; dış retry önceki çıktıyı silmez).
-- Popen **hemen** sonra `{serve_pid, serve_port, serve_base_url}` job JSON'a yazılır. Health beklemeden önce kaydedilir ki crash olsa boot leftover'ı öldürebilsin.
+- Popen **hemen** sonra `{serve_pid, serve_port, serve_base_url}` job JSON'a yazılır. Health beklemeden önce kaydedilir ki crash olsa boot leftover'ı kill edebilsin.
 - n8n bu portları görmez. Tüm istekler `http://127.0.0.1:<port>` + header `x-opencode-directory: <clone>`.
 
 İki sağlık katmanı vardır; karıştırılmaz:
@@ -300,13 +378,15 @@ opencode serve --hostname 127.0.0.1 --port <boş port> --print-logs --log-level 
 | `GET /global/health` → 200 | Süreç ayakta | Clone için instance hazır değil |
 | `GET /session` (directory header ile) | Dizin instance cevap veriyor | — |
 
-İlk `x-opencode-directory` isteği OpenCode'un clone'u bootstrap etmesini bekletebilir (büyük ağaç). Bu bekleme **deneme saati** içindedir. 30 saniyede `POST /session` patlatılmaz.
+İlk `x-opencode-directory` isteği OpenCode'un clone'u bootstrap etmesini bekletebilir (büyük tree). Bu bekleme **attempt clock** içindedir. 30 saniyede `POST /session` patlatılmaz.
 
 Sonra `GET /config/providers`, olmazsa `/provider`. İstenen `model` (`provider/id`) envanterde yoksa veya envanter okunup boşsa iş **hemen 500**. User message yok, `retry_count` harcanmaz. Sonradan gelen `ProviderModelNotFoundError` / "model not found" de aynı 500 — hang veya 504 değil.
 
 #### Session id — iki an
 
-OpenCode oturumları global `opencode.db` içinde `directory` (clone yolu) ile anahtarlanır. Aynı yol + geçerli `ses_*` → resume. OSM iki durumu ayırır:
+Session, sohbet defterinin kimliğidir (`ses_abc…`). OpenCode bunları kendi global `opencode.db` dosyasında, **klasör yoluna** göre saklar. Aynı clone yolu + hâlâ geçerli bir `ses_*` → eski defteri açarız (resume). Bozuk / boş id → yeni defter.
+
+Kritik ayrım: işin **başında** defter yoksa yenisini açmak normaldir. İşin **ortasında** (takılma retry) defter varken yenisini açmak, modeli sıfırdan başlatır — OSM bunu yapmaz, o denemeyi fail sayar.
 
 | An | Kullanılamayan / reddedilen `ses_*` |
 |---|---|
@@ -344,9 +424,11 @@ Her user POST gövdesi:
 
 `busy` / compacting iken POST **yok**. Session zaten çalışıyorsa OSM "Continue" yarışı yapmaz.
 
-#### Beş prompt — başka string yok
+#### Beş prompt — OSM'nin ağzından çıkanlar
 
-ORIGINAL bir kez gider; anahtar **deneme numarası değil**, `original_posted` (OpenCode o POST'u kabul etti mi).
+İnsansız sohbette OSM yalnızca **beş** metin gönderir. Altıncısı ("Continue if you have next steps…") OpenCode'un kendi özet sonrası eklediği satırdır; OSM yazmaz.
+
+ORIGINAL bir kez gider. Anahtar deneme numarası değil: OpenCode o ilk görevi **kabul etti mi** (`original_posted`). Kabul edildiyse bir daha n8n'in uzun görev metni yollanmaz; "kaldığın yerden devam" denir.
 
 | `prompt_id` | Ne zaman | Kaynak |
 |---|---|---|
@@ -377,24 +459,26 @@ Her denemenin başı:
 | `success` | iş bitince ölür | — | — (200) |
 | `asking` (nudge sonrası hâlâ soru) | iş bitince ölür | — | iş 500, retry yok |
 | `compact_leftover` (nudge sonrası) | iş bitince ölür | — | iş 500, retry yok |
-| `timeout` | **öldür**, yenisini aç | ORIGINAL henüz gitmediyse ORIGINAL, yoksa `HANG_RESUME` | evet |
-| `hang` / `serve-dead` | **öldür**, yenisini aç | aynı | evet |
+| `timeout` | **kill**, yenisini aç | ORIGINAL henüz gitmediyse ORIGINAL, yoksa `HANG_RESUME` | evet |
+| `hang` / `serve-dead` | **kill**, yenisini aç | aynı | evet |
 | `incomplete` | **aynı serve kalır** | `INCOMPLETE_RESUME` | evet |
 
 Model yok / `JobFailed` → dış döngü kırılır, iş 500. Denemeler tükenince: son kind `timeout` ise **504**, aksi **500**. `finally` her durumda `close_serve` (abort + stop_serve + pid temizle). Clone silmek dış döngünün işi değildir; onu worker `finally` yapar.
 
-#### İç döngü (`_inner_loop`) — turu sürmek
+#### İç döngü (`_inner_loop`) — "bitirdin mi?" diye sormak
 
-`/message`'i açık tutmayız. Yaklaşık 1s'de bir (POST sonrası ilk idle için 0.4s) şunları okuruz:
+OSM, OpenCode'a mesajı atıp 30 dakika telefonu kulağında tutmaz. Atar, kapatır, saniyede bir "hâlâ çalışıyor musun, yeni bir şey yazdın mı?" diye bakar. Buna poll denir.
 
-1. Shutdown? → iş 500.
-2. Deneme saati (`deadline`) doldu mu? → abort, `timeout`.
-3. `GET /global/health` öldü mü? → `serve-dead`.
-4. Status + session payload + mesaj listesi. `chat_snapshot` her tick güncellenir (dashboard canlı sohbet).
-5. Bu turda yeni asistan var mı? (`id ≠ baseline`). Varsa `answered_this_turn = true` ve `job.text` = son asistan metni. **Kasasındaki anlam:** hang = "hiç cevap vermeye başlamadı". Mid-generation donması hang değil, deneme saatidir.
-6. İlerleme: yeni mesaj, yeni compact marker, `compacting`, veya yeni asistan → `last_progress` sıfırlanır, hang saati durur.
+Her bakışta sıra:
 
-Faz (log `session phase=`):
+1. OSM kapanıyor mu? → işi 500 ile bırak.
+2. Bu denemeye verilen süre (`timeout_in_seconds`) bitti mi? → "kes", sonuç `timeout`.
+3. OpenCode süreci hâlâ ayakta mı (`/global/health`)? Değilse `serve-dead`.
+4. Durum + sohbet listesini çek. Dashboard'daki canlı chat buradan güncellenir.
+5. **Bu turda** yeni bir asistan mesajı var mı? Tur başlamadan önceki son asistan id'si (`baseline`) ile şimdiki karşılaştırılır. Yeni bir id göründüyse model **cevap vermeye başlamıştır**. Hang saati o andan itibaren kapanır. Yarıda donursa artık hang değil, attempt clock (timeout) işler.
+6. Bir şey değiştiyse (yeni mesaj, yeni özet izi, compact sürüyor, yeni asistan) → "ilerleme var", hang sayacı sıfırlanır.
+
+Faz (log `session phase=`). OSM her saniye sohbeti bu kutulardan birine koyar:
 
 | Faz | Koşul | Ne yaparız |
 |---|---|---|
@@ -417,7 +501,21 @@ Faz (log `session phase=`):
 
 Compact-loop: bu **beklemede** `compact_marker_count - baseline ≥ 8` ve hüküm henüz success değilse abort et, idle olmasını bekle (en fazla 60s), `COMPACT_LOOP_NUDGE` at, iç döngüde kal. Resume geçmişindeki eski marker'lar baseline'dadır, sayılmaz.
 
-#### Hang vs timeout vs incomplete — karıştırılan üç saat
+#### Hang, timeout, incomplete — üç farklı "olmadı"
+
+İnsan kulağına üçü de "takıldı" gelir. OSM için üç ayrı hastalık, üç ayrı ilaç.
+
+**Hang — hiç başlamadı**
+
+OSM görevi gönderdi. OpenCode "busy" diyor (çalışıyorum). Ama sohbette **bu turun** asistan balonu yok. Yeni mesaj da yok, compact de yok. Varsayılan 180 saniye böyle giderse: "bu process cevap vermeyecek" der, turu keser, **bu** OpenCode'u kill eder, yenisini açar, aynı klasörde aynı `ses_*` ile "yarıda kaldın, devam et" (`HANG_RESUME`) der. Clone silinmez. İlk asistan cümlesi bir kez göründü mü hang biter — gerisi ne kadar sürerse sürsün hang değildir.
+
+**Timeout — süre doldu**
+
+n8n "bu attempt'e en fazla N saniye" demiştir (`timeout_in_seconds`). Serve açılışı + sohbet bu N'nin içindedir. N dolunca model hâlâ yazıyor olsa bile OSM keser, serve'i kill eder, attempt hakkı varsa yeniden dener. Attempt kalmazsa n8n'e **504**. 504 yalnızca bu saattir; hang 504 değildir.
+
+**Incomplete — durdu ama iş bitmedi**
+
+OpenCode idle: "ben durdum." Son bitiş kodu temiz `stop` değil (`tool-calls` = tool'a gidiyordum, `length` = yazacak yerim bitti, boş / null). Motor sağ, sohbet durmuş, görev yarım. OSM serve'i **kill etmez**. Aynı process'e `INCOMPLETE_RESUME` ("kalan todoları bitir, baştan başlama") atar. Bu da bir attempt hakkıdır.
 
 ```text
                     bu turda asistan geldi mi?
@@ -425,16 +523,27 @@ Compact-loop: bu **beklemede** `compact_marker_count - baseline ≥ 8` ve hükü
               hayır ─────┴───── evet
                 │                  │
          hang saati           hang yok
-         (180s, busy          üretim sonsuza
-          + compact değil     kadar sürebilir;
-          + yeni marker yok)  sınır: timeout_in_seconds
+         (180s, busy          yazmaya devam
+          + compact değil     edebilir;
+          + hiçbir şey        sınır: timeout
+            değişmiyor)
                 │                  │
               hang              timeout
            serve ölür         serve ölür
            HANG_RESUME        HANG_RESUME
+
+
+        (ayrı vaka) idle + yarım bitiş → incomplete
+                    serve yaşar, INCOMPLETE_RESUME
 ```
 
-Incomplete ayrı: session **idle**, iş bitmemiş. Serve ölmez.
+**Compact neden hang değildir**
+
+Sohbet şişince OpenCode eski sayfaları özetler. Bu sırada yeni asistan cümlesi gelmeyebilir; dakikalar sürebilir. OSM "takıldı" demez, üzerine "devam et" yazmaz (OpenCode'un kendi özet döngüsüyle yarışır). Özet bitince OpenCode çoğu zaman **kendi** sentetik "devam et" mesajını sohbete ekler — OSM yazmaz. Aynı beklemede ~8 yeni özet izi birikirse (eski sohbetin izleri sayılmaz) OSM bir kez `COMPACT_LOOP_NUDGE` atar: "özet döngüsüne girme, işi bitir."
+
+**Soru sorması neden hatadır**
+
+İnsan yok. Model "hangi seçenek?" diye sorup idle olursa OSM bir kez `UNATTENDED_NUDGE` gönderir: "sorma, en güvenli varsayılanı seç, bitir." İkinci kez sorarsa iş 500 — sonsuz "hangisini istersin?" döngüsü olmasın.
 
 #### Bilerek yapmadıklarımız
 
@@ -446,24 +555,177 @@ Incomplete ayrı: session **idle**, iş bitmemiş. Serve ölmez.
 - ORIGINAL ikinci kez gitmez.
 - Beşincisi uydurulmuş "Continue" yok.
 - Model yokken retry yok.
-- Başka işin serve'i / OSM süreci öldürülmez.
+- Başka işin serve'i / OSM process'i kill edilmez.
 - Hang retry clone'u silmez; yalnızca **bu** serve ölür.
 
-### 4.4 Job sonu
+### 4.4 Dosya silme — clone neden ve nasıl gider
 
-Sıra her zaman:
+Bu bölüm de OpenCode / Windows kilidi hiç bilinmeden okunabilsin diye yazıldı. Kod: `cleanup/end.py` (sıra), `cleanup/kill.py` (kimi kill ederiz), `cleanup/rmtree.py` (klasörü gerçekten sil).
 
-1. Session abort (best effort)
-2. Bu işin ağacı: git, **bu** serve, tool çocukları (`taskkill /F /T` / `SIGKILL` process group)
-3. Clone cwd/argv leftover (Linux `/proc`). Windows'ta tüm süreç taraması / PowerShell `Win32_Process` **yok**. Kalan kilitler Restart Manager ile, **ayrı child process** içinde (AV OSM'yi öldürmesin). En fazla iki child. RM sonrası `path_has_holders` yok.
-4. Holder kalmadıysa stale `.git/*.lock`
-5. Sıralı hard-delete (Windows `rd /s /q \\?\…`, Linux chmod + rmtree)
+#### Bu bölümdeki kısaltmalar
 
-**OSM asla öldürülmez.** `kill_pid` / `may_kill` bu süreci, atalarını (`cmd` / `start-backend.bat`), PID ≤ 4'ü reddeder. Başka işin serve'ine dokunulmaz.
+| Terim | Açılımı | Ne demek |
+|---|---|---|
+| **clone** | git clone çıktısı | `{data_dir}/.temp/{jira_id}` altındaki geçici repo klasörü. İş bitince silinir. |
+| **process** | işletim sistemi süreci | Çalışan bir program. OSM bir process, her job'ın `opencode serve`'i ayrı bir process. |
+| **PID** | Process ID | OS'in her process'e verdiği numara. `serve_pid = 4521` = o OpenCode o numaralı process. |
+| **child process** | OSM'nin açtığı ayrı process | Tehlikeli iş (RM sorgusu, `rd`, git, serve) bu process'te yürür. Child çökerse OSM (parent) yaşar. |
+| **parent** | child'ı açan process | Burada OSM'nin kendisi. |
+| **process tree** | bir process + onun child'ları | `taskkill /T` ve `killpg` bunu keser. |
+| **cwd** | current working directory | Process'in "şu an bu klasördeyim" dediği yer. OpenCode clone'u cwd yapar; o yüzden klasör kilitlenir. |
+| **argv** | argument vector | Process'in komut satırı (`git clone …`, `opencode serve --port 45123`). Leftover ararken "bu komut bu klasörden mi bahsediyor?" diye bakılır. |
+| **rd** | Windows `rd` (remove directory) | Klasör silme komutu. OSM `cmd /c rd /s /q \\?\C:\osm\.temp\PROJ-123` çalıştırır. `/s` altındakiler, `/q` sorma. Linux'taki `rm -rf` karşılığı. |
+| **`\\?\`** | Windows extended / long-path prefix | Normal Windows yolu ~260 karakterde kırılır; `CON` / `NUL` gibi reserved isimler de takılır. Başa `\\?\` eklenince API uzun yolu ve o isimleri kabul eder. |
+| **RM** | Restart Manager | Windows'un kendi servisi (`rstrtmgr.dll`): "şu klasörü / dosyayı kim açık tutuyor?" diye sorarsın, PID listesi verir. OSM process scan yerine **yalnızca bunu** kullanır. |
+| **rstrtmgr** | Restart Manager DLL | RM'nin kütüphanesi. OSM onu ctypes ile çağırır. Hatalı çağrı (kısa buffer) **AV** yapabilir. |
+| **AV** | access violation | Program yasak memory'ye dokundu, process anında ölür. RM session key 32 WCHAR'a yazılırsa (doğrusu 33) OSM çöker. Bu yüzden RM **ayrı bir child process**'te çalışır. |
+| **EDR** | Endpoint Detection and Response | Kurumsal güvenlik yazılımı (CrowdStrike, Defender ATP, SentinelOne…). "Bütün process'leri listele, herkesin memory'sini oku" davranışını kötü amaçlı yazılım sanır ve OSM'yi kill eder. Logda `Backend exited` budur. |
+| **PEB** | Process Environment Block | Windows'ta her process'in içinde cwd'nin durduğu memory bölgesi. Okumak için o process'e `PROCESS_VM_READ` ile girmek gerekir. Her PID'e bunu yapmak EDR'ye "memory scan" gibi görünür. OSM python/cmd/PowerShell PEB'ine **hiç** girmez. |
+| **Win32_Process** | WMI process tablosu | PowerShell `Get-CimInstance Win32_Process` ile makinedeki **her** process'i çeker. İş bittikten sonra clone duruyorken bu scan EDR'nin OSM'yi kill ettiği yoldur. Yasak. |
+| **holder** | dosyayı tutan process | Clone içindeki bir dosyayı açık bırakmış program. O ölmeden `rd` "erişim reddedildi" der. |
+| **leftover** | artakalan process | İş bitti / OSM çöktü, ama git veya serve hâlâ ayakta. |
+| **reap** | leftover'ı biçmek | cwd/argv'ı bu klasör olan leftover process'leri kill etmek. Linux `/proc`. Windows'ta **yok** (EDR). |
+| **`/proc`** | Linux process filesystem | Her process bir klasör: `/proc/4521/cwd`, `cmdline`. OSM leftover'ı buradan görür. Windows karşılığı yok (ve Win32_Process ikamesi kullanılmaz). |
+| **taskkill /F /T** | Windows force kill | `/F` force, `/T` process tree (child'lar da). OSM kayıtlı `serve_pid` / `extra_pids` için bunu kullanır — bütün makineyi scan ederek değil, **bildiği PID'ye**. |
+| **SIGKILL / killpg** | Linux force kill | `killpg` = o process'in grubu. `start_new_session=True` sayesinde bu işin serve'i ayrı gruptadır; OSM'nin grubu ölmez. |
+| **ctypes** | Python ↔ C köprüsü | RM DLL'ini çağırmak için. Argüman tipleri (`argtypes`) yanlışsa Windows stack'e bozuk sayı yazar → AV. |
+| **WCHAR** | Windows wide character | RM session key GUID metnidir. Windows `CCH_RM_SESSION_KEY` = 32 + bir null = **33** WCHAR. 32'lik buffer bir karakter kısa kalır. |
 
-Hang / timeout / serve-dead dış retry: 2. adımdan sonra dur, yeni serve — clone silinmez. Incomplete retry bu kill yoluna hiç girmez.
+#### Ne silinir, ne silinmez
 
-Sonra `finish_job`: `live=false`, status map (200→success, 404→not_found, 504→timeout, diğer→error), JSON kaydet, `callback_url` varsa **bir** terminal POST.
+İşin ürünü metindir. Diskteki repo **geçici bir çalışma masasıdır**. İş bitince masa toplanır — başarı da olsa, git patlasa da, model 500 verse de.
+
+| Silinir | Silinmez |
+|---|---|
+| `{data_dir}/.temp/{jira_id}/` — o ticket'ın clone'u | `{data_dir}/jobs/{job_id}.json` — geçmiş |
+| O işin `opencode serve` process'i ve onun açtığı tool children (git, node, rg…) | Diğer ticket'ın clone'u / serve'i |
+| Stale `.git/*.lock` (kimse tutmuyorsa) | OSM'nin kendi process'i, `start-backend.bat`, konsol, PID ≤ 4 |
+| | `logs/`, `.serve/{job_id}.log`, `queue.json` |
+| | OpenCode'un global `opencode.db` sohbet defteri |
+
+Sonraki iş aynı ticket için **aynı klasör adına** temiz clone alır. Eski sohbet defteri silinmiş dosyalardan bahsedebilir — kasıtlı (ürün seçimi 3).
+
+#### Ne zaman sileriz, ne zaman dokunmayız
+
+| An | Clone |
+|---|---|
+| Yeni iş başı: yol zaten duruyor (önceki crash / yarıda kalan) | **Önce sil**, sonra clone. Silinemezse OpenCode açılmaz, iş **500**. |
+| İş bitti (200 / 404 / 500 / 504), git hatası, clone hiç oluşmadı | Varsa sil. Yoksa process scan yok (yok yere Windows'u scan etme). |
+| Shutdown | Her canlı işin clone'u silinir. |
+| Boot (process yeni açıldı) | **Silmez.** Sadece leftover process'leri kill eder, satırı ERROR yazar. Klasörü yeni iş siler. |
+| Hang / timeout / serve-dead **dış retry** | **Silmez.** Aynı masada yeni OpenCode. |
+| Incomplete retry | Silmez, process de ölmez. |
+
+Benzetme: masa = clone. İş bitti → masa boşaltılır. Asistan takıldı, aynı ödeve devam → masayı devirme, sadece asistanı değiştir. OSM yeniden başladı → yerdeki dağınıklığa dokunma; bir sonraki iş gelince "önce burayı temizle" der.
+
+#### Neden önce kill edip sonra siliyoruz
+
+Windows'ta (ve biraz Linux'ta) açık dosya silinmez. OpenCode klasörü `cwd` yapar, dosya izler, tool children (git, node) dosya tutar. Antivirüs tarar. Klasörü `rmdir` etmek "erişim reddedildi" olur.
+
+Bu yüzden sıra **her zaman**:
+
+```text
+1. Session abort          "bu sohbeti kes" (best effort)
+2. Bu işin process tree'sini kill et  serve + git + tool children
+3. Artık kalanları temizle
+     Linux: /proc'ta cwd/argv bu klasör olanlar
+     Windows: process listesi YOK; önce rd dene;
+              klasör duruyorsa Restart Manager (ayrı child process)
+4. Kimse tutmuyorsa .git/*.lock sil
+5. hard-delete            Windows: rd /s /q \\?\…
+                          Linux: chmod + rmtree
+```
+
+Hang retry 2. adımdan sonra durur (yeni serve). Incomplete bu yola hiç girmez.
+
+**OSM kendini kill etmez.** Her `taskkill` / `SIGKILL` `kill_pid` → `may_kill` üzerinden geçer. Reddedilenler: bu process, her ancestor (`cmd`, `start-backend.bat`, konsol), PID ≤ 4. OSM'ye benzeyen leftover bırakılır; clone yine silinmeye çalışılır. Başka işin serve'ine dokunulmaz. Disk kökü / `C:\osm` gibi tek bileşenli yol **reap edilmez**.
+
+#### Windows — neden bu kadar tedbirli
+
+Kurumsal PC'de EDR (yukarıdaki sözlük) sürekli izler. İki şey OSM'yi daha önce kill etti:
+
+1. **Bütün process'leri listelemek** — PowerShell `Get-CimInstance Win32_Process`. İş **başarılı** bitmiş, clone hâlâ duruyor (kilit), OSM "kim tutuyor?" diye herkese bakıyor → EDR bunu scan sanıyor → `Backend exited`.
+2. **Her process'in memory'sini okumak** (PEB'den cwd) — özellikle python / cmd / PowerShell. Onlar OSM'nin kendi process tree'sidir; kapılarını açmak EDR'yi daha çok kızdırır.
+
+Bu yüzden Windows'ta:
+
+- **Process inventory yok.** `reap_path` hiçbir şey yapmaz. Win32_Process yok. python/cmd/PowerShell PEB'i okunmaz.
+- Bildiğimiz PID'ler zaten job kaydında (`serve_pid`, `extra_pids`). Onları `taskkill /F /T` ile kill ederiz — "herkesi listele" değil, "şu PID'yi kill et".
+- Sonra **önce `rd`**. Çoğu zaman klasör gider. RM'ye hiç gidilmez.
+- `rd` yetmezse (klasör duruyor) o zaman RM: "bu yolu kim açık tutuyor?"
+- RM **OSM'nin içinde çağrılmaz.** Ayrı bir **child process**'te çağrılır (bir sonraki alt başlık).
+- Child exit 0 ise (sağlıklı cevap verdi) **ikinci kez RM yok** — aynı soruyu tekrar sormanın anlamı yok, kilit hâlâ varsa muhtemelen OSM'nin kill edemeyeceği bir şeydir (antivirüs, Explorer).
+- Child öldüyse / timeout / sıfır olmayan exit **ve klasör duruyorsa** bir child daha. **En fazla iki.** İkinci sağlıklı 0 ise dur.
+- RM'den sonra tekrar `path_has_holders` yok (o da process/holder scan'idir; Windows'ta kısır döngü + EDR riski).
+- `hard_delete`: en fazla 6 `rd`, üstel bekleme (0.2s … 2s). Önce reserved isimler (`CON`, `NUL`, `COM1`…) tek tek `del`/`rd`, sonra tüm tree. Yol her zaman `\\?\` ile.
+- ctypes `argtypes` set edilir. RM session key **33** WCHAR; 32'lik buffer AV yapar — o AV child'da olsun diye zaten ayrı process'teyiz.
+
+Linux daha düz: `/proc` ile cwd/argv bu clone olan leftover'lar ve açık fd'ler, sonra `chmod` yazılabilir + `rmtree`. Holder varken `.git/*.lock` bırakılır (yarım kilit, bozuk repo'dan beter).
+
+#### Child process — ne, neden, hangi durumda
+
+**Child process** = OSM'nin `subprocess` ile açtığı **başka bir Python**. OSM (**parent**) bekler. Tehlikeli kod child'dadır. Child AV yerse / EDR child'ı kill ederse parent yaşar; job bitirme / callback / sonraki iş devam eder.
+
+**RM child** (`query_windows_restart_manager`) yalnızca şunların **hepsi** doğruysa açılır:
+
+| Koşul | Yoksa ne olur |
+|---|---|
+| İşletim sistemi Windows | Linux'ta bu child yok; leftover `/proc` ile (OSM'nin kendi process'inde, EDR yok). |
+| Clone klasörü **hâlâ duruyor** | `rd` işini bitirdiyse RM'ye gerek yok, child yok. |
+| `delete_clone_path` iş sonu / iş başı leftover / shutdown silmesinde | Hang retry clone silmez → RM child da yok. Incomplete bu yola girmez. |
+| İlk `hard_delete` (`rd` × 6) yetmedi | Yetiyorsa child yok. |
+| Bu silme için henüz 2 child açılmadı | İkinci sağlıklı 0'dan sonra üçüncü yok. |
+
+Açılış sırası somut:
+
+```text
+iş bitti
+  → kayıtlı serve/git PID'lerini taskkill   (RM child değil; bildiğimiz PID)
+  → hard_delete: rd /s /q \\?\…  (en fazla 6)
+  → klasör yok mu?  evet → bitti, child yok
+  → klasör var (Windows)
+       child #1: "RM, bu yolu kim tutuyor?"
+         exit 0  → PID'leri kill et, tekrar rd
+                    hâlâ duruyor → DUR (ikinci RM yok; child sağlıklıydı)
+         öldü / timeout / ≠0  ve klasör duruyor
+       child #2: aynı soru, son kez
+         yine rd
+         sonrası ne olursa olsun üçüncü child yok
+```
+
+Child ne yapar: kısa bir `python -c` OSM paketinden `_rm_query_pids` çalıştırır (`OSM_RM_INPROCESS=1` ile, yoksa child da child açardı). `RmStartSession` → klasörü kaydet → `RmGetList` → PID JSON'u stdout'a yaz → çıkar. Parent JSON'u okur, `may_kill` geçenleri `taskkill` eder, tekrar `rd`.
+
+**RM child olmayan diğer child'lar** (karışmasın):
+
+| Ne | Child mi? | Neden |
+|---|---|---|
+| `opencode serve` | Evet, her işte | Asıl iş. Job-end'de kill edilir. |
+| `git clone` / `ls-remote` | Evet | PID `extra_pids`'e yazılır, bitince / job-end'de ölür. |
+| `rd` / `taskkill` | Evet ama kısa `cmd` | Windows'un kendi aracı; OSM içinde `rmtree` bazen kilitlenir. |
+| Windows kimlik diyaloğu (`Get-Credential`) | Evet, bir kez | GCM yetmezse. Clone için, silme değil. |
+| Win32_Process / her PID PEB | **Asla** | EDR OSM'yi kill eder. |
+| RM, `rd` klasörü sildiyse | **Hayır** | Sormaya gerek yok. |
+| RM, önceki child exit 0 ise | **Hayır** | Aynı cevabı tekrar alma. |
+| Hang / incomplete retry | RM child **yok** | Clone silinmiyor. |
+
+#### `delete_clone_path` — tek kapı
+
+Worker ve shutdown hep buradan geçer (`reason=before-clone` / `job-end` / `shutdown`):
+
+1. `hard_delete` (yoksa zaten başarılı).
+2. Windows'ta hâlâ duruyorsa `retry_windows_delete_if_held` (RM çocuğu).
+3. Log: gitti / duruyor. Dönüş: klasör gerçekten yok mu.
+
+Clone hiç oluşmadıysa (ls-remote fail, path yok) process scan atlanır. Holder / delete / boot / shutdown exception **clone silmeyi atlamaz**, boot'u yarım bırakmaz, OSM'yi düşürmez.
+
+Silinemezse:
+
+- İş başı leftover → OpenCode yok, callback **500** (`could not remove leftover clone at …`).
+- İş sonu → log ERROR, geçmiş satırı yine yazılır, callback yine gider. Klasör yerde kalabilir; sonraki aynı `jira_id` yine önce silmeyi dener.
+
+#### Job bittikten sonra (callback)
+
+Süreçler öldü, clone silindi (veya denendi). `finish_job`: `live=false`, status (200→success, 404→not_found, 504→timeout, diğer→error), JSON kaydet, `callback_url` varsa **bir** terminal POST.
 
 Callback HTTP (n8n'in o POST'a cevabı, zarf `status_code` değil):
 
@@ -478,7 +740,7 @@ Boot leftover ERROR satırlarına callback **yok**.
 
 Boot (iş kabulünden önce):
 
-- Kayıtlı leftover `serve_pid` / `extra_pids` öldür
+- Kayıtlı leftover `serve_pid` / `extra_pids` kill et
 - Linux'ta `work_dir` orphan reap; Windows'ta Win32 snapshot yok
 - leftover queued/running satırları ERROR (`process restarted; leftover job was not resumed`), callback yok
 - `queue.json` temizle
@@ -487,11 +749,11 @@ Boot (iş kabulünden önce):
 Shutdown:
 
 - `POST /jobs` / `DELETE /sessions` kes
-- Her işin ağacını zorla öldür
+- Her işin process tree'sini force-kill et
 - running **ve** queued → ERROR + callback **500**
 - clone sil
 - worker thread'leri bekle
-- ancak o zaman süreç çıksın
+- ancak o zaman process çıksın
 
 Boot leftover veya shutdown ERROR'dan sonra aynı `jira_id` için yeni `POST /jobs` **yeni iştir**. Worker leftover yolu önce siler, sonra clone'lar.
 
@@ -587,7 +849,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 | `n8n-poller.json` | n8n alt-akış: `GET /jobs/{id}` döngüsü. |
 | `n8ninitial.json` | Eski / başlangıç n8n parçası; kamu sözleşme değil. |
 
-### `src/opencode_manager/` — süreç
+### `src/opencode_manager/` — process
 
 | Dosya | Görevi |
 |---|---|
@@ -610,7 +872,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 | Dosya | Görevi |
 |---|---|
 | `clone.py` | `clone_path_for`, `ls-remote` tam ref, `git clone`, origin scrub, PID takibi |
-| `auth.py` | İzole git env, GCM, Windows `Get-Credential`, Basic retry, cred bellek |
+| `auth.py` | İzole git env, GCM, Windows `Get-Credential`, Basic retry, cred memory |
 | `detect.py` | Host sınıflandırma (gitlab / azure / tfs) — log için |
 
 ### `src/opencode_manager/opencode/`
@@ -626,8 +888,8 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 
 | Dosya | Görevi |
 |---|---|
-| `end.py` | Job-end sırası: ağaç öldür → leftover → RM holders → lock düşür → `hard_delete` |
-| `kill.py` | `kill_pid` / `may_kill` (OSM'yi asla öldürme), Linux reap, Windows RM child |
+| `end.py` | Job-end sırası: process tree kill → leftover → RM holders → lock düşür → `hard_delete` |
+| `kill.py` | `kill_pid` / `may_kill` (OSM'yi asla kill etme), Linux reap, Windows RM child |
 | `rmtree.py` | Windows `rd /s /q \\?\` + reserved names; Linux chmod + rmtree |
 
 ### `src/opencode_manager/dashboard/`
@@ -757,6 +1019,6 @@ curl örnekleri ve n8n ack tabloları için [README.md](README.md).
 
 ## 10. Bilerek kopyalanmayanlar (`virtual_developer`)
 
-Jira poller, GitLab MR / `glab`, Codex, dashboard yazmaları, Poll / Scheduled / Sessions / Storage / Settings sekmeleri, PAT haritası, `feature/KEY` dalı üretmek, paylaşılan uzun ömürlü serve, "serve'i asla öldürme", kirli clone'u reuse için tutmak.
+Jira poller, GitLab MR / `glab`, Codex, dashboard yazmaları, Poll / Scheduled / Sessions / Storage / Settings sekmeleri, PAT haritası, `feature/KEY` dalı üretmek, paylaşılan uzun ömürlü serve, "serve'i asla kill etme", kirli clone'u reuse için tutmak.
 
 Kopyalananlar: git no-console-prompt env, process-tree kill, Windows hard delete, compact-bekle / tek nudge, dış retry şekli, per-job log context, jobs-tab görünümü (GET-only).

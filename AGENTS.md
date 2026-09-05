@@ -384,6 +384,14 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     `%USERPROFILE%\.opencode`, not AppData). Detect that folder,
     delete it, then copy `vendor/bin` from scratch. Run the helper
     with the bundled Python, not PATH.
+  - `install-service.bat` / `install-service.sh` — optional OS
+    service (backend only: API + SPA on `listen_port`). Does **not**
+    change the two-window exe. Windows uses vendored WinSW
+    (`vendor/bin/windows/WinSW.exe`) wrapping the payload exe
+    `--backend-only` or `.venv` `python -m opencode_manager.app`.
+    Linux writes a systemd unit (user unit unless root). Git GCM
+    popups do not work in a service; store credentials first.
+    `uninstall-service.*` removes the unit.
 - CI (`packaging/build_dist.py`, workflow **Offline Distribution**)
   produces four zips: `*-windows-x64.zip`, `*-linux-x64.zip`,
   `*-darwin.zip`, and `*-windows-linux.zip` (Windows + Linux). Each
@@ -407,7 +415,9 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
   OS — no cross-compile. `agents/` is not in the exe. The exe artifact
   zip is the binary plus `settings.local.yaml` (Windows `C:\osm`, Linux
-  `/var/lib/osm`). Keep both in the same folder. Windows does **not**
+  `/var/lib/osm`) and the service installers (`install-service.*`,
+  Windows also `WinSW.exe` when vendored). The exe default is still
+  two consoles. Keep the files in the same folder. Windows does **not**
   fall back to `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not
   writable, the exe falls back to `$XDG_DATA_HOME/osm` or
   `~/.local/share/osm`.

@@ -56,8 +56,10 @@ osm_chmod_launchers() {
   local f
   for f in \
     install.sh install-opencode.sh start.sh start-backend.sh start-frontend.sh \
+    install-service.sh uninstall-service.sh \
     scripts/install.sh scripts/install-opencode.sh scripts/start.sh \
-    scripts/start-backend.sh scripts/start-frontend.sh scripts/osm-lib.sh
+    scripts/start-backend.sh scripts/start-frontend.sh scripts/osm-lib.sh \
+    scripts/install-service.sh scripts/uninstall-service.sh
   do
     if [[ -f "$root/$f" ]]; then
       chmod +x "$root/$f" 2>/dev/null || true

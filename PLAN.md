@@ -767,9 +767,13 @@ For every git child of a job:
   username/password dialog** (`Get-Credential`) and retry once with
   `http.extraHeader` Basic (password never on argv or in logs).
   `GIT_TERMINAL_PROMPT=0` still blocks a hidden console prompt.
-  The manager must run in an interactive desktop session (the
-  aMIR-mini Backend window), not as Session 0 / a service, or the dialog
-  cannot appear.
+  The two-window exe must run in an interactive desktop session (the
+  aMIR-mini Backend window) or the dialog cannot appear. The optional
+  Windows/Linux **service** (`install-service.*`) is Session 0 /
+  systemd: no GCM popup. Store credentials for the service account
+  first, or set the Windows service Log On to your user in
+  services.msc. The service is backend-only and does not change the
+  two-window exe.
 - **Linux:** `credential.helper=` (empty). No OS store.
 - after clone, origin URL scrubbed of any userinfo. The source of
   truth is stored `remote.origin.url`, not `git remote get-url`

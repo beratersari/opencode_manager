@@ -540,6 +540,21 @@ def fetch_opencode(ver: dict[str, str], os_name: str, arch: str, dest_bin: Path)
     return asset
 
 
+def fetch_winsw(ver: dict[str, str], dest_bin: Path) -> str:
+    version = ver.get("WINSW_VERSION") or "2.12.0"
+    asset = ver.get("WINSW_ASSET") or "WinSW-x64.exe"
+    repo = ver.get("WINSW_REPO") or "winsw/winsw"
+    url = f"https://github.com/{repo}/releases/download/v{version}/{asset}"
+    dest_bin.mkdir(parents=True, exist_ok=True)
+    target = dest_bin / "WinSW.exe"
+    with tempfile.TemporaryDirectory(prefix="osm-winsw-") as tmp:
+        archive = Path(tmp) / asset
+        download(url, archive)
+        shutil.copy2(archive, target)
+    print(f"  WinSW: {target} ({target.stat().st_size / (1024 * 1024):.1f} MB)")
+    return asset
+
+
 def stage_app(root: Path, payload: Path) -> None:
     payload.mkdir(parents=True, exist_ok=True)
     for name in COPY_FILES:
@@ -567,6 +582,10 @@ def stage_app(root: Path, payload: Path) -> None:
         "start-backend.sh",
         "start-frontend.bat",
         "start-frontend.sh",
+        "install-service.bat",
+        "install-service.sh",
+        "uninstall-service.bat",
+        "uninstall-service.sh",
     ):
         src = scripts / launcher
         if src.is_file():
@@ -762,6 +781,13 @@ def main(argv: list[str] | None = None) -> int:
     for pack_os, pack_arch, dest_name in oc_needed:
         oc_assets.append(fetch_opencode(ver, pack_os, pack_arch, oc_root / dest_name))
 
+    need_winsw = any(pid in {"windows", "winlinux"} for pid in pack_ids) or (
+        args.in_place and host_pack == "windows"
+    )
+    if need_winsw:
+        print("\nStep 4b: Fetching WinSW (Windows service wrapper)...")
+        fetch_winsw(ver, cache / "winsw")
+
     if args.in_place:
         (cache / "SUPPORTED_PYTHON.txt").write_text(
             "# Python minors with a complete offline wheel set\n" + "\n".join(supported) + "\n",
@@ -815,6 +841,13 @@ def main(argv: list[str] | None = None) -> int:
                 shutil.rmtree(dest_oc)
             shutil.copytree(src_oc, dest_oc)
             print(f"  + bin/{dest_name}")
+        if pid in {"windows", "winlinux"}:
+            src_w = cache / "winsw" / "WinSW.exe"
+            dest_w = vendor / "bin" / "windows" / "WinSW.exe"
+            if src_w.is_file():
+                dest_w.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_w, dest_w)
+                print("  + bin/windows/WinSW.exe")
         (vendor / "SUPPORTED_PYTHON.txt").write_text(
             "# Python minors with a complete offline wheel set\n" + "\n".join(supported) + "\n",
             encoding="utf-8",

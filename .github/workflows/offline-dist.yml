@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           prefix="${{ steps.ver.outputs.dist_name }}"
           declare -A NEED
-          NEED[windows-x64]="vendor/python/windows/python.exe vendor/bin/windows/opencode.exe"
+          NEED[windows-x64]="vendor/python/windows/python.exe vendor/bin/windows/opencode.exe vendor/bin/windows/WinSW.exe"
           NEED[linux-x64]="vendor/python/linux/bin/python3 vendor/bin/linux/opencode"
           NEED[darwin]="vendor/python/darwin-arm64/bin/python3 vendor/python/darwin-x64/bin/python3 vendor/bin/darwin-arm64/opencode vendor/bin/darwin-x64/opencode"
           NEED[windows-linux]="vendor/python/windows/python.exe vendor/python/linux/bin/python3 vendor/bin/windows/opencode.exe vendor/bin/linux/opencode"

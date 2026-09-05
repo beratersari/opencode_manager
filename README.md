@@ -313,6 +313,29 @@ pip install -e ".[exe]"
 python packaging/build_exe.py
 ```
 
+### Run as a service (new, does not change the exe)
+
+Backend only (API + dashboard on http://127.0.0.1:4096/jobs). The
+two-window exe is unchanged. Stop the service before opening that
+exe on the same port.
+
+```bat
+REM Windows — elevated prompt. Needs WinSW.exe (Windows zip) or .venv
+install-service.bat
+uninstall-service.bat
+```
+
+```bash
+# Linux — user systemd unit, or root -> /etc/systemd/system
+./install-service.sh
+./uninstall-service.sh
+```
+
+Git credential popups do not appear in a service. Store GCM / git
+credentials for the account the service runs as first. On Windows,
+if clones fail, set the service **Log On** in `services.msc` to your
+user.
+
 ### Build the vendor payload (needs network, once)
 
 On a machine that can reach GitHub / PyPI / npm:

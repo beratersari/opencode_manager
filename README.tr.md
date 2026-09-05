@@ -926,6 +926,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 | Dosya | Görevi |
 |---|---|
 | `install.bat` / `install.sh` | Manager: bundled Python ile `.venv`, `vendor/python-wheels`, `web/dist` kontrol. Ağ yok. |
+| `install-service.bat` / `.sh` | OS servisi (sadece backend). İki pencereli exe değişmez. Windows: WinSW. |
 | `install-opencode.bat` / `.sh` + `install_opencode.py` | `<user>/.opencode` sil, `vendor/bin` kopyala |
 | `start.bat` / `start.sh` | Backend + frontend |
 | `start-backend.*` / `run-backend.bat` | uvicorn / manager |

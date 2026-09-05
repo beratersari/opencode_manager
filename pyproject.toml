@@ -27,6 +27,7 @@ exe = [
 [project.scripts]
 opencode-manager = "opencode_manager.app:main"
 opencode-manager-standalone = "opencode_manager.standalone:main"
+amir-mini-service = "opencode_manager.service_install:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

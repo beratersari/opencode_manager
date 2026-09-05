@@ -239,10 +239,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     overlay_dest = out_dir / "settings.local.yaml"
     shutil.copy2(overlay_src, overlay_dest)
+    if suffix.startswith("windows"):
+        for launcher in ("install-service.bat", "uninstall-service.bat"):
+            src_l = root / "scripts" / launcher
+            if src_l.is_file():
+                shutil.copy2(src_l, out_dir / launcher)
+                print(f"[OK] {out_dir / launcher}")
+        winsw = root / "vendor" / "bin" / "windows" / "WinSW.exe"
+        if winsw.is_file():
+            shutil.copy2(winsw, out_dir / "WinSW.exe")
+            print(f"[OK] {out_dir / 'WinSW.exe'}")
+        else:
+            print("[WARN] vendor/bin/windows/WinSW.exe missing; service install needs that file.")
+    else:
+        unit = root / "packaging" / "amir-mini.service"
+        # generated at install time; ship the installer script
+        for launcher in ("install-service.sh", "uninstall-service.sh"):
+            src_l = root / "scripts" / launcher
+            if src_l.is_file():
+                dest_l = out_dir / launcher
+                shutil.copy2(src_l, dest_l)
+                dest_l.chmod(dest_l.stat().st_mode | 0o111)
+                print(f"[OK] {dest_l}")
     size_mb = final.stat().st_size / (1024 * 1024)
     print(f"[OK] {final} ({size_mb:.1f} MB)")
     print(f"[OK] {overlay_dest}")
-    print("Put both files in the same folder. Git and OpenCode stay on PATH.")
+    print("Two-window exe is unchanged. Use install-service.* to run as a service.")
     return 0
 
 

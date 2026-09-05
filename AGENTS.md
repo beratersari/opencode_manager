@@ -396,8 +396,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - Additive single-file exe (`packaging/build_exe.py`, same workflow,
   native Windows + Linux jobs): `opencode-manager-<ver>-windows-x64.exe`
   and `opencode-manager-<ver>-linux-x64`. The artifact is that one
-  file. It starts API + SPA (`:4096`) and the `:5173` proxy in-process
-  (`opencode_manager.standalone`). It does **not** replace the zip, does
+  file. Opening it uses this console as **OSM-Backend** (`:4096`) and
+  opens a second console **OSM-Frontend** (`:5173`) via
+  `opencode_manager.standalone` (`CREATE_NEW_CONSOLE` on Windows). It
+  does **not** replace the zip, does
   **not** change `start.bat` / `start.sh`, and does **not** vendor Git
   or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
   OS — no cross-compile. `agents/` is not in the exe. The exe artifact

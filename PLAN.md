@@ -1040,7 +1040,8 @@ Clone the repo for reference only. Do not import it as a dependency.
 - additive single-file exe (Windows + Linux only): PyInstaller
   onefile from `packaging/build_exe.py`. Same workflow, native
   runners. Artifact zip is the exe plus `settings.local.yaml`.
-  Starts backend + frontend in-process. Does not replace the zip
+  Starts backend in this console and the :5173 proxy in a second
+  window. Does not replace the zip
   or change `start.bat` / `start.sh`. Git and OpenCode stay on
   PATH. Windows `data_dir` is `C:\osm` (no AppData fallback).
 
@@ -1094,7 +1095,7 @@ opencode_manager/
       store.py          # job history JSON
       chat.py           # snapshot + live transcript
       frontend_proxy.py # optional :5173 SPA proxy (no Node)
-    standalone.py       # one-process API + :5173; single-file exe entry
+    standalone.py       # exe: OSM-Backend window + OSM-Frontend window
   web/                  # React + Vite + Tailwind SPA (jobs tab only)
   web/dist/             # CI-built SPA; no Node on the target
   scripts/              # offline install + start (Windows .bat, Linux .sh)

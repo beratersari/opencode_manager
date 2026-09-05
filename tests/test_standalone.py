@@ -12,8 +12,13 @@ from opencode_manager.standalone import (
     apply_writable_data_dir,
     fallback_data_dir,
     prepare,
+    prepare_backend,
+    prepare_frontend,
     prepend_opencode_path,
+    self_command,
+    serve_backend,
     serve_prepared,
+    spawn_frontend_window,
 )
 
 
@@ -120,7 +125,102 @@ def test_prepare_requires_spa(tmp_settings: Settings, tmp_path: Path) -> None:
         prepare(tmp_settings)
 
 
-def test_serve_prepared_runs_two_uvicorn_servers(
+def test_prepare_frontend_does_not_boot_manager(tmp_settings: Settings, tmp_path: Path) -> None:
+    dist = tmp_path / "web" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    tmp_settings.project_root = tmp_path
+    prepared = prepare_frontend(tmp_settings, frontend_port=5173)
+    assert prepared.backend_app is None
+    assert prepared.frontend_app is not None
+    backend = prepare_backend(tmp_settings, frontend_port=5173)
+    assert backend.backend_app is not None
+    assert backend.frontend_app is None
+
+
+def test_self_command_frozen_is_the_exe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    exe = tmp_path / "opencode-manager.exe"
+    exe.write_bytes(b"x")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe))
+    cmd = self_command("--frontend-only", "--frontend-port", "5173")
+    assert cmd[0] == str(exe.resolve())
+    assert cmd[1:] == ["--frontend-only", "--frontend-port", "5173"]
+
+
+def test_self_command_unfrozen_uses_module() -> None:
+    cmd = self_command("--frontend-only")
+    assert cmd[0] == sys.executable
+    assert cmd[1:3] == ["-m", "opencode_manager.standalone"]
+    assert "--frontend-only" in cmd
+
+
+def test_spawn_frontend_window_uses_new_console(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict = {}
+
+    class FakePopen:
+        def __init__(self, args, **kwargs):  # noqa: ANN001
+            seen["args"] = list(args)
+            seen["kwargs"] = kwargs
+
+    monkeypatch.setattr("opencode_manager.standalone.subprocess.Popen", FakePopen)
+    spawn_frontend_window(frontend_host="0.0.0.0", frontend_port=5173)
+    assert "--frontend-only" in seen["args"]
+    assert "5173" in seen["args"]
+    if sys.platform.startswith("win"):
+        import subprocess
+
+        assert seen["kwargs"].get("creationflags") == subprocess.CREATE_NEW_CONSOLE
+
+
+def test_serve_backend_opens_frontend_window(
+    tmp_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    dist = tmp_path / "web" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    tmp_settings.project_root = tmp_path
+    prepared = prepare_backend(tmp_settings, frontend_port=5173)
+    served: list[int] = []
+    spawned: list[tuple[str, int]] = []
+
+    class FakeConfig:
+        def __init__(self, app, host="127.0.0.1", port=0, log_level="info"):  # noqa: ANN001
+            self.app = app
+            self.host = host
+            self.port = port
+            self.log_level = log_level
+
+    class FakeServer:
+        def __init__(self, config: FakeConfig) -> None:
+            self.config = config
+            self.install_signal_handlers = True
+            self.should_exit = False
+            self.started = False
+
+        async def serve(self) -> None:
+            self.started = True
+            served.append(self.config.port)
+            await asyncio.sleep(0.05)
+
+    def fake_spawn(*, frontend_host: str, frontend_port: int):  # noqa: ANN001
+        spawned.append((frontend_host, frontend_port))
+        return object()
+
+    monkeypatch.setattr("opencode_manager.standalone.uvicorn.Config", FakeConfig)
+    monkeypatch.setattr("opencode_manager.standalone.uvicorn.Server", FakeServer)
+    monkeypatch.setattr("opencode_manager.standalone.spawn_frontend_window", fake_spawn)
+    rc = asyncio.run(serve_backend(prepared, spawn_frontend=True))
+    assert rc == 0
+    assert tmp_settings.listen_port in served
+    assert spawned == [(prepared.frontend_host, 5173)]
+
+
+def test_serve_prepared_runs_backend_only(
     tmp_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import asyncio
@@ -144,8 +244,10 @@ def test_serve_prepared_runs_two_uvicorn_servers(
             self.config = config
             self.install_signal_handlers = True
             self.should_exit = False
+            self.started = False
 
         async def serve(self) -> None:
+            self.started = True
             served.append(self.config.port)
 
     monkeypatch.setattr("opencode_manager.standalone.uvicorn.Config", FakeConfig)
@@ -153,7 +255,7 @@ def test_serve_prepared_runs_two_uvicorn_servers(
     rc = asyncio.run(serve_prepared(prepared))
     assert rc == 0
     assert tmp_settings.listen_port in served
-    assert 5173 in served
+    assert 5173 not in served
 
 
 def test_prepend_opencode_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,7 +322,8 @@ def test_ci_uploads_single_exe_artifact() -> None:
 
 def test_standalone_does_not_import_start_scripts() -> None:
     text = (ROOT / "src" / "opencode_manager" / "standalone.py").read_text(encoding="utf-8")
-    assert "import subprocess" not in text
-    assert "Popen" not in text
     assert "scripts/start" not in text
     assert "scripts\\start" not in text
+    assert "scripts/start" not in text.split('"""', 2)[-1]
+    assert "--frontend-only" in text
+    assert "CREATE_NEW_CONSOLE" in text

@@ -940,6 +940,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 |---|---|
 | `build_dist.py` | Offline zip: CPython + wheels + OpenCode CLI + `web/dist`. `agents/` zip'e girmez. |
 | `build_exe.py` | Tek dosya exe (Windows / Linux, o OS'ta derlenir). Backend + frontend. `start.*` değişmez. |
+| `build_opencode_dist.py` | Ayrı offline OpenCode zip. Her zaman **1.18.10**. |
 | `settings.local.windows.yaml` / `.linux.yaml` | Zip'e giden overlay: Windows `C:\osm`, Linux `/var/lib/osm`. |
 | `versions.env` | Pin'lenen sürümler |
 

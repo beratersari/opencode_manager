@@ -313,6 +313,20 @@ pip install -e ".[exe]"
 python packaging/build_exe.py
 ```
 
+### Offline OpenCode 1.18.10 installer
+
+A separate artifact installs **only** OpenCode CLI **1.18.10** (no
+aMIR-mini). No network.
+
+- `amir-mini-opencode-1.18.10-windows-x64.zip` — `install.bat`
+- `amir-mini-opencode-1.18.10-linux-x64.zip` — `./install.sh`
+
+That wipes `<user>/.opencode` and copies the pinned binary. Build:
+
+```bash
+python packaging/build_opencode_dist.py
+```
+
 ### Run as a service (new, does not change the exe)
 
 Backend only (API + dashboard on http://127.0.0.1:4096/jobs). The

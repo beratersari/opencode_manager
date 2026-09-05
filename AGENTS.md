@@ -392,6 +392,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     Linux writes a systemd unit (user unit unless root). Git GCM
     popups do not work in a service; store credentials first.
     `uninstall-service.*` removes the unit.
+  - Separate OpenCode-only zip (`packaging/build_opencode_dist.py`):
+    `amir-mini-opencode-1.18.10-windows-x64.zip` and
+    `amir-mini-opencode-1.18.10-linux-x64.zip`. Always OpenCode
+    **1.18.10** (pinned in the builder; not the OSM version). Target
+    `install.bat` / `install.sh` wipe `<user>/.opencode` and copy
+    `vendor/bin`. No Python, no network, no aMIR-mini install.
 - CI (`packaging/build_dist.py`, workflow **Offline Distribution**)
   produces four zips: `*-windows-x64.zip`, `*-linux-x64.zip`,
   `*-darwin.zip`, and `*-windows-linux.zip` (Windows + Linux). Each

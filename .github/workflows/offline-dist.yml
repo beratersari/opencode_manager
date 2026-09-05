@@ -162,6 +162,31 @@ jobs:
           fi
           echo "Four-zip payload OK"
 
+      - name: Build OpenCode 1.18.10 installer zips
+        run: python packaging/build_opencode_dist.py --out-dir dist
+
+      - name: Assert OpenCode installer zips
+        run: |
+          set -euo pipefail
+          for suffix in windows-x64 linux-x64; do
+            stage="dist/stage/amir-mini-opencode-1.18.10-${suffix}"
+            zip="dist/amir-mini-opencode-1.18.10-${suffix}.zip"
+            if [ ! -f "$zip" ]; then
+              echo "Missing $zip"
+              exit 1
+            fi
+            got="$(tr -d '[:space:]' < "$stage/OPENCODE_VERSION.txt")"
+            if [ "$got" != "1.18.10" ]; then
+              echo "OpenCode installer must be 1.18.10, found $got"
+              exit 1
+            fi
+          done
+          test -f dist/stage/amir-mini-opencode-1.18.10-windows-x64/vendor/bin/windows/opencode.exe
+          test -f dist/stage/amir-mini-opencode-1.18.10-linux-x64/vendor/bin/linux/opencode
+          test -f dist/stage/amir-mini-opencode-1.18.10-windows-x64/install.bat
+          test -f dist/stage/amir-mini-opencode-1.18.10-linux-x64/install.sh
+          echo "OpenCode 1.18.10 installer zips OK"
+
       # upload-artifact always wraps the path in a zip. Upload the staged
       # folder (not the payload .zip) so a download extracts install.bat /
       # vendor/ directly. Tag releases still attach the real .zip files below.
@@ -197,6 +222,22 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload OpenCode 1.18.10 Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: amir-mini-opencode-1.18.10-windows-x64
+          path: dist/stage/amir-mini-opencode-1.18.10-windows-x64/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload OpenCode 1.18.10 Linux installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: amir-mini-opencode-1.18.10-linux-x64
+          path: dist/stage/amir-mini-opencode-1.18.10-linux-x64/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Create GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -206,6 +247,8 @@ jobs:
             dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
             dist/${{ steps.ver.outputs.dist_name }}-darwin.zip
             dist/${{ steps.ver.outputs.dist_name }}-windows-linux.zip
+            dist/amir-mini-opencode-1.18.10-windows-x64.zip
+            dist/amir-mini-opencode-1.18.10-linux-x64.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
@@ -230,6 +273,13 @@ jobs:
             Also attached: `${{ steps.ver.outputs.dist_name }}-windows-x64.exe` and
             `${{ steps.ver.outputs.dist_name }}-linux-x64`. One file, no `install.bat`.
             Still needs Git and OpenCode on PATH. Starts API + SPA and the :5173 proxy.
+
+            ## Offline OpenCode 1.18.10 installer
+
+            Separate artifact (OpenCode CLI only, always 1.18.10):
+
+            - `amir-mini-opencode-1.18.10-windows-x64.zip` — `install.bat`
+            - `amir-mini-opencode-1.18.10-linux-x64.zip` — `./install.sh`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

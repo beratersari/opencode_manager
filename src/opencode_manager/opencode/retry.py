@@ -19,6 +19,7 @@ from opencode_manager.opencode.session import (
     compact_marker_count,
     last_assistant_id,
     last_assistant_text,
+    last_assistant_text_since,
     model_is_known,
     turn_has_new_assistant,
     session_is_busy,
@@ -274,7 +275,12 @@ def run_opencode_job(
                     job.session_id or "(none)",
                 )
                 if outcome == "success":
-                    return LoopResult(text=job.text or last_assistant_text(client.list_messages(job.session_id)), status_code=200)
+                    try:
+                        used = client.list_messages(job.session_id)
+                    except Exception:  # noqa: BLE001
+                        used = []
+                    product = job.text or last_assistant_text_since(used, baseline_assistant)
+                    return LoopResult(text=product, status_code=200)
                 if outcome == "asking":
                     log_fail(
                         logger,
@@ -491,7 +497,7 @@ def _inner_loop(
         job.chat_snapshot = snapshot_chat(messages, job.session_id)
         if looks_like_unknown_model_error(str(messages)):
             raise JobFailed(500, unknown_model_message(job.model, []))
-        text = last_assistant_text(messages)
+        text = last_assistant_text_since(messages, baseline_assistant_id)
         new_assistant = False
         if listed_ok:
             new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
@@ -589,7 +595,7 @@ def _inner_loop(
             time.sleep(0.4)
             continue
 
-        verdict = assess_idle(messages)
+        verdict = assess_idle(messages, baseline_assistant_id=baseline_assistant_id)
         role, finish = _last_finish(messages)
         logger.info(
             "session idle assess=%s messages=%s new_compacts=%s last_role=%s last_finish=%s last_assistant=%s",

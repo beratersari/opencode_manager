@@ -27,7 +27,10 @@ You want n8n to do this instead:
 1. POST a job (repo, branch, prompt, model, optional session, Jira id, timeout, retries, **callback_url**).
 2. Get an immediate ack (accepted / queued / already running / bad request).
 3. Later receive **exactly one** callback on the **`callback_url` from that request** (the caller, usually an n8n Wait node). That POST is the terminal result — never a “queued” or “started” ping.
-4. On success, the callback `text` is the last OpenCode assistant message.
+4. On success, the callback `text` is the last OpenCode assistant
+   message **of this job's turn**. A resumed `ses_*` still ends with
+   the previous job's `finish=stop`; `assess_idle` must not treat
+   that as this job succeeding.
    On failure, `text` is a real error a human can act on.
 
 This service owns everything in the middle: concurrency, queue, clone, serve,
@@ -568,7 +571,7 @@ until OpenCode is actually idle:
 | Compact recap that quotes “Shall I…?” | Still compact, not a live question. Wait. |
 | Clarifying question (live, last turn stopped) | **One** unattended nudge (see prompts below), then wait. Never re-send the original prompt. |
 | Compact-only loop (many **new** compact markers this wait, no work turn; ~8 cycles) | Abort the in-flight turn. Wait until the **same** session is **idle**. Then one compact-loop nudge. Do **not** Continue while compact is still running. Lifetime / resumed-session compact history does **not** count (KAN-95). |
-| Real last-turn `stop`, not premature (or the only leftover signal is OpenCode todos) | **Success.** Leave the loop. Product is last assistant text — leftover todos are not a delivery gate. |
+| Real last-turn `stop`, not premature (or the only leftover signal is OpenCode todos) | **Success.** Leave the loop. Product is last assistant text **after** the assistant id that was already in the session when this job POSTed. Leftover todos are not a delivery gate. A previous job's `stop` on a resumed `ses_*` is not this turn. |
 | Still asking after the one unattended nudge | **Fail the job** (`500`). No second nudge. No `INCOMPLETE_RESUME`. |
 | Compact-related leftover after wait / after `COMPACT_LOOP_NUDGE` already used | **Fail the job** (`500`). Do not send `INCOMPLETE_RESUME` (it races compact). |
 | Session **idle**, last finish unfinished (`tool-calls` / `length` / null / not a clean `stop`), not compact, not a live question | **Incomplete.** Leave the inner loop. Do not wait for the hang clock. |

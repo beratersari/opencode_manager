@@ -278,6 +278,26 @@ def last_assistant_text(messages: List[Dict[str, Any]]) -> str:
     return texts[-1] if texts else ""
 
 
+def messages_after_id(messages: List[Dict[str, Any]], message_id: str) -> List[Dict[str, Any]]:
+    """Messages strictly after ``message_id``. Missing id → whole list."""
+    if not message_id:
+        return list(messages)
+    last_idx: Optional[int] = None
+    for i, message in enumerate(messages):
+        info = _info(message)
+        mid = str(info.get("id") or message.get("id") or "")
+        if mid == message_id:
+            last_idx = i
+    if last_idx is None:
+        return list(messages)
+    return list(messages[last_idx + 1 :])
+
+
+def last_assistant_text_since(messages: List[Dict[str, Any]], baseline_id: str) -> str:
+    """Last assistant text in this turn only. Prior job output must not leak."""
+    return last_assistant_text(messages_after_id(messages, baseline_id))
+
+
 def _last_finish(messages: List[Dict[str, Any]]) -> Tuple[str, str]:
     if not messages:
         return "", ""
@@ -306,13 +326,24 @@ def compact_marker_count(messages: List[Dict[str, Any]]) -> int:
     return count
 
 
-def assess_idle(messages: List[Dict[str, Any]]) -> str:
-    """Return success | question | incomplete | compact_leftover."""
-    if not messages:
+def assess_idle(
+    messages: List[Dict[str, Any]],
+    *,
+    baseline_assistant_id: str = "",
+) -> str:
+    """Return success | question | incomplete | compact_leftover.
+
+    ``baseline_assistant_id`` is the last assistant already in the
+    session when this job's user message was POSTed. A resumed
+    ``ses_*`` still has the previous job's ``finish=stop``; that is
+    not this turn.
+    """
+    turn = messages_after_id(messages, baseline_assistant_id)
+    if not turn:
         return "incomplete"
-    role, finish = _last_finish(messages)
-    text = last_assistant_text(messages)
-    last = messages[-1]
+    role, finish = _last_finish(turn)
+    text = last_assistant_text(turn)
+    last = turn[-1]
     blob = str(last).lower()
     if "compact" in blob and role != "assistant":
         return "compact_leftover"

@@ -8,6 +8,7 @@ from opencode_manager.opencode.session import (
     assess_idle,
     known_model_ids_from_payload,
     last_assistant_id,
+    last_assistant_text_since,
     looks_like_question,
     model_is_known,
     session_is_busy,
@@ -180,7 +181,9 @@ def test_resume_old_stop_is_not_a_new_turn() -> None:
         },
     ]
     assert assess_idle(prior) == "success"
+    assert assess_idle(prior, baseline_assistant_id="a1") == "incomplete"
     assert last_assistant_id(prior) == "a1"
+    assert last_assistant_text_since(prior, "a1") == ""
     assert not turn_has_new_assistant(prior, "a1")
     continued = prior + [
         {"id": "u2", "info": {"role": "user", "id": "u2"}, "parts": [{"type": "text", "text": "now 3+5"}]},
@@ -194,6 +197,10 @@ def test_resume_old_stop_is_not_a_new_turn() -> None:
         },
     ]
     assert turn_has_new_assistant(after, "a1")
+    assert assess_idle(continued, baseline_assistant_id="a1") == "incomplete"
+    assert assess_idle(after, baseline_assistant_id="a1") == "success"
+    assert last_assistant_text_since(after, "a1") == "done 3+5"
+    assert last_assistant_text_since(after, "") == "done 3+5"
 
 
 def test_snapshot_chat_pulls_tool_state_and_reasoning() -> None:

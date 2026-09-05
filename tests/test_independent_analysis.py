@@ -16,9 +16,11 @@ class _MemStore:
 
 
 class _LoopClient:
-    def __init__(self, *, status: dict, messages: list) -> None:
+    def __init__(self, *, status: dict, messages: list, busy_polls: int = 0) -> None:
         self._status = status
         self._messages = messages
+        self._busy_polls = busy_polls
+        self._polls = 0
         self.aborts: list[str] = []
         self.posted: list[tuple[str, str]] = []
 
@@ -26,6 +28,9 @@ class _LoopClient:
         return True
 
     def status(self) -> dict:
+        self._polls += 1
+        if self._polls <= self._busy_polls:
+            return {"ses_analysis": {"type": "busy"}}
         return self._status
 
     def list_messages(self, session_id: str) -> list:  # noqa: ARG002
@@ -178,3 +183,63 @@ def test_eight_new_compact_markers_this_wait_trigger_nudge(tmp_settings: Setting
         baseline_compact_n=0,
     )
     assert any(text == COMPACT_LOOP_NUDGE for _, text in client.posted)
+
+
+def test_resumed_session_idle_old_stop_is_not_this_job_success(tmp_settings: Settings) -> None:
+    """Follow-up job must not ship the previous job's finish=stop text."""
+    prior = [
+        {"id": "u1", "info": {"role": "user", "id": "u1"}, "parts": [{"type": "text", "text": "first"}]},
+        {
+            "id": "a1",
+            "info": {"role": "assistant", "id": "a1", "finish": "stop"},
+            "parts": [{"type": "text", "text": "previous job output"}],
+        },
+        {"id": "u2", "info": {"role": "user", "id": "u2"}, "parts": [{"type": "text", "text": "follow up"}]},
+    ]
+    # Busy once so awaiting_turn drops, then idle on the previous stop.
+    client = _LoopClient(status={}, messages=prior, busy_polls=1)
+    job = _job(original_posted=True)
+    outcome = _inner_loop(
+        job,
+        client,
+        _MemStore(),
+        settings=tmp_settings,
+        deadline=time.time() + 3.0,
+        should_stop=lambda: False,
+        baseline_assistant_id="a1",
+        baseline_n=2,
+        baseline_compact_n=0,
+    )
+    assert outcome == "incomplete"
+    assert job.text != "previous job output"
+
+
+def test_this_turn_text_does_not_copy_prior_assistant(tmp_settings: Settings) -> None:
+    messages = [
+        {
+            "id": "a1",
+            "info": {"role": "assistant", "id": "a1", "finish": "stop"},
+            "parts": [{"type": "text", "text": "previous job output"}],
+        },
+        {"id": "u2", "info": {"role": "user", "id": "u2"}, "parts": [{"type": "text", "text": "again"}]},
+        {
+            "id": "a2",
+            "info": {"role": "assistant", "id": "a2", "finish": "stop"},
+            "parts": [{"type": "text", "text": "this turn only"}],
+        },
+    ]
+    client = _LoopClient(status={}, messages=messages)
+    job = _job()
+    outcome = _inner_loop(
+        job,
+        client,
+        _MemStore(),
+        settings=tmp_settings,
+        deadline=time.time() + 3.0,
+        should_stop=lambda: False,
+        baseline_assistant_id="a1",
+        baseline_n=2,
+        baseline_compact_n=0,
+    )
+    assert outcome == "success"
+    assert job.text == "this turn only"

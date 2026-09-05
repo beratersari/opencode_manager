@@ -43,6 +43,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | OpenCode `busy` is not compact; `time.compacting` is | `test_opencode_busy_is_not_compacting_without_time_field` |
 | Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
 | Hang does not fire after an assistant this turn | `test_hang_does_not_fire_after_assistant_this_turn` |
+| Follow-up on a resumed `ses_*` must not ship the previous job's `stop` text | `test_resumed_session_idle_old_stop_is_not_this_job_success`, `test_this_turn_text_does_not_copy_prior_assistant` |
 | Job JSON Access Denied is retried, not a worker crash | `tests/test_job_store_save.py` |
 | Job JSON parse skips pydantic `model_validate_json` and huge files | `test_list_all_uses_json_loads_not_model_validate_json`, `test_list_all_skips_oversized_job_json` |
 | `list_all` cache lasts `CACHE_TTL_SECONDS` and drops on save | `test_list_all_cache_and_save_invalidates` |

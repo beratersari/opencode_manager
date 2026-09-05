@@ -13,8 +13,10 @@ Codex. The dashboard is **jobs-tab visualization only** (no writes).
 These look like bugs. They are not.
 
 1. **The product of a job is text.** Callback `text` is the last
-   assistant message (or an error). No git push, no MR, no returning
-   a branch.
+   assistant message **of this job's turn** (or an error). A resumed
+   `ses_*` still has the previous job's `finish=stop`; that is not
+   this turn and must not be shipped as success. No git push, no MR,
+   no returning a branch.
 2. **Always delete the clone** when the job ends, success or fail.
    Next job for the same ticket re-clones to the **same path**.
 3. **Chat vs disk drift is expected.** After delete, the tree is a

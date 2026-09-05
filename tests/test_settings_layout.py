@@ -6,6 +6,10 @@ import pytest
 from opencode_manager.settings import Settings, _default_data_dir, executable_dir, load_settings, resource_root
 
 
+def test_git_clone_timeout_default_is_1800() -> None:
+    assert Settings().git_clone_timeout_seconds == 1800.0
+
+
 def test_yaml_data_dir_derives_all_paths(tmp_path: Path) -> None:
     yaml = tmp_path / "settings.yaml"
     root = tmp_path / "osm"
@@ -19,6 +23,7 @@ def test_yaml_data_dir_derives_all_paths(tmp_path: Path) -> None:
     assert s.serve_dir == root / ".serve"
     assert s.app_log_path == root / "logs" / "app.log"
     assert s.listen_port == 8099
+    assert s.git_clone_timeout_seconds == 1800.0
 
 
 def test_explicit_work_dir_keeps_serve_next_to_clones(tmp_path: Path) -> None:

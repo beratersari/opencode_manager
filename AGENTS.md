@@ -152,6 +152,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   retries once with Basic (not on argv, not logged). On Linux, keep
   `credential.helper` empty (no dialog). Cancel / empty dialog → job
   **500**. A leftover inbound `PAT` key is ignored.
+  Clone / `ls-remote` wall clock is `git_clone_timeout_seconds`
+  (default **1800**). Request `timeout_in_seconds` does not apply to git.
 - Reject `git@` / `ssh://`.
 - `source_branch` is optional and unused by git. OSM never
   `ls-remote`s it and never checks it out (`git clone <url> dest`

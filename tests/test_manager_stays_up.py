@@ -277,7 +277,7 @@ def test_runner_git_fail_cleanup_explosions_still_return(tmp_settings: Settings,
         status="running",
     )
     monkeypatch.setattr(
-        "opencode_manager.worker.ls_remote_has_branch",
+        "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: (_ for _ in ()).throw(
             GitError("git failed (128): Could not resolve host: hostname.company.com.tr")
         ),
@@ -415,7 +415,7 @@ def test_shutdown_never_raises(tmp_settings: Settings, monkeypatch) -> None:
 
 def test_app_stays_up_after_git_fail_like_production(tmp_settings: Settings, monkeypatch) -> None:
     monkeypatch.setattr(
-        "opencode_manager.worker.ls_remote_has_branch",
+        "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: (_ for _ in ()).throw(
             GitError("git failed (128): Could not resolve host: hostname.company.com.tr")
         ),
@@ -436,7 +436,10 @@ def test_app_stays_up_after_git_fail_like_production(tmp_settings: Settings, mon
 
 
 def test_app_stays_up_when_cleanup_helpers_raise(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        "opencode_manager.worker.clone_repo",
+        lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
+    )
     monkeypatch.setattr(
         "opencode_manager.cleanup.end.reap_path",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("reap")),
@@ -458,7 +461,7 @@ def test_app_stays_up_when_cleanup_helpers_raise(tmp_settings: Settings, monkeyp
         res = client.post("/jobs", json=_body(jira_id="TEST-261"))
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
+        assert job["status"] == "error"
         _assert_app_alive(client)
         poll = client.get(f"/jobs/{res.json()['job_id']}")
         assert poll.status_code == 200
@@ -498,12 +501,12 @@ def test_dashboard_reads_during_cleanup(tmp_settings: Settings, monkeypatch) -> 
     hold = threading.Event()
     released = threading.Event()
 
-    def slow_ls(*_a, **_k) -> bool:
+    def slow_clone(*_a, **_k) -> None:
         hold.set()
         released.wait(timeout=2)
         raise GitError("git failed (128): Could not resolve host")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", slow_ls)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", slow_clone)
     app = create_app(tmp_settings)
     with TestClient(app) as client:
         res = client.post("/jobs", json=_body(jira_id="TEST-262"))
@@ -532,7 +535,10 @@ def test_windows_cwd_not_queried_for_system_while_app_runs(tmp_settings: Setting
         ],
     )
     monkeypatch.setattr(killmod, "_windows_cwd", lambda pid: cwd_hits.append(pid) or r"C:\osm\.temp\TEST-259")
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        "opencode_manager.worker.clone_repo",
+        lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
+    )
 
     # Force the Windows iterator during job-end reap.
     monkeypatch.setattr(killmod.os, "name", "nt")

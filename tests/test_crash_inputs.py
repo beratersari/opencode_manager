@@ -388,8 +388,12 @@ def test_poller_terminal_codes(
         _alive(client)
 
 
-def test_missing_remote_branch_real_runner(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+def test_missing_remote_branch_still_clones(tmp_settings: Settings, monkeypatch) -> None:
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     dest = clone_path_for(tmp_settings.work_dir, "PROJ-12881")
     assert not dest.exists()
     app = create_app(tmp_settings)
@@ -397,13 +401,10 @@ def test_missing_remote_branch_real_runner(tmp_settings: Settings, monkeypatch) 
         res = client.post("/jobs", json=_ok(jira_id="PROJ-12881", source_branch="no-such-branch"))
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
-        text = (job.get("error_message") or job.get("text") or "").lower()
-        assert "source_branch" in text or "does not exist" in text
-        assert not dest.exists()
+        assert job["status"] == "success"
         poll = client.get(f"/jobs/{res.json()['job_id']}")
         assert poll.status_code == 200
-        assert poll.json()["status_code"] == 404
+        assert poll.json()["status_code"] == 200
         _dashboard(client, job["job_id"])
         _alive(client)
         nxt = client.post("/jobs", json=_ok(jira_id="PROJ-12881"))
@@ -412,17 +413,28 @@ def test_missing_remote_branch_real_runner(tmp_settings: Settings, monkeypatch) 
         _alive(client)
 
 
-def test_leftover_clone_then_missing_branch(tmp_settings: Settings, monkeypatch) -> None:
+def test_leftover_clone_then_unused_branch_still_clones(tmp_settings: Settings, monkeypatch) -> None:
     dest = clone_path_for(tmp_settings.work_dir, "LEFT-1")
     dest.mkdir(parents=True)
     (dest / "README").write_text("old checkout", encoding="utf-8")
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    seen: dict[str, bool] = {}
+
+    def clone_ok(*_a, **_k) -> None:
+        seen["existed"] = dest.exists()
+        dest.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     app = create_app(tmp_settings)
     with TestClient(app) as client:
         res = client.post("/jobs", json=_ok(jira_id="LEFT-1", source_branch="ghost"))
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
+        assert job["status"] == "success"
+        assert seen["existed"] is False
         assert not dest.exists()
         _alive(client)
 
@@ -432,7 +444,6 @@ def test_leftover_clone_cannot_delete_is_error(tmp_settings: Settings, monkeypat
     dest.mkdir(parents=True)
     (dest / "x").write_text("held", encoding="utf-8")
     monkeypatch.setattr("opencode_manager.worker._remove_clone", lambda *_a, **_k: False)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     app = create_app(tmp_settings)
     with TestClient(app) as client:
         res = client.post("/jobs", json=_ok(jira_id="STUCK-1"))
@@ -450,33 +461,16 @@ def test_git_failures_are_errors_not_crashes(tmp_settings: Settings, monkeypatch
             lambda *_a, **_k: (_ for _ in ()).throw(
                 GitError("git failed (128): Could not resolve host: gitlabent.company.com.tr")
             ),
-            None,
             "error",
         ),
         (
-            "missing-flag",
-            lambda *_a, **_k: (_ for _ in ()).throw(
-                GitError("source_branch 'x' does not exist", missing_branch=True)
-            ),
-            None,
-            "not_found",
-        ),
-        (
             "timeout",
-            lambda *_a, **_k: True,
             lambda *_a, **_k: (_ for _ in ()).throw(GitError("git clone timed out after 1800s")),
             "error",
         ),
     ]
-    for label, ls_fn, clone_fn, expect in cases:
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_fn)
-        if clone_fn is not None:
-            monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_fn)
-        else:
-            monkeypatch.setattr(
-                "opencode_manager.worker.clone_repo",
-                lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("clone must not run")),
-            )
+    for label, clone_fn, expect in cases:
+        monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_fn)
         app = create_app(tmp_settings)
         with TestClient(app) as client:
             res = client.post("/jobs", json=_ok(jira_id=f"GIT-{label}"))
@@ -488,7 +482,6 @@ def test_git_failures_are_errors_not_crashes(tmp_settings: Settings, monkeypatch
 
 
 def test_opencode_failures_are_errors_not_crashes(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", lambda *_a, **_k: None)
 
     def fail_model(*_a, **_k):
@@ -536,7 +529,10 @@ def test_runner_exception_then_next_job(tmp_settings: Settings) -> None:
 
 
 def test_cleanup_explosions_on_missing_branch(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        "opencode_manager.worker.clone_repo",
+        lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
+    )
     monkeypatch.setattr(
         "opencode_manager.cleanup.end.reap_path",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("reap")),
@@ -558,12 +554,16 @@ def test_cleanup_explosions_on_missing_branch(tmp_settings: Settings, monkeypatc
         res = client.post("/jobs", json=_ok(jira_id="HOLD-1", source_branch="missing"))
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
+        assert job["status"] == "error"
         _alive(client)
 
 
 def test_mixed_burst_good_and_bad(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     app = create_app(tmp_settings)
     with TestClient(app) as client:
         accepted: List[str] = []
@@ -576,7 +576,7 @@ def test_mixed_burst_good_and_bad(tmp_settings: Settings, monkeypatch) -> None:
             _alive(client)
         for job_id in accepted:
             job = _wait_job(client, job_id)
-            assert job["status"] == "not_found"
+            assert job["status"] == "success"
             _dashboard(client, job_id)
         good_app = create_app(tmp_settings, runner=FakeRunner())
         with TestClient(good_app) as good_client:
@@ -660,7 +660,7 @@ def test_filters_after_mixed_outcomes(tmp_settings: Settings) -> None:
 
 def test_same_ticket_after_error_is_new_job(tmp_settings: Settings, monkeypatch) -> None:
     monkeypatch.setattr(
-        "opencode_manager.worker.ls_remote_has_branch",
+        "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: (_ for _ in ()).throw(GitError("git failed (128): Could not resolve host: x")),
     )
     app = create_app(tmp_settings)

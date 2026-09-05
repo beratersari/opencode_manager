@@ -65,7 +65,6 @@ def test_git_error_after_partial_clone_deletes_dest(tmp_settings: Settings, monk
         (dest / "partial").write_text("half", encoding="utf-8")
         raise GitError("clone exploded after dest created")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_fail)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500
@@ -73,14 +72,26 @@ def test_git_error_after_partial_clone_deletes_dest(tmp_settings: Settings, monk
 
 
 def test_missing_branch_404_deletes_leftover_dest(tmp_settings: Settings, monkeypatch) -> None:
+    """Leftover dest is deleted before clone. OSM does not ls-remote the branch."""
     store = JobStore(tmp_settings.job_store_dir)
     job = _job("T-404", source_branch="nope")
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True)
     (dest / "stale").write_text("x", encoding="utf-8")
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    seen: dict[str, bool] = {}
+
+    def clone_ok(*_a, **_k) -> None:
+        seen["existed"] = dest.exists()
+        dest.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: SimpleNamespace(status_code=200, text="done"),
+    )
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-    assert terminal.status_code == 404
+    assert terminal.status_code == 200
+    assert seen["existed"] is False
     assert not dest.exists()
 
 
@@ -90,14 +101,22 @@ def test_job_end_deletes_clone_if_stop_holders_raises(tmp_settings: Settings, mo
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True)
     (dest / "stale").write_text("x", encoding="utf-8")
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+
+    def clone_ok(*_a, **_k) -> None:
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "ok").write_text("tree", encoding="utf-8")
 
     def boom(*_a, **_k) -> None:
         raise RuntimeError("holder stop crashed")
 
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: SimpleNamespace(status_code=200, text="done"),
+    )
     monkeypatch.setattr("opencode_manager.worker.stop_job_holders", boom)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-    assert terminal.status_code == 404
+    assert terminal.status_code == 200
     assert not dest.exists()
 
 
@@ -110,7 +129,6 @@ def test_opencode_jobfailed_still_deletes_clone(tmp_settings: Settings, monkeypa
         dest.mkdir(parents=True)
         (dest / "ok").write_text("tree", encoding="utf-8")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
     monkeypatch.setattr(
         "opencode_manager.worker.run_opencode_job",
@@ -132,7 +150,6 @@ def test_opencode_unexpected_exception_still_deletes_clone(
         dest.mkdir(parents=True)
         (dest / "ok").write_text("tree", encoding="utf-8")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
     monkeypatch.setattr(
         "opencode_manager.worker.run_opencode_job",
@@ -157,7 +174,6 @@ def test_leftover_clone_gone_before_git_clone(tmp_settings: Settings, monkeypatc
         dest.mkdir(parents=True)
         (dest / "fresh").write_text("new", encoding="utf-8")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
     monkeypatch.setattr(
         "opencode_manager.worker.run_opencode_job",
@@ -182,7 +198,6 @@ def test_no_clone_if_leftover_cannot_be_removed(tmp_settings: Settings, monkeypa
         return False
 
     monkeypatch.setattr("opencode_manager.cleanup.end.hard_delete", stay)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr(
         "opencode_manager.worker.clone_repo", lambda *_a, **_k: cloned.__setitem__("n", cloned["n"] + 1)
     )
@@ -261,12 +276,12 @@ def test_git_timeout_from_ls_remote_deletes_dest(tmp_settings: Settings, monkeyp
     job = _job("T-TO")
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
 
-    def boom(*_a, **_k) -> bool:
+    def boom(*_a, **_k) -> None:
         dest.mkdir(parents=True)
         (dest / "partial").write_text("x", encoding="utf-8")
-        raise GitError("ls-remote timed out after 1.0s")
+        raise GitError("git clone timed out after 1.0s")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", boom)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", boom)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500
     assert not dest.exists()

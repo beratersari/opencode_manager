@@ -11,7 +11,7 @@ from typing import Callable, Optional, Protocol
 from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, stop_job_holders
 from opencode_manager.dashboard.store import JobStore, persist_job, remember_unsaved_terminal
-from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_remote_has_branch
+from opencode_manager.git.clone import GitError, clone_path_for, clone_repo
 from opencode_manager.git.detect import classify_host
 from opencode_manager.log import clip, get_logger, log_fail
 from opencode_manager.log_context import bind, clear
@@ -66,32 +66,17 @@ class OpenCodeRunner:
                 if not _remove_clone(dest, reason="before-clone"):
                     log_fail(logger, "leftover clone could not be deleted", clone_path=dest)
                     return Terminal(500, f"could not remove leftover clone at {dest}")
-            branch = usable_source_branch(job.source_branch)
-            if branch:
-                logger.info("ls-remote check for source_branch=%s", branch)
-                if not ls_remote_has_branch(
-                    job.repo_url,
-                    branch,
-                    timeout=self.settings.git_clone_timeout_seconds,
-                    job=job,
-                    store=self.store,
-                    should_stop=should_stop,
-                ):
-                    logger.warning(
-                        "source_branch missing on remote: %s repo=%s",
-                        branch,
-                        job.repo_url,
-                    )
-                    return Terminal(404, f"source_branch {branch!r} does not exist on the remote")
-                logger.info("source_branch exists; clone only (agent will checkout %s)", branch)
-            else:
-                logger.info("no source_branch; clone default remote HEAD")
+            branch = usable_source_branch(job.source_branch) or ""
+            logger.info(
+                "clone only (no ls-remote); agent may checkout %s",
+                branch or "default HEAD",
+            )
             if should_stop():
                 return Terminal(500, "manager shutting down")
             clone_repo(
                 job.repo_url,
                 dest,
-                branch or "",
+                branch,
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,
@@ -112,14 +97,11 @@ class OpenCodeRunner:
             log_fail(
                 logger,
                 "git failed",
-                missing_branch=exc.missing_branch,
                 err=exc,
                 clone_path=dest,
                 branch=job.source_branch,
                 repo=job.repo_url,
             )
-            if exc.missing_branch:
-                return Terminal(404, str(exc))
             return Terminal(500, f"git failed: {exc}")
         except JobFailed as exc:
             log_fail(

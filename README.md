@@ -131,10 +131,10 @@ Only after inbound **202**. `status_code` on this POST is never 202.
 | `status_code` | `text` | When |
 |---|---|---|
 | **200** | Last assistant message | OpenCode finished |
-| **404** | `source_branch '{branch}' does not exist on the remote` | Branch missing on the remote |
+| **404** | *(not used for git)* | OSM does not `ls-remote` `source_branch` |
 | **500** | `manager shutting down` | Shutdown, or the job was stopped mid-flight |
 | **500** | `could not remove leftover clone at {path}` | Stable clone path could not be deleted before clone |
-| **500** | `git failed: {error}` | Clone / `ls-remote` failed (userinfo redacted) |
+| **500** | `git failed: {error}` | Clone failed (userinfo redacted) |
 | **500** | `model '{provider/id}' is not available on this OpenCode serve. Available: {sample}.` | Model missing from `GET /config/providers` |
 | **500** | `model still asking after UNATTENDED_NUDGE` | Still asking after the one nudge |
 | **500** | `compact leftover after COMPACT_LOOP_NUDGE` | Compact leftover after the compact nudge |
@@ -159,7 +159,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 | Field | Required | Notes |
 |---|---|---|
 | `repo_url` | yes | HTTPS (or `file://`). Cloned as given. No `git@` / `ssh://`. |
-| `source_branch` | no | If sent, must already exist on the remote. Omit / `""` / `-1` skips `ls-remote` and clones the default HEAD. OSM does not check it out; the OpenCode agent does. |
+| `source_branch` | no | Unused by git. Omit / `""` / `-1` / any name: clone default HEAD. No `ls-remote`. The OpenCode agent may check a branch out from the prompt. |
 | `prompt` | yes | Sent once, as the first user message. |
 | `model` | yes | `provider/id`, e.g. `opencode/mimo-v2.5-free`. |
 | `agent_mode` | yes | `planner` or `orchestrator`. n8n maps `working_mode` before POST. |

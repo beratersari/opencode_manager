@@ -197,7 +197,11 @@ def test_both_real_agents_succeed(tmp_settings: Settings, agent: str) -> None:
 
 
 def test_missing_remote_branch_is_error_not_crash(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     app = create_app(tmp_settings)
     with TestClient(app) as client:
         res = client.post(
@@ -206,12 +210,10 @@ def test_missing_remote_branch_is_error_not_crash(tmp_settings: Settings, monkey
         )
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
-        text = (job.get("error_message") or job.get("text") or "").lower()
-        assert "source_branch" in text or "does not exist" in text
+        assert job["status"] == "success"
         poll = client.get(f"/jobs/{res.json()['job_id']}")
         assert poll.status_code == 200
-        assert poll.json()["status_code"] == 404
+        assert poll.json()["status_code"] == 200
         _alive(client)
         nxt = client.post("/jobs", json=_ok(jira_id="PROJ-12881", source_branch="develop"))
         assert nxt.status_code == 202
@@ -221,7 +223,7 @@ def test_missing_remote_branch_is_error_not_crash(tmp_settings: Settings, monkey
 
 def test_git_dns_fail_is_error_not_crash(tmp_settings: Settings, monkeypatch) -> None:
     monkeypatch.setattr(
-        "opencode_manager.worker.ls_remote_has_branch",
+        "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: (_ for _ in ()).throw(
             GitError("git failed (128): Could not resolve host: gitlabent.company.com.tr")
         ),
@@ -266,7 +268,10 @@ def test_source_branch_placeholder_is_accepted(tmp_settings: Settings) -> None:
 
 
 def test_cleanup_helpers_raising_still_marks_job(tmp_settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        "opencode_manager.worker.clone_repo",
+        lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
+    )
     monkeypatch.setattr(
         "opencode_manager.cleanup.end.reap_path",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("reap")),
@@ -284,5 +289,5 @@ def test_cleanup_helpers_raising_still_marks_job(tmp_settings: Settings, monkeyp
         res = client.post("/jobs", json=_ok(jira_id="HOLD-1", source_branch="missing"))
         assert res.status_code == 202
         job = _wait_job(client, res.json()["job_id"])
-        assert job["status"] == "not_found"
+        assert job["status"] == "error"
         _alive(client)

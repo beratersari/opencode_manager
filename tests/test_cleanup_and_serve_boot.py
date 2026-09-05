@@ -34,15 +34,11 @@ def test_giterror_after_dest_created_deletes_clone(tmp_settings: Settings, monke
     )
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
 
-    def ls_ok(*_a, **_k) -> bool:
-        return True
-
     def clone_fail(*_a, **_k) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "partial").write_text("half", encoding="utf-8")
         raise GitError("clone exploded after dest created")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_fail)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500
@@ -61,32 +57,28 @@ def test_git_timeout_after_dest_created_deletes_clone(tmp_settings: Settings, mo
     )
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
 
-    def boom(*_a, **_k) -> bool:
+    def boom(*_a, **_k) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "partial").write_text("partial clone", encoding="utf-8")
-        raise GitError("ls-remote timed out after 1.0s")
+        raise GitError("git clone timed out after 1.0s")
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", boom)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", boom)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500
     assert "timed out" in terminal.text
     assert not dest.exists()
 
 
-def test_omitted_source_branch_skips_ls_remote(tmp_settings: Settings, monkeypatch) -> None:
+def test_worker_never_calls_ls_remote(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     job = JobRecord(
-        job_id="job_nobr",
-        jira_id="T-NOBR",
+        job_id="job_nols",
+        jira_id="T-NOLS",
         repo_url="https://gitlab.example/g/r.git",
-        source_branch="",
+        source_branch="develop",
         status="running",
     )
-    called = {"ls": 0, "clone": 0}
-
-    def ls_must_not(*_a, **_k) -> bool:
-        called["ls"] += 1
-        return False
+    called = {"clone": 0}
 
     def clone_ok(*_a, **_k) -> None:
         called["clone"] += 1
@@ -95,16 +87,17 @@ def test_omitted_source_branch_skips_ls_remote(tmp_settings: Settings, monkeypat
         status_code = 200
         text = "done"
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_must_not)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
     monkeypatch.setattr("opencode_manager.worker.run_opencode_job", lambda *_a, **_k: _Ok())
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 200
-    assert called["ls"] == 0
     assert called["clone"] == 1
+    import opencode_manager.worker as worker_mod
+
+    assert not hasattr(worker_mod, "ls_remote_has_branch")
 
 
-def test_missing_branch_404_still_deletes_leftover_dest(tmp_settings: Settings, monkeypatch) -> None:
+def test_leftover_dest_deleted_even_when_branch_unused(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     job = JobRecord(
         job_id="job_nobranch",
@@ -116,10 +109,21 @@ def test_missing_branch_404_still_deletes_leftover_dest(tmp_settings: Settings, 
     dest = clone_path_for(tmp_settings.work_dir, job.jira_id)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "stale").write_text("x", encoding="utf-8")
+    seen: dict[str, bool] = {}
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    def clone_ok(*_a, **_k) -> None:
+        seen["existed"] = dest.exists()
+        dest.mkdir(parents=True, exist_ok=True)
+
+    class _Ok:
+        status_code = 200
+        text = "done"
+
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
+    monkeypatch.setattr("opencode_manager.worker.run_opencode_job", lambda *_a, **_k: _Ok())
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-    assert terminal.status_code == 404
+    assert terminal.status_code == 200
+    assert seen["existed"] is False
     assert not dest.exists()
 
 
@@ -146,7 +150,6 @@ def test_leftover_clone_removed_before_new_clone(tmp_settings: Settings, monkeyp
         status_code = 200
         text = "done"
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
     monkeypatch.setattr("opencode_manager.worker.run_opencode_job", lambda *_a, **_k: _Ok())
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
@@ -177,7 +180,6 @@ def test_refuse_clone_if_leftover_cannot_be_deleted(tmp_settings: Settings, monk
         cloned["n"] += 1
 
     monkeypatch.setattr("opencode_manager.cleanup.end.hard_delete", stay)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_must_not)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500

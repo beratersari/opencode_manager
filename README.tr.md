@@ -55,7 +55,7 @@ n8n / tester / curl
 │     ▼                                 │
 │  Worker thread (job başına bir tane)  │
 │     1. leftover clone'u sil           │
-│     2. ls-remote + git clone          │
+│     2. git clone (no ls-remote)       │
 │     3. opencode serve (127.0.0.1:ephemeral)
 │     4. session oluştur / resume       │
 │     5. prompt + poll döngüsü          │
@@ -202,7 +202,7 @@ Gerekli gövde:
 | Alan | Not |
 |---|---|
 | `repo_url` | `http` / `https` / `file`. `git@` / `ssh://` yasak. |
-| `source_branch` | İsteğe bağlı. Gönderilirse uzakta var olmalı. `-1` / boş / yok → ls-remote yok, default HEAD clone. Uzakta yok → 202 sonra callback **404**. |
+| `source_branch` | İsteğe bağlı. Git kullanmaz (ls-remote yok). Clone her zaman remote default HEAD. |
 | `prompt` | ORIGINAL; job boyunca **bir kez** POST. |
 | `model` | `provider/id` (örn. `opencode/mimo-v2.5-free`) |
 | `agent_mode` | Yalnız `planner` veya `orchestrator`. n8n `working_mode`'u kendisi map'ler. |
@@ -232,11 +232,10 @@ Aynı zarf hem ack hem callback / poll için:
 
 1. `clone_path_for(work_dir, jira_id)` — yol kaydı.
 2. Yol varsa hard-delete. Silinemezse **500**.
-3. `ls-remote` ile `refs/heads/{branch}` **tam eşleşme**. Yoksa **404**.
-4. `git clone <url> dest` — `--branch` yok, checkout yok, submodule yok, LFS skip (`GIT_LFS_SKIP_SMUDGE=1`), `GIT_TERMINAL_PROMPT=0`.
-5. Origin userinfo scrub (saklanan `remote.origin.url`; `git remote get-url` yok).
-6. `run_opencode_job` (dış retry + iç poll).
-7. `finally`: bu işin process tree'sini kill et, clone'u sil.
+3. `git clone <url> dest` — `--branch` yok, checkout yok, ls-remote yok, submodule yok, LFS skip (`GIT_LFS_SKIP_SMUDGE=1`), `GIT_TERMINAL_PROMPT=0`.
+4. Origin userinfo scrub (saklanan `remote.origin.url`; `git remote get-url` yok).
+5. `run_opencode_job` (dış retry + iç poll).
+6. `finally`: bu işin process tree'sini kill et, clone'u sil.
 
 Git auth:
 

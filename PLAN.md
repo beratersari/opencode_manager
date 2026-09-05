@@ -51,7 +51,7 @@ are wrong.
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
 | 6 | Git auth | **Direct clone of `repo_url`.** No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=`. **Linux:** helper off. |
-| 7 | Source branch | Must exist on the remote. Missing field or n8n `-1` on the body → inbound **400**. Missing on the remote → inbound **202**, then callback **404**. Do not invent a branch from `main`. Job-end must not crash the manager. |
+| 7 | Source branch | Optional. OSM never `ls-remote`s or checks it out. Omit / `-1` / any name: clone default HEAD. Do not invent a branch from `main`. Job-end must not crash the manager. |
 | 8 | Codex | Never. OpenCode only. |
 
 If any row is wrong, the implementation will be wrong in a hard-to-undo way.
@@ -272,7 +272,7 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 | Field | Required | Meaning |
 |---|---|---|
 | `repo_url` | yes | HTTPS clone URL. Cloned as given. SSH rejected. A leftover `PAT` key is ignored. |
-| `source_branch` | no | Remote branch that must already exist if sent. Omit / empty / `-1` → clone default HEAD, no `ls-remote`. OSM does not check it out; the OpenCode agent does when a real name is in the prompt. |
+| `source_branch` | no | Unused by git. Omit / empty / `-1` / any name: clone default HEAD. No `ls-remote`. OSM does not check it out; the OpenCode agent may, from the prompt. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
@@ -300,7 +300,7 @@ Always fast. Never wait for OpenCode.
 | Capacity free, accepted | **202** | Started. One terminal callback later if `callback_url` was set; else poll `GET /jobs/{job_id}`. |
 | Missing/invalid fields, SSH URL, unknown agent, bad `model` | **400** | Error text. No callback. |
 | Process is booting or shutting down | **503** | Not accepting jobs. No callback. |
-| `source_branch` missing on remote | **202** then callback **404** | Check in the worker after accept (§6.3). Not a sync 400. |
+| `source_branch` missing on remote | clone still proceeds | OSM does not `ls-remote` the branch. |
 
 Every HTTP body (and every callback) uses the same shape so n8n has one parser:
 
@@ -411,7 +411,7 @@ Body is the callback envelope plus `live` and `status`.
 | 200 | OpenCode finished (`text` is the last assistant output), or `DELETE /sessions` succeeded |
 | 202 | Inbound ack only: queued or started. Never a callback. |
 | 400 | Bad request / unusable input |
-| 404 | `source_branch` does not exist on the remote |
+| 404 | Unknown job id (poller). Not used for a missing `source_branch`. |
 | 409 | This `jira_id` already has a live job, or a session delete is in flight |
 | 500 | Failed after retries (serve crash, incomplete, unexpected), or session delete serve/OpenCode failed |
 | 503 | Inbound only: manager is booting or shutting down. No callback. |
@@ -438,8 +438,7 @@ n8n  --POST /jobs-->  manager
                          └─ 202 started
                                 │
                                 ├─ detect GitLab vs TFS
-                                ├─ direct clone of repo_url
-                                ├─ if source_branch missing on remote: cleanup + callback 404
+                                ├─ direct clone of repo_url (no ls-remote)
                                 ├─ start opencode serve --hostname 127.0.0.1 --port <free> (cwd = clone)
                                 ├─ resume session_id or create
                                 ├─ POST prompt, wait all states, outer retry
@@ -787,10 +786,9 @@ change clone auth.
 ### 6.3 Clone steps
 
 1. Build the no-prompt git env (Windows stored creds if present).
-2. In the **worker** (after the inbound **202**), `git ls-remote --heads`
-   to prove `source_branch` exists. If it does
-   not: cleanup anything already created, callback **404**, stop. Do
-   not invent a branch from `main`. Do not `git checkout` it.
+2. Do **not** `ls-remote` `source_branch`. The field is optional and
+   unused by git. Do not invent a branch from `main`. Do not
+   `git checkout`.
 3. Clone under `work_dir` into a short **stable** Windows-safe path
    whose identity is the **ticket id** only (e.g.
    `{work_dir}/{jira_id}`). The dest must be a **strict child** of
@@ -823,15 +821,10 @@ change clone auth.
    Set `GIT_LFS_SKIP_SMUDGE=1` so clone does not download LFS
    objects (pointer files only).
 
-**Locked:** missing remote branch is **202 + callback 404**. Existence
-check needs the network; it runs in the worker so the
-inbound handler stays fast. n8n must treat 202 as “accepted, wait for
-callback” — including this 404.
-
-Empty / omitted / `-1` `source_branch` on the JSON body is **not**
-an inbound 400. The worker skips `ls-remote` and clones the remote
-default HEAD. A real name that is missing on the remote is still
-**202 + callback 404**.
+**Locked:** OSM never `ls-remote`s `source_branch`. Empty / omitted /
+`-1` / a real name all clone the remote default HEAD. The agent may
+check the branch out from the prompt. A missing remote ref is not a
+job **404**.
 
 No target branch. No push. No MR.
 
@@ -1161,8 +1154,9 @@ keys. Everything else is the same.
    concurrent jobs ≈ 2 GB for OpenCode alone. Cap with
    `max_concurrent_jobs`. Do not “fix” this by switching to a shared
    serve — that undoes kill + hard-delete.
-5. **Missing remote branch is 202 + callback 404.** n8n must treat
-   inbound 202 as “accepted, wait for callback”, including this case.
+5. **`source_branch` is unused by git.** OSM does not 404 a missing
+   remote ref. n8n must still treat inbound 202 as “accepted, wait
+   for the terminal result”.
 6. WSL + `/mnt/c` clones: full `/proc` walks can hang. Keep the narrow
    kill strategy from virtual_developer.
 
@@ -1226,7 +1220,7 @@ build them).
 - [ ] Mint `job_id` on accept; n8n does not send it.
 - [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `job_id`.
 - [ ] Missing required field → HTTP **400**, no callback.
-- [ ] Empty / omitted / `-1` `source_branch` on the body → accept; skip `ls-remote`; clone default HEAD.
+- [ ] `source_branch` optional; never `ls-remote`; clone default HEAD.
 - [ ] `callback_url` omitted or empty → accept; no callback; poll `GET /jobs/{job_id}`.
 - [ ] `callback_url` present but not `http`/`https` → HTTP **400**, no callback.
 - [ ] `GET /jobs/{job_id}`: unknown 404; live 202; terminal HTTP 200 with envelope `status_code`.
@@ -1278,8 +1272,8 @@ build them).
 - [ ] Direct clone of `repo_url`. No request `PAT`. Leftover `PAT` key is ignored.
 - [ ] Every git child: `GIT_TERMINAL_PROMPT=0`, no `DISPLAY`. Windows: GCM `manager`, stored cred or login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=` on Windows. Linux: helper off.
 - [ ] After clone, origin URL has no userinfo.
-- [ ] Worker `ls-remote` after HTTP 202 only when a real `source_branch` was sent. Omit / empty / `-1` skips it.
-- [ ] Missing remote branch: cleanup anything created, callback 404, stop.
+- [ ] Worker never `ls-remote`s `source_branch`.
+- [ ] Missing remote branch is not a job 404; clone the default HEAD.
 - [ ] Clone error or git timeout: same job-end delete, then callback 500. Git-phase failures must not skip the delete `finally`.
 - [ ] Do not create a branch from `main` / `master` / target.
 - [ ] Clone under `work_dir` to a stable path of the **ticket id** only (`{work_dir}/{jira_id}`, Windows-safe, no timestamp).

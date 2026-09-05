@@ -294,9 +294,12 @@ def test_persist_job_and_git_track_do_not_raise() -> None:
 def test_runner_clone_path_save_failure_still_runs(tmp_settings: Settings, monkeypatch) -> None:
     from opencode_manager.worker import OpenCodeRunner, Terminal
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: Terminal(200, "ok"),
+    )
     store = _BoomStore()
     job = _job("job_run")
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)  # type: ignore[arg-type]
-    assert terminal.status_code == 404
-    assert "source_branch" in terminal.text or "does not exist" in terminal.text
+    assert terminal.status_code == 200

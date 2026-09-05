@@ -38,7 +38,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
     store = store_for(tmp_settings)
     job = make_job("F-OK")
     dest = dest_for(tmp_settings, job)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", _clone_ok(dest))
     monkeypatch.setattr(
         "opencode_manager.worker.run_opencode_job",
@@ -54,7 +53,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
     [
         (
             lambda dest: (
-                True,
                 lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
                 None,
             ),
@@ -62,15 +60,9 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
             "clone exploded",
         ),
         (
-            lambda dest: (False, None, None),
-            404,
-            "does not exist",
-        ),
-        (
             lambda dest: (
-                True,
                 lambda *_a, **_k: (_ for _ in ()).throw(
-                    GitError("ls-remote timed out after 1.0s")
+                    GitError("git clone timed out after 1.0s")
                 ),
                 None,
             ),
@@ -79,18 +71,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
         ),
         (
             lambda dest: (
-                True,
-                lambda *_a, **_k: dest.mkdir(parents=True) or (_ for _ in ()).throw(
-                    GitError("no such branch", missing_branch=True)
-                ),
-                None,
-            ),
-            404,
-            "no such branch",
-        ),
-        (
-            lambda dest: (
-                True,
                 _clone_ok(dest),
                 lambda *_a, **_k: (_ for _ in ()).throw(JobFailed(500, "still asking")),
             ),
@@ -99,7 +79,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
         ),
         (
             lambda dest: (
-                True,
                 _clone_ok(dest),
                 lambda *_a, **_k: (_ for _ in ()).throw(
                     JobFailed(500, "compact leftover after COMPACT_LOOP_NUDGE")
@@ -110,7 +89,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
         ),
         (
             lambda dest: (
-                True,
                 _clone_ok(dest),
                 lambda *_a, **_k: (_ for _ in ()).throw(JobFailed(504, "attempt clock")),
             ),
@@ -119,7 +97,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
         ),
         (
             lambda dest: (
-                True,
                 _clone_ok(dest),
                 lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("worker boom")),
             ),
@@ -128,7 +105,6 @@ def test_fake_success_deletes_clone(tmp_settings: Settings, monkeypatch) -> None
         ),
         (
             lambda dest: (
-                True,
                 _clone_ok(dest),
                 lambda *_a, **_k: (_ for _ in ()).throw(JobFailed(500, "manager shutting down")),
             ),
@@ -145,8 +121,7 @@ def test_fake_every_runner_error_deletes_clone(
     dest = dest_for(tmp_settings, job)
     dest.mkdir(parents=True)
     (dest / "stale").write_text("x", encoding="utf-8")
-    ls_ok, clone_fn, oc_fn = factory(dest)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: ls_ok)
+    clone_fn, oc_fn = factory(dest)
     if clone_fn is not None:
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_fn)
     if oc_fn is not None:
@@ -174,29 +149,23 @@ def test_fake_should_stop_before_clone_deletes_nothing_new(
     assert not dest.exists()
 
 
-def test_fake_should_stop_after_ls_remote_deletes_clone(
+def test_fake_should_stop_after_leftover_delete_skips_clone(
     tmp_settings: Settings, monkeypatch
 ) -> None:
     store = store_for(tmp_settings)
     job = make_job("F-STOP2")
     dest = dest_for(tmp_settings, job)
     dest.mkdir()
-    flags = {"n": 0}
-
-    def ls(*_a, **_k) -> bool:
-        flags["n"] += 1
-        return True
-
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls)
+    cloned = {"n": 0}
     monkeypatch.setattr(
         "opencode_manager.worker.clone_repo",
-        lambda *_a, **_k: flags.__setitem__("clone", True),
+        lambda *_a, **_k: cloned.__setitem__("n", 1),
     )
     terminal = OpenCodeRunner(tmp_settings, store).run(
-        job, should_stop=lambda: flags["n"] >= 1
+        job, should_stop=lambda: not dest.exists()
     )
     assert terminal.status_code == 500
-    assert "clone" not in flags
+    assert cloned["n"] == 0
     assert not dest.exists()
 
 
@@ -212,7 +181,6 @@ def test_fake_leftover_stuck_does_not_clone(tmp_settings: Settings, monkeypatch)
         return False
 
     monkeypatch.setattr("opencode_manager.cleanup.end.hard_delete", stay)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr(
         "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: cloned.__setitem__("n", cloned["n"] + 1),
@@ -485,7 +453,6 @@ def test_fake_worker_wraps_each_opencode_outcome_and_deletes(
     store = store_for(tmp_settings)
     job = make_job("F-WRAP", timeout_in_seconds=2)
     dest = dest_for(tmp_settings, job)
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", _clone_ok(dest))
     client = ScriptedClient(script)
     patch_opencode_loop(monkeypatch, client)

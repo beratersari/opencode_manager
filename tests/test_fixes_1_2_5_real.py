@@ -101,10 +101,16 @@ def test_post_jobs_dot_does_not_wipe_sibling_clone(tmp_settings: Settings) -> No
             holder.wait(timeout=2)
 
 
-def test_valid_job_git_404_does_not_reap_other_ticket(tmp_settings: Settings) -> None:
+def test_valid_job_git_404_does_not_reap_other_ticket(
+    tmp_settings: Settings, monkeypatch
+) -> None:
     origin = seed_git_repo(tmp_settings.work_dir.parent / "origin", branch="develop")
     keep = tmp_settings.work_dir / "KEEP-1"
     server, received = _callback_server()
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     app = create_app(tmp_settings)
     holder = None
     try:
@@ -125,10 +131,10 @@ def test_valid_job_git_404_does_not_reap_other_ticket(tmp_settings: Settings) ->
             while time.time() < deadline and not received:
                 time.sleep(0.1)
             assert received, "worker never sent the terminal callback"
-            assert received[0]["status_code"] == 404
+            assert received[0]["status_code"] == 200
             job = client.get(f"/api/jobs/{job_id}")
             assert job.status_code == 200
-            assert job.json()["job"]["status"] == "not_found"
+            assert job.json()["job"]["status"] == "success"
             assert holder.poll() is None
             assert keep.exists()
             assert not (tmp_settings.work_dir / "NEW-1").exists()

@@ -143,14 +143,13 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   `credential.helper` empty (no dialog). Cancel / empty dialog → job
   **500**. A leftover inbound `PAT` key is ignored.
 - Reject `git@` / `ssh://`.
-- `source_branch` is optional. OSM does not check it out (`git clone`
-  only). Omit, empty, or n8n placeholder `-1` → accept, skip
-  `ls-remote`, clone the remote default HEAD. A real name must exist
-  on the remote: missing ref → inbound **202**, worker `ls-remote`,
-  callback **404**. Never return a sync 404 for a missing remote ref.
-  Do not create a branch from `main`. Job-end must not crash the
-  manager (no process scan when the clone was never created; never
-  PEB-read python/cmd).
+- `source_branch` is optional and unused by git. OSM never
+  `ls-remote`s it and never checks it out (`git clone <url> dest`
+  only). Omit, empty, `-1`, or a real name: same clone of the remote
+  default HEAD. The OpenCode agent may switch branches from the
+  prompt. Do not create a branch from `main`. Job-end must not crash
+  the manager (no process scan when the clone was never created;
+  never PEB-read python/cmd).
 - One settings root: `data_dir` (Windows `C:\osm`, Linux
   `/var/lib/osm`). Clones live under `{data_dir}/.temp`. Folder name is the **ticket id**
   (`jira_id`, Windows-safe: `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`).
@@ -167,10 +166,10 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Mid-job retries: **do not delete** the clone. Delete only when the
   job is finished.
 - Job-end delete also runs when git fails before OpenCode starts
-  (missing remote branch, clone error, git timeout). After kill,
+  (clone error, git timeout). After kill,
   hard-delete the clone path again and log whether it is gone.
 - Track every git child PID on `job.extra_pids` while it is live.
-  `ls-remote` matches `refs/heads/{branch}` exactly. After clone,
+  After clone,
   origin has no userinfo and keeps `host:port`. Scrub the stored
   `remote.origin.url` — never `git remote get-url` (rewrites can lie).
 

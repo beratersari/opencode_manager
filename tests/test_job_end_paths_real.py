@@ -42,9 +42,7 @@ def _attach_child(dest: Path, job) -> subprocess.Popen:
     [
         ("success", 200),
         ("giterror", 500),
-        ("missing_branch", 404),
         ("git_timeout", 500),
-        ("missing_branch_flag", 404),
         ("jobfailed", 500),
         ("jobfailed_504", 504),
         ("crash", 500),
@@ -57,79 +55,66 @@ def test_real_child_killed_and_clone_deleted_on_every_outcome(
     store = store_for(tmp_settings)
     job = make_job(f"R-{kind}")
     dest = dest_for(tmp_settings, job)
-    child = _attach_child(dest, job)
-
-    def ls_ok(*_a, **_k) -> bool:
-        return True
-
-    def ls_no(*_a, **_k) -> bool:
-        return False
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "stale").write_text("old", encoding="utf-8")
+    child_box: dict = {}
 
     def clone_keep(*_a, **_k) -> None:
         dest.mkdir(parents=True, exist_ok=True)
+        if "p" not in child_box:
+            child_box["p"] = spawn_holder(dest)
+            job.extra_pids.append(child_box["p"].pid)
         (dest / "ok").write_text("tree", encoding="utf-8")
 
     if kind == "success":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
         monkeypatch.setattr(
             "opencode_manager.worker.run_opencode_job",
             lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
         )
     elif kind == "giterror":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr(
             "opencode_manager.worker.clone_repo",
             lambda *_a, **_k: (_ for _ in ()).throw(GitError("clone exploded")),
         )
-    elif kind == "missing_branch":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_no)
     elif kind == "git_timeout":
         monkeypatch.setattr(
-            "opencode_manager.worker.ls_remote_has_branch",
-            lambda *_a, **_k: (_ for _ in ()).throw(GitError("ls-remote timed out after 1.0s")),
-        )
-    elif kind == "missing_branch_flag":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
-        monkeypatch.setattr(
             "opencode_manager.worker.clone_repo",
-            lambda *_a, **_k: (_ for _ in ()).throw(
-                GitError("branch gone", missing_branch=True)
-            ),
+            lambda *_a, **_k: (_ for _ in ()).throw(GitError("git clone timed out after 1.0s")),
         )
     elif kind == "jobfailed":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
         monkeypatch.setattr(
             "opencode_manager.worker.run_opencode_job",
             lambda *_a, **_k: (_ for _ in ()).throw(JobFailed(500, "still asking")),
         )
     elif kind == "jobfailed_504":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
         monkeypatch.setattr(
             "opencode_manager.worker.run_opencode_job",
             lambda *_a, **_k: (_ for _ in ()).throw(JobFailed(504, "attempt clock")),
         )
     elif kind == "crash":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
         monkeypatch.setattr(
             "opencode_manager.worker.run_opencode_job",
             lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
         )
     elif kind == "shutdown":
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_ok)
         monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
         terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: True)
         assert terminal.status_code == status
-        wait_reaped(child)
+        child = child_box.get("p")
+        if child is not None:
+            wait_reaped(child)
         assert not dest.exists()
         return
 
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == status
-    wait_reaped(child)
+    child = child_box.get("p")
+    if child is not None:
+        wait_reaped(child)
     assert not dest.exists()
 
 
@@ -137,15 +122,27 @@ def test_real_other_jobs_child_is_not_killed(tmp_settings: Settings, monkeypatch
     store = store_for(tmp_settings)
     job = make_job("R-SELF")
     dest = dest_for(tmp_settings, job)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "stale").write_text("old", encoding="utf-8")
     other = tmp_settings.work_dir / "OTHER-1"
     other_child = spawn_holder(other)
-    self_child = spawn_holder(dest)
-    job.extra_pids.append(self_child.pid)
+    self_box: dict = {}
+
+    def clone_keep(*_a, **_k) -> None:
+        dest.mkdir(parents=True, exist_ok=True)
+        if "p" not in self_box:
+            self_box["p"] = spawn_holder(dest)
+            job.extra_pids.append(self_box["p"].pid)
+
     try:
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+        monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
+        monkeypatch.setattr(
+            "opencode_manager.worker.run_opencode_job",
+            lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+        )
         terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-        assert terminal.status_code == 404
-        wait_reaped(self_child)
+        assert terminal.status_code == 200
+        wait_reaped(self_box["p"])
         assert not dest.exists()
         assert other_child.poll() is None
         assert other.exists()
@@ -155,17 +152,19 @@ def test_real_other_jobs_child_is_not_killed(tmp_settings: Settings, monkeypatch
             other_child.wait(timeout=2)
 
 
-def test_real_git_missing_branch_404_deletes_dest(tmp_settings: Settings) -> None:
+def test_real_git_missing_branch_still_clones(tmp_settings: Settings, monkeypatch) -> None:
     origin = seed_git_repo(tmp_settings.work_dir.parent / "origin", branch="develop")
     store = store_for(tmp_settings)
     job = make_job("R-GIT404", repo_url=file_url(origin), source_branch="does-not-exist")
     dest = dest_for(tmp_settings, job)
     dest.mkdir()
     (dest / "stale").write_text("old", encoding="utf-8")
-    child = _attach_child(dest, job)
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+    )
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-    assert terminal.status_code == 404
-    wait_reaped(child)
+    assert terminal.status_code == 200
     assert not dest.exists()
 
 
@@ -247,21 +246,23 @@ def test_real_serve_boot_fail_deletes_clone(tmp_settings: Settings, monkeypatch)
     dest = dest_for(tmp_settings, job)
     dest.mkdir()
     (dest / "tree.txt").write_text("x", encoding="utf-8")
-    child = spawn_holder(dest)
-    job.extra_pids.append(child.pid)
+    child_box: dict = {}
+
+    def clone_keep(*_a, **_k) -> None:
+        dest.mkdir(parents=True, exist_ok=True)
+        if "p" not in child_box:
+            child_box["p"] = spawn_holder(dest)
+            job.extra_pids.append(child_box["p"].pid)
+
     script = tmp_settings.work_dir / "dead-serve"
     script.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     tmp_settings.opencode_bin = str(script)
     tmp_settings.retry_backoff_seconds = 0.0
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
-    monkeypatch.setattr(
-        "opencode_manager.worker.clone_repo",
-        lambda *_a, **_k: dest.mkdir(parents=True, exist_ok=True),
-    )
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
     assert terminal.status_code == 500
-    wait_reaped(child)
+    wait_reaped(child_box["p"])
     assert not dest.exists()
 
 
@@ -272,15 +273,28 @@ def test_real_argv_holder_killed_even_if_not_in_extra_pids(
     job = make_job("R-ARGV")
     dest = dest_for(tmp_settings, job)
     dest.mkdir()
-    orphan = spawn_holder(dest)
+    (dest / "stale").write_text("old", encoding="utf-8")
+    orphan_box: dict = {}
+
+    def clone_keep(*_a, **_k) -> None:
+        dest.mkdir(parents=True, exist_ok=True)
+        if "p" not in orphan_box:
+            orphan_box["p"] = spawn_holder(dest)
+            job.extra_pids.append(orphan_box["p"].pid)
+
     try:
-        monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
+        monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_keep)
+        monkeypatch.setattr(
+            "opencode_manager.worker.run_opencode_job",
+            lambda *_a, **_k: type("R", (), {"status_code": 200, "text": "ok"})(),
+        )
         terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-        assert terminal.status_code == 404
-        wait_reaped(orphan)
+        assert terminal.status_code == 200
+        wait_reaped(orphan_box["p"])
         assert not dest.exists()
     finally:
-        if orphan.poll() is None:
+        orphan = orphan_box.get("p")
+        if orphan is not None and orphan.poll() is None:
             orphan.kill()
             orphan.wait(timeout=2)
 

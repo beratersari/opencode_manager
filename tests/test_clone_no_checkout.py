@@ -122,12 +122,15 @@ def test_clone_still_scrubs_origin_userinfo(tmp_path: Path) -> None:
     assert not origin_has_userinfo(stored)
 
 
-def test_worker_404_missing_branch_never_clones(tmp_settings: Settings, monkeypatch) -> None:
+def test_worker_clones_without_ls_remote(tmp_settings: Settings, monkeypatch) -> None:
     cloned = {"n": 0}
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: False)
     monkeypatch.setattr(
         "opencode_manager.worker.clone_repo",
         lambda *_a, **_k: cloned.__setitem__("n", cloned["n"] + 1),
+    )
+    monkeypatch.setattr(
+        "opencode_manager.worker.run_opencode_job",
+        lambda *_a, **_k: Terminal(200, "ok"),
     )
     store = store_for(tmp_settings)
     job = JobRecord(
@@ -143,8 +146,8 @@ def test_worker_404_missing_branch_never_clones(tmp_settings: Settings, monkeypa
         status="running",
     )
     terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
-    assert terminal.status_code == 404
-    assert cloned["n"] == 0
+    assert terminal.status_code == 200
+    assert cloned["n"] == 1
 
 
 def test_worker_clone_passes_branch_only_for_log(tmp_settings: Settings, monkeypatch) -> None:
@@ -155,7 +158,6 @@ def test_worker_clone_passes_branch_only_for_log(tmp_settings: Settings, monkeyp
         seen["dest"] = dest
         seen["branch"] = source_branch
 
-    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", lambda *_a, **_k: True)
     monkeypatch.setattr("opencode_manager.worker.clone_repo", capture)
     monkeypatch.setattr(
         "opencode_manager.worker.run_opencode_job",

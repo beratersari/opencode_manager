@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from opencode_manager.app import create_app
 from opencode_manager.models import JobRecord
+from opencode_manager.queue import JobQueue
 from opencode_manager.settings import Settings
 from opencode_manager.worker import Terminal
 
@@ -214,6 +215,47 @@ def test_queue_other_ticket(tmp_settings: Settings) -> None:
         assert b.status_code == 202
         assert "queued" in b.json()["text"].lower()
         blocker.set()
+
+
+def test_enqueue_failure_does_not_lock_jira_id(
+    tmp_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmp_settings.max_concurrent_jobs = 1
+    hold = threading.Event()
+    fail_enqueue = {"n": True}
+    real_enqueue = JobQueue.enqueue
+
+    def maybe_boom(self, row):  # noqa: ANN001
+        if fail_enqueue["n"]:
+            raise OSError("Access is denied")
+        return real_enqueue(self, row)
+
+    class SlowRunner(FakeRunner):
+        def run(self, job, *, should_stop):  # noqa: ANN001
+            hold.wait(timeout=5)
+            return super().run(job, should_stop=should_stop)
+
+    monkeypatch.setattr(JobQueue, "enqueue", maybe_boom)
+    with _client(tmp_settings, SlowRunner()) as client:
+        first = client.post("/jobs", json=_body(jira_id="HOLD-Q"))
+        assert first.status_code == 202
+        failed = client.post("/jobs", json=_body(jira_id="QFAIL-1"))
+        assert failed.status_code == 503
+        assert failed.json()["status_code"] == 503
+        assert failed.json()["job_id"] == ""
+        manager = client.app.state.manager
+        assert manager.store.live_for_jira("QFAIL-1") is None
+        rows = [j for j in manager.store.list_all() if j.jira_id == "QFAIL-1"]
+        assert len(rows) == 1
+        assert rows[0].status == "error"
+        assert rows[0].live is False
+        fail_enqueue["n"] = False
+        retry = client.post("/jobs", json=_body(jira_id="QFAIL-1"))
+        assert retry.status_code == 202
+        assert retry.json()["job_id"].startswith("job_")
+        assert retry.json()["job_id"] != rows[0].job_id
+        assert "queued" in retry.json()["text"].lower()
+        hold.set()
 
 
 def test_star_callback_hosts_accepts_any_url(tmp_settings: Settings) -> None:

@@ -49,7 +49,10 @@ These look like bugs. They are not.
   `callback_url`, poll `GET /jobs/{job_id}`). Same OSM process.
 - `POST /jobs` is only an ack (`202` / `409` / `400` / `503`). Never hold
   that socket for clone or OpenCode. `503` means the process is not
-  accepting (`boot` not finished, or shutting down). No callback.
+  accepting (`boot` not finished, shutting down, or the capacity-full
+  queue write failed). No callback. A failed `queue.json` write must
+  finish that half-created row **ERROR** (no callback) so the
+  `jira_id` is not `409`.
 - `DELETE /sessions` is a **sync** admin op (not a job): forget an
   OpenCode `ses_*` for a ticket. Same envelope shape; `job_id` is
   empty. No `callback_url`, no queue, no history row. Body is
@@ -93,8 +96,10 @@ These look like bugs. They are not.
   done.
 - Capacity full + **other** tickets → queue. Persist the queue
   (including `callback_url`) so a **running** process can dequeue
-  after a slot frees. A process restart does **not** auto-run
-  leftover work — see Boot and shutdown.
+  after a slot frees. If that persist fails, do not leave a live
+  `queued` row: finish it **ERROR**, return inbound **503**, no
+  callback. A process restart does **not** auto-run leftover work
+  — see Boot and shutdown.
 
 ### Boot and shutdown
 

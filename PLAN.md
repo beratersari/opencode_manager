@@ -257,6 +257,9 @@ a **separate POST** to the `callback_url` that arrived on that same job.
 Different cases:
 
 - Capacity full, **other** tickets → queue (inbound **202**; one terminal callback later).
+  If `queue.json` cannot be written, finish that half-created row
+  ERROR (no callback) and return inbound **503** so the ticket is
+  not stuck `409`.
 - Same `jira_id` already running or already queued → **reject now**.
   Do not enqueue a second job for the same ticket.
 
@@ -419,7 +422,7 @@ Body is the callback envelope plus `live` and `status`.
 | 404 | Unknown job id (poller). Not used for a missing `source_branch`. |
 | 409 | This `jira_id` already has a live job, or a session delete is in flight |
 | 500 | Failed after retries (serve crash, incomplete, unexpected), or session delete serve/OpenCode failed |
-| 503 | Inbound only: manager is booting or shutting down. No callback. |
+| 503 | Inbound only: manager is booting, shutting down, or could not persist the queue. No callback. |
 | 504 | An OpenCode attempt hit `timeout_in_seconds` and no attempts remain |
 
 ---

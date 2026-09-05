@@ -317,7 +317,37 @@ class Manager:
                 text = "Job accepted and is now in progress."
             else:
                 payload.pop("PAT", None)
-                self.queue.enqueue(payload)
+                try:
+                    self.queue.enqueue(payload)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "queue persist failed job=%s jira_id=%s",
+                        job.job_id,
+                        job.jira_id,
+                    )
+                    try:
+                        finish_job(
+                            job,
+                            Terminal(500, f"could not persist queue: {exc}"),
+                            settings=self.settings,
+                            store=self.store,
+                            send_callback=False,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "queue persist finish_job failed job=%s", job.job_id
+                        )
+                        job.live = False
+                        job.status = "error"
+                        persist_job(self.store, job)
+                    clear()
+                    return 503, Envelope(
+                        text="could not persist queue",
+                        session_id=job.session_id or "",
+                        status_code=503,
+                        jira_id=job.jira_id,
+                        job_id="",
+                    )
                 logger.info("queued FIFO (capacity full)")
                 text = "Job accepted and queued."
             clear()

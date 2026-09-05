@@ -53,7 +53,16 @@ def find_payload_exe(root: Path) -> Optional[Path]:
     """The two-window product exe. Service wraps it with --backend-only."""
     skip = {f"{SERVICE_ID}.exe".lower(), "winsw.exe", "winsw-x64.exe"}
     found: list[Path] = []
-    for path in root.glob("*.exe"):
+    if os.name == "nt":
+        candidates = root.glob("*.exe")
+    else:
+        # Never launch a Windows PE from Linux/WSL.
+        candidates = (
+            p
+            for p in root.iterdir()
+            if p.is_file() and not p.name.lower().endswith((".exe", ".zip", ".bat", ".cmd"))
+        )
+    for path in candidates:
         low = path.name.lower()
         if low in skip:
             continue
@@ -166,7 +175,9 @@ def _xml_escape(value: str) -> str:
     )
 
 
-def systemd_unit(root: Path, run_wrapper: Path, data_dir: Path) -> str:
+def systemd_unit(
+    root: Path, run_wrapper: Path, data_dir: Path, *, user_unit: bool = True
+) -> str:
     path_extra = ""
     oc = Path.home() / ".opencode" / "bin"
     if oc.is_dir():
@@ -175,6 +186,8 @@ def systemd_unit(root: Path, run_wrapper: Path, data_dir: Path) -> str:
     is_root = hasattr(os, "geteuid") and os.geteuid() == 0
     user_line = f"User={user}\n" if user and is_root else ""
     svc_logs = service_wrapper_log_dir(job_log_dir(data_dir))
+    # User manager starts default.target. multi-user.target is the system manager.
+    wanted = "default.target" if user_unit else "multi-user.target"
     return f"""[Unit]
 Description={APP_NAME} API and dashboard
 After=network-online.target
@@ -183,7 +196,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 {user_line}WorkingDirectory={root}
-ExecStart={run_wrapper}
+ExecStart=/bin/sh {run_wrapper}
 Restart=on-failure
 RestartSec=5
 Environment=GIT_TERMINAL_PROMPT=0
@@ -192,7 +205,7 @@ Environment=PYTHONUNBUFFERED=1
 StandardError=append:{svc_logs / "stderr.log"}
 
 [Install]
-WantedBy=multi-user.target
+WantedBy={wanted}
 """
 
 
@@ -293,12 +306,12 @@ def install_linux(root: Path) -> int:
         newline="\n",
     )
     run_sh.chmod(0o755)
-    unit = systemd_unit(root, run_sh, data_dir)
     user_unit = True
     dest = Path.home() / ".config" / "systemd" / "user" / f"{SERVICE_ID}.service"
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         user_unit = False
         dest = Path("/etc/systemd/system") / f"{SERVICE_ID}.service"
+    unit = systemd_unit(root, run_sh, data_dir, user_unit=user_unit)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(unit, encoding="utf-8")
     print(f"[OK] unit {dest}")
@@ -311,10 +324,22 @@ def install_linux(root: Path) -> int:
     if rc != 0:
         print("[ERROR] systemctl enable --now failed.", file=sys.stderr)
         return rc
+    if user_unit:
+        user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+        if user:
+            linger_rc = _run(["loginctl", "enable-linger", user])
+            if linger_rc != 0:
+                print(
+                    f"[WARN] loginctl enable-linger {user} failed. "
+                    "The user unit starts at boot only after that user logs in.",
+                    file=sys.stderr,
+                )
     print()
     print(f"{APP_NAME} is running as a systemd service ({dest}).")
     print("Dashboard: http://127.0.0.1:4096/jobs")
     print("The two-window exe is unchanged.")
+    if user_unit:
+        print("User unit: WantedBy=default.target. Linger is required for boot without a login.")
     return 0
 
 

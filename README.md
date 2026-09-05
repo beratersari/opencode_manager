@@ -350,6 +350,10 @@ uninstall-service.bat
 ./uninstall-service.sh
 ```
 
+A user unit is `WantedBy=default.target`. Install enables linger
+(`loginctl enable-linger`) so it starts at boot without that user
+logging in. On WSL you also need `systemd=true` in `/etc/wsl.conf`.
+
 Git credential popups do not appear in a service. Store GCM / git
 credentials for the account the service runs as first. On Windows,
 if clones fail, set the service **Log On** in `services.msc` to your

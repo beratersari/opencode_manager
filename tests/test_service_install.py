@@ -26,8 +26,17 @@ def test_find_payload_prefers_versioned_exe(tmp_path: Path) -> None:
 
 
 def test_command_for_service_uses_backend_only(tmp_path: Path) -> None:
+    import os
+
     exe = tmp_path / f"{APP_SLUG}-1.0-windows-x64.exe"
     exe.write_bytes(b"x")
+    if os.name != "nt":
+        linux_bin = tmp_path / f"{APP_SLUG}-1.0-linux-x64"
+        linux_bin.write_bytes(b"x")
+        path, args = command_for_service(tmp_path)
+        assert path == linux_bin
+        assert args == ["--backend-only"]
+        return
     path, args = command_for_service(tmp_path)
     assert path == exe
     assert args == ["--backend-only"]
@@ -71,10 +80,14 @@ def test_systemd_unit_logs_under_data_dir(tmp_path: Path) -> None:
     run_sh.parent.mkdir(parents=True)
     run_sh.write_text("#!/bin/sh\n", encoding="utf-8")
     data_dir = tmp_path / "osm"
-    unit = systemd_unit(tmp_path, run_sh, data_dir)
-    assert f"ExecStart={run_sh}" in unit
+    unit = systemd_unit(tmp_path, run_sh, data_dir, user_unit=True)
+    assert f"ExecStart=/bin/sh {run_sh}" in unit
     assert "Restart=on-failure" in unit
+    assert "WantedBy=default.target" in unit
+    assert "WantedBy=multi-user.target" not in unit
     assert str(service_wrapper_log_dir(data_dir / "logs") / "stdout.log") in unit
+    sys_unit = systemd_unit(tmp_path, run_sh, data_dir, user_unit=False)
+    assert "WantedBy=multi-user.target" in sys_unit
     sh = linux_run_wrapper(tmp_path / "python", ["-m", "opencode_manager.app"], data_dir)
     assert "opencode_manager.app" in sh
     assert str(wrapper_exit_log_path(data_dir / "logs")) in sh

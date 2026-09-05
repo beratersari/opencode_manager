@@ -396,9 +396,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     via a run wrapper that appends `{data_dir}/logs/wrapper-exit.log`
     (Windows `C:\osm\logs\wrapper-exit.log`). WinSW / systemd
     stdout-stderr: `{data_dir}/logs/service/`. Linux writes a
-    systemd unit (user unit unless root). Git GCM popups do not
-    work in a service; store credentials first.
-    `uninstall-service.*` removes the unit.
+    systemd unit (user unit unless root). User units are
+    `WantedBy=default.target` and `loginctl enable-linger` so they
+    start at boot without a login. Git GCM popups do not work in a
+    service; store credentials first. `uninstall-service.*` removes
+    the unit.
   - Separate OpenCode-only zip (`packaging/build_opencode_dist.py`):
     `amir-mini-opencode-1.18.10-windows-x64.zip` and
     `amir-mini-opencode-1.18.10-linux-x64.zip`. Always OpenCode

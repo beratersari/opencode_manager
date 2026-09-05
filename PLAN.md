@@ -122,14 +122,16 @@ A clash only happens if every job binds the **same** port (the usual
 How we pick the job port:
 
 - `opencode serve --port` defaults to **0** = OS assigns an unused port.
-- We pre-bind `127.0.0.1:0`, read the assigned port, close, then start
-  serve with `--hostname 127.0.0.1 --port <that>`.
+- We pre-bind `127.0.0.1:0`, read the assigned port, **reserve it in
+  this process**, close the probe socket, then start serve with
+  `--hostname 127.0.0.1 --port <that>`. Another OSM worker cannot
+  draw the same number in that gap.
+- `wait_health` requires this child still running (`proc.poll()` is
+  `None`). A 200 from whatever is already on that URL is not enough
+  if this process already exited (bind lost the race).
 - Record `{pid, port, cwd}` on the job. All HTTP to OpenCode for that
   job uses only that base URL.
 - Those ports are never published. n8n never sees them.
-
-The live e2e already does this (`_free_port()`). Two jobs at once
-cannot steal each other’s port.
 
 #### Lifecycle of one job’s serve
 

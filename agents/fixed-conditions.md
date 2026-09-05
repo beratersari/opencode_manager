@@ -30,6 +30,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | `{pid, port}` recorded in `on_spawn` before health wait | `test_serve_pid_recorded_on_spawn_before_health_fails` |
 | `on_spawn` runs before `wait_health` | `test_start_serve_on_spawn_runs_before_wait_health` |
 | Failed health wait kills the child process | `test_start_serve_kills_child_when_health_times_out` |
+| Two OSM workers cannot reserve the same serve port | `test_reserve_port_skips_a_port_already_held`, `test_two_threads_never_reserve_the_same_port` |
+| Health 200 is ignored if this serve process already exited | `test_wait_health_rejects_dead_child_even_if_http_200` |
 | After health, wait for the directory instance before `POST /session` | `test_instance_wait_runs_before_session_create`, `test_wait_directory_retries_until_session_list_returns` |
 | Directory instance timeout is `serve-dead` (not create-fail) | `test_instance_wait_timeout_is_serve_dead` |
 

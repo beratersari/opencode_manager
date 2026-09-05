@@ -178,8 +178,10 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 ### OpenCode
 
 - Start `opencode serve --hostname 127.0.0.1 --port <free>`. Never
-  hardcode `4096`. Record `{pid, port, base_url, cwd}` on the job
-  **immediately after Popen**, before the health wait.
+  hardcode `4096`. Reserve that port in-process so two workers cannot
+  draw the same number between `bind(0)` and the child bind. Record
+  `{pid, port, base_url, cwd}` on the job **immediately after Popen**,
+  before the health wait. Health requires this child still running.
 - If `GET /global/health` is not 200 in time: kill **this** child,
   fail **this** attempt (`serve-dead`). Outer `retry_count` applies.
   Do not leave the process up.

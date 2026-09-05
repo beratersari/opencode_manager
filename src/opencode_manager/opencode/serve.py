@@ -7,11 +7,12 @@ import shlex
 import shutil
 import socket
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Set
 
 import httpx
 
@@ -38,10 +39,37 @@ def read_serve_log(path: Path) -> str:
     return redact(text)
 
 
+_port_lock = threading.Lock()
+_reserved_ports: Set[int] = set()
+
+
 def free_port() -> int:
+    """Ask the OS for an unused port. The socket is closed before return."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def reserve_port() -> int:
+    """Ephemeral port that no other OSM serve start may pick until released.
+
+    Closes the probe socket so the child can bind. Two workers in this
+    process cannot draw the same number in that gap.
+    """
+    with _port_lock:
+        for _ in range(64):
+            port = free_port()
+            if port not in _reserved_ports:
+                _reserved_ports.add(port)
+                return port
+    raise RuntimeError("could not reserve a free localhost port")
+
+
+def release_port(port: Optional[int]) -> None:
+    if port is None:
+        return
+    with _port_lock:
+        _reserved_ports.discard(int(port))
 
 
 @dataclass
@@ -67,7 +95,71 @@ def start_serve(
     if should_stop and should_stop():
         raise RuntimeError("manager shutting down")
     binary = shutil.which(bin_name) or bin_name
-    port = free_port()
+    last_exc: Optional[BaseException] = None
+    for _try in range(5):
+        try:
+            return _start_serve_once(
+                binary=binary,
+                cwd=cwd,
+                log_path=log_path,
+                timeout=timeout,
+                on_spawn=on_spawn,
+                should_stop=should_stop,
+                attempt_timeout=attempt_timeout,
+                hang_timeout=hang_timeout,
+            )
+        except RuntimeError as exc:
+            last_exc = exc
+            if "shutting down" in str(exc).lower():
+                raise
+            if "exited" not in str(exc).lower() and "reserve" not in str(exc).lower():
+                raise
+            logger.warning("serve start retry after %s", exc)
+            continue
+    assert last_exc is not None
+    raise last_exc
+
+
+def _start_serve_once(
+    *,
+    binary: str,
+    cwd: Path,
+    log_path: Path,
+    timeout: float,
+    on_spawn: Optional[Callable[[ServeHandle], None]],
+    should_stop: Optional[Callable[[], bool]],
+    attempt_timeout: Optional[float],
+    hang_timeout: Optional[float],
+) -> ServeHandle:
+    port = reserve_port()
+    try:
+        return _spawn_and_wait(
+            binary=binary,
+            cwd=cwd,
+            log_path=log_path,
+            timeout=timeout,
+            on_spawn=on_spawn,
+            should_stop=should_stop,
+            attempt_timeout=attempt_timeout,
+            hang_timeout=hang_timeout,
+            port=port,
+        )
+    finally:
+        release_port(port)
+
+
+def _spawn_and_wait(
+    *,
+    binary: str,
+    cwd: Path,
+    log_path: Path,
+    timeout: float,
+    on_spawn: Optional[Callable[[ServeHandle], None]],
+    should_stop: Optional[Callable[[], bool]],
+    attempt_timeout: Optional[float],
+    hang_timeout: Optional[float],
+    port: int,
+) -> ServeHandle:
     cmd = [
         binary,
         "serve",
@@ -117,7 +209,9 @@ def start_serve(
     if on_spawn is not None:
         on_spawn(handle)
     try:
-        health = wait_health(base, str(cwd), timeout=timeout, should_stop=should_stop)
+        health = wait_health(
+            base, str(cwd), timeout=timeout, should_stop=should_stop, proc=proc
+        )
     except Exception as exc:
         tail = _serve_log_tail(log_path)
         log_fail(
@@ -148,6 +242,7 @@ def wait_health(
     *,
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
+    proc: Optional[subprocess.Popen] = None,
 ) -> dict:
     deadline = time.time() + timeout
     last: Optional[Exception] = None
@@ -159,6 +254,12 @@ def wait_health(
         while time.time() < deadline:
             if should_stop and should_stop():
                 raise RuntimeError("manager shutting down")
+            if proc is not None:
+                rc = proc.poll()
+                if rc is not None:
+                    raise RuntimeError(
+                        f"serve process exited rc={rc} before health at {base_url}"
+                    )
             try:
                 response = client.get(url, headers=headers)
                 last_status = response.status_code

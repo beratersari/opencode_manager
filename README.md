@@ -300,6 +300,8 @@ already taken, the exe kills that leftover listener and binds.
 
 - `amir-mini-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
 - `amir-mini-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)
+- `amir-mini-<version>-windows-x64-service.zip` — exe + `install-service.bat` + `WinSW.exe` + `settings.local.yaml`. Extract to a permanent folder, then `install-service.bat` (Administrator) for a boot-start service.
+- `amir-mini-<version>-linux-x64-service.zip` — binary + `install-service.sh` + overlay.
 
 Git and OpenCode stay on PATH (the exe prepends `~/.opencode/bin`).
 Windows always uses `C:\osm` unless you change the overlay. On Linux,
@@ -333,8 +335,11 @@ Backend only (API + dashboard on http://127.0.0.1:4096/jobs). The
 two-window exe is unchanged. Stop the service before opening that
 exe on the same port.
 
+Easiest on Windows: extract `amir-mini-*-windows-x64-service.zip` to a
+permanent folder, then from an elevated prompt in that folder:
+
 ```bat
-REM Windows — elevated prompt. Needs WinSW.exe (Windows zip) or .venv
+REM Windows — elevated prompt. Needs the service zip (exe + WinSW.exe)
 install-service.bat
 uninstall-service.bat
 ```
@@ -349,6 +354,12 @@ Git credential popups do not appear in a service. Store GCM / git
 credentials for the account the service runs as first. On Windows,
 if clones fail, set the service **Log On** in `services.msc` to your
 user.
+
+If the service does not start or the process dies, look at:
+
+- `C:\osm\logs\wrapper-exit.log` (exit code; Linux `{data_dir}/logs/wrapper-exit.log`)
+- `C:\osm\logs\service\` (WinSW / systemd stdout-stderr)
+- `C:\osm\logs\crash.log` (uncaught exception after Python started)
 
 ### Build the vendor payload (needs network, once)
 

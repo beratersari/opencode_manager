@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 from opencode_manager.brand import APP_NAME, APP_SLUG, BACKEND_TITLE
-from opencode_manager.settings import executable_dir, resource_root
+from opencode_manager.crash import service_wrapper_log_dir, wrapper_exit_log_path
+from opencode_manager.settings import data_dir_from_root, executable_dir, resource_root
 
 SERVICE_ID = APP_SLUG
 SERVICE_DISPLAY = APP_NAME
@@ -85,19 +86,63 @@ def command_for_service(root: Path) -> tuple[Path, list[str]]:
     )
 
 
-def winsw_xml(root: Path, executable: Path, arguments: list[str]) -> str:
-    args = " ".join(_xml_escape(a) for a in arguments)
+def job_log_dir(data_dir: Path) -> Path:
+    return Path(data_dir) / "logs"
+
+
+def windows_run_wrapper(executable: Path, arguments: list[str], data_dir: Path) -> str:
+    logs = job_log_dir(data_dir)
+    svc_logs = service_wrapper_log_dir(logs)
+    exit_log = wrapper_exit_log_path(logs)
+    quoted_args = " ".join(_bat_quote(a) for a in arguments)
+    return (
+        "@echo off\r\n"
+        "setlocal EnableDelayedExpansion\r\n"
+        f'if not exist "{logs}" mkdir "{logs}"\r\n'
+        f'if not exist "{svc_logs}" mkdir "{svc_logs}"\r\n'
+        f'"{executable}" {quoted_args}\r\n'
+        'set "EC=!ERRORLEVEL!"\r\n'
+        f'>>"{exit_log}" echo %DATE% %TIME% exit=!EC! source=service\r\n'
+        "exit /b !EC!\r\n"
+    )
+
+
+def linux_run_wrapper(executable: Path, arguments: list[str], data_dir: Path) -> str:
+    import shlex
+
+    logs = job_log_dir(data_dir)
+    svc_logs = service_wrapper_log_dir(logs)
+    exit_log = wrapper_exit_log_path(logs)
+    cmd = " ".join([shlex.quote(str(executable)), *[shlex.quote(a) for a in arguments]])
+    return (
+        "#!/bin/sh\n"
+        f'mkdir -p {shlex.quote(str(logs))} {shlex.quote(str(svc_logs))}\n'
+        f"{cmd}\n"
+        "ec=$?\n"
+        f'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) exit=${{ec}} source=service" >> {shlex.quote(str(exit_log))}\n'
+        "exit \"$ec\"\n"
+    )
+
+
+def _bat_quote(value: str) -> str:
+    if not value or any(ch in value for ch in (' ', '&', '^', '%', '(', ')')):
+        return f'"{value}"'
+    return value
+
+
+def winsw_xml(root: Path, run_wrapper: Path, data_dir: Path) -> str:
     opencode = Path.home() / ".opencode" / "bin"
     path_extra = ""
     if opencode.is_dir():
         path_extra = f"{opencode};"
-    log_dir = root / "service" / "logs"
+    log_dir = service_wrapper_log_dir(job_log_dir(data_dir))
+    comspec = os.environ.get("ComSpec") or r"C:\Windows\System32\cmd.exe"
     return f"""<service>
   <id>{SERVICE_ID}</id>
   <name>{_xml_escape(SERVICE_DISPLAY)}</name>
   <description>{_xml_escape(APP_NAME)} API and dashboard (backend only). Git credential popups do not work here; store GCM credentials for this Windows account first.</description>
-  <executable>{_xml_escape(str(executable))}</executable>
-  <arguments>{args}</arguments>
+  <executable>{_xml_escape(comspec)}</executable>
+  <arguments>/c "{_xml_escape(str(run_wrapper))}"</arguments>
   <workingdirectory>{_xml_escape(str(root))}</workingdirectory>
   <logpath>{_xml_escape(str(log_dir))}</logpath>
   <log mode="roll-by-size">
@@ -121,8 +166,7 @@ def _xml_escape(value: str) -> str:
     )
 
 
-def systemd_unit(root: Path, executable: Path, arguments: list[str]) -> str:
-    args = " ".join(arguments)
+def systemd_unit(root: Path, run_wrapper: Path, data_dir: Path) -> str:
     path_extra = ""
     oc = Path.home() / ".opencode" / "bin"
     if oc.is_dir():
@@ -130,6 +174,7 @@ def systemd_unit(root: Path, executable: Path, arguments: list[str]) -> str:
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
     is_root = hasattr(os, "geteuid") and os.geteuid() == 0
     user_line = f"User={user}\n" if user and is_root else ""
+    svc_logs = service_wrapper_log_dir(job_log_dir(data_dir))
     return f"""[Unit]
 Description={APP_NAME} API and dashboard
 After=network-online.target
@@ -138,12 +183,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 {user_line}WorkingDirectory={root}
-ExecStart={executable} {args}
+ExecStart={run_wrapper}
 Restart=on-failure
 RestartSec=5
 Environment=GIT_TERMINAL_PROMPT=0
 Environment=PYTHONUNBUFFERED=1
-{path_extra}
+{path_extra}StandardOutput=append:{svc_logs / "stdout.log"}
+StandardError=append:{svc_logs / "stderr.log"}
+
 [Install]
 WantedBy=multi-user.target
 """
@@ -164,16 +211,24 @@ def install_windows(root: Path) -> int:
         )
         return 1
     executable, arguments = command_for_service(root)
+    data_dir = data_dir_from_root(root)
+    logs = job_log_dir(data_dir)
+    svc_logs = service_wrapper_log_dir(logs)
     svc_dir = root / "service"
     svc_dir.mkdir(parents=True, exist_ok=True)
-    (svc_dir / "logs").mkdir(parents=True, exist_ok=True)
+    logs.mkdir(parents=True, exist_ok=True)
+    svc_logs.mkdir(parents=True, exist_ok=True)
+    run_bat = svc_dir / "run.bat"
+    run_bat.write_text(windows_run_wrapper(executable, arguments, data_dir), encoding="utf-8")
     wrapper = svc_dir / f"{SERVICE_ID}.exe"
     xml_path = svc_dir / f"{SERVICE_ID}.xml"
     shutil.copy2(winsw, wrapper)
-    xml_path.write_text(winsw_xml(root, executable, arguments), encoding="utf-8")
+    xml_path.write_text(winsw_xml(root, run_bat, data_dir), encoding="utf-8")
     print(f"[OK] wrapper {wrapper}")
     print(f"[OK] config  {xml_path}")
     print(f"[OK] runs    {executable} {' '.join(arguments)}")
+    print(f"[OK] wrapper-exit {wrapper_exit_log_path(logs)}")
+    print(f"[OK] service logs {svc_logs}")
     _run([str(wrapper), "stop"])
     _run([str(wrapper), "uninstall"])
     rc = _run([str(wrapper), "install"])
@@ -182,7 +237,11 @@ def install_windows(root: Path) -> int:
         return rc
     rc = _run([str(wrapper), "start"])
     if rc != 0:
-        print("[ERROR] Service installed but did not start. Check Windows Event Viewer / service\\logs.", file=sys.stderr)
+        print(
+            "[ERROR] Service installed but did not start. "
+            f"See {wrapper_exit_log_path(logs)} and {svc_logs}.",
+            file=sys.stderr,
+        )
         return rc
     print()
     print(f"{APP_NAME} is running as a Windows service ({SERVICE_ID}).")
@@ -220,7 +279,21 @@ def _systemd_cmd(user_unit: bool) -> list[str]:
 
 def install_linux(root: Path) -> int:
     executable, arguments = command_for_service(root)
-    unit = systemd_unit(root, executable, arguments)
+    data_dir = data_dir_from_root(root)
+    logs = job_log_dir(data_dir)
+    svc_logs = service_wrapper_log_dir(logs)
+    logs.mkdir(parents=True, exist_ok=True)
+    svc_logs.mkdir(parents=True, exist_ok=True)
+    svc_dir = root / "service"
+    svc_dir.mkdir(parents=True, exist_ok=True)
+    run_sh = svc_dir / "run.sh"
+    run_sh.write_text(
+        linux_run_wrapper(executable, arguments, data_dir),
+        encoding="utf-8",
+        newline="\n",
+    )
+    run_sh.chmod(0o755)
+    unit = systemd_unit(root, run_sh, data_dir)
     user_unit = True
     dest = Path.home() / ".config" / "systemd" / "user" / f"{SERVICE_ID}.service"
     if hasattr(os, "geteuid") and os.geteuid() == 0:
@@ -230,6 +303,8 @@ def install_linux(root: Path) -> int:
     dest.write_text(unit, encoding="utf-8")
     print(f"[OK] unit {dest}")
     print(f"[OK] runs {executable} {' '.join(arguments)}")
+    print(f"[OK] wrapper-exit {wrapper_exit_log_path(logs)}")
+    print(f"[OK] service logs {svc_logs}")
     ctl = _systemd_cmd(user_unit)
     _run([*ctl, "daemon-reload"])
     rc = _run([*ctl, "enable", "--now", f"{SERVICE_ID}.service"])

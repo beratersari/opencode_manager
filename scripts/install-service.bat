@@ -50,17 +50,29 @@ if not defined WINSW (
     exit /b 1
 )
 
-if not exist "%ROOT%\service\logs" mkdir "%ROOT%\service\logs"
+if not exist "C:\osm\logs" mkdir "C:\osm\logs"
+if not exist "C:\osm\logs\service" mkdir "C:\osm\logs\service"
+if not exist "%ROOT%\service" mkdir "%ROOT%\service"
+> "%ROOT%\service\run.bat" (
+    echo @echo off
+    echo setlocal EnableDelayedExpansion
+    echo if not exist "C:\osm\logs" mkdir "C:\osm\logs"
+    echo if not exist "C:\osm\logs\service" mkdir "C:\osm\logs\service"
+    echo "%PAYLOAD%" --backend-only
+    echo set "EC=^!ERRORLEVEL^!"
+    echo ^>^>"C:\osm\logs\wrapper-exit.log" echo %%DATE%% %%TIME%% exit=^!EC^! source=service
+    echo exit /b ^!EC^!
+)
 copy /Y "%WINSW%" "%ROOT%\service\amir-mini.exe" >nul
 > "%ROOT%\service\amir-mini.xml" (
     echo ^<service^>
     echo   ^<id^>amir-mini^</id^>
     echo   ^<name^>aMIR-mini^</name^>
     echo   ^<description^>aMIR-mini API and dashboard ^(backend only^).^</description^>
-    echo   ^<executable^>%PAYLOAD%^</executable^>
-    echo   ^<arguments^>--backend-only^</arguments^>
+    echo   ^<executable^>%ComSpec%^</executable^>
+    echo   ^<arguments^>/c "%ROOT%\service\run.bat"^</arguments^>
     echo   ^<workingdirectory^>%ROOT%^</workingdirectory^>
-    echo   ^<logpath^>%ROOT%\service\logs^</logpath^>
+    echo   ^<logpath^>C:\osm\logs\service^</logpath^>
     echo   ^<log mode="roll-by-size"^>
     echo     ^<sizeThreshold^>10240^</sizeThreshold^>
     echo     ^<keepFiles^>8^</keepFiles^>
@@ -73,6 +85,8 @@ copy /Y "%WINSW%" "%ROOT%\service\amir-mini.exe" >nul
 
 echo [OK] payload %PAYLOAD% --backend-only
 echo [OK] wrapper %ROOT%\service\amir-mini.exe
+echo [OK] wrapper-exit C:\osm\logs\wrapper-exit.log
+echo [OK] service logs C:\osm\logs\service
 "%ROOT%\service\amir-mini.exe" stop >nul 2>&1
 "%ROOT%\service\amir-mini.exe" uninstall >nul 2>&1
 "%ROOT%\service\amir-mini.exe" install
@@ -82,7 +96,7 @@ if errorlevel 1 (
 )
 "%ROOT%\service\amir-mini.exe" start
 if errorlevel 1 (
-    echo [ERROR] installed but did not start. See service\logs and services.msc.
+    echo [ERROR] installed but did not start. See C:\osm\logs\wrapper-exit.log and C:\osm\logs\service.
     exit /b 1
 )
 echo.

@@ -4,8 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from opencode_manager.crash import install_crash_logging, mark_clean_shutdown
+from opencode_manager.crash import (
+    crash_log_path,
+    install_crash_logging,
+    mark_clean_shutdown,
+    service_wrapper_log_dir,
+    wrapper_exit_log_path,
+)
 import opencode_manager.crash as crashmod
+
+
+def test_wrapper_exit_path_is_under_job_log_dir(tmp_path: Path) -> None:
+    assert wrapper_exit_log_path(tmp_path) == tmp_path / "wrapper-exit.log"
+    assert service_wrapper_log_dir(tmp_path) == tmp_path / "service"
+    assert crash_log_path(tmp_path) == tmp_path / "crash.log"
 
 
 def test_crash_log_start_and_clean_exit(tmp_path: Path) -> None:

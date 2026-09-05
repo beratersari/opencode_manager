@@ -19,9 +19,7 @@ def test_report_context_is_safe_and_includes_logs(tmp_settings: Settings) -> Non
         encoding="utf-8",
     )
     (tmp_settings.job_log_dir / "crash.log").write_text("UNCAUGHT boom\n", encoding="utf-8")
-    wrapper = tmp_settings.project_root / "logs"
-    wrapper.mkdir(parents=True, exist_ok=True)
-    (wrapper / "wrapper-exit.log").write_text("backend exit 1\n", encoding="utf-8")
+    (tmp_settings.job_log_dir / "wrapper-exit.log").write_text("backend exit 1\n", encoding="utf-8")
     app = create_app(tmp_settings, runner=FakeRunner())
     with TestClient(app) as client:
         res = client.get("/api/report-context")
@@ -42,6 +40,16 @@ def test_report_context_is_safe_and_includes_logs(tmp_settings: Settings) -> Non
         assert "python" in body["runtime"]
         assert "live" in body
         assert client.post("/api/report-context", json={"note": "x"}).status_code == 405
+
+
+def test_report_context_wrapper_exit_falls_back_to_project(tmp_settings: Settings) -> None:
+    wrapper = tmp_settings.project_root / "logs"
+    wrapper.mkdir(parents=True, exist_ok=True)
+    (wrapper / "wrapper-exit.log").write_text("legacy wrapper exit\n", encoding="utf-8")
+    app = create_app(tmp_settings, runner=FakeRunner())
+    with TestClient(app) as client:
+        body = client.get("/api/report-context").json()
+        assert "legacy wrapper exit" in body["wrapper_exit_log"]["text"]
 
 
 def test_report_context_missing_logs_are_ok(tmp_settings: Settings) -> None:

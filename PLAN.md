@@ -951,6 +951,12 @@ Two sinks, **one data root** (`data_dir`):
    time, UTC). Same ticket later ⇒ a new file. Line still carries
    `job_id` and `jira_id`. Path:
    `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
+3. **Wrapper-exit log**: `{data_dir}/logs/wrapper-exit.log`
+   (Windows default `C:\osm\logs\wrapper-exit.log`). The start
+   script and the service run wrapper append the process exit code
+   here when Python cannot (AV / `TerminateProcess`). Start scripts
+   also keep `{project}/logs/wrapper-exit.log`. WinSW / systemd
+   stdout-stderr: `{data_dir}/logs/service/`.
 
 | OS | Default `data_dir` |
 |---|---|
@@ -1002,7 +1008,7 @@ Not env-only. A single file the operator can edit (YAML or TOML).
 | `callback_timeout_seconds` | Per callback HTTP timeout |
 | `callback_retry_count` | Retries of the same terminal POST on `404` / `408` / `429` / `5xx` / transport error (default 3). Not used for permanent `4xx`. |
 | `callback_allowed_hosts` | Optional allow-list (SSRF). `[]` or `["*"]` / `["all"]` = any http(s) URL from the request. `*.example.com` matches that host and subdomains. |
-| `data_dir` | **One root** for everything OSM writes. Default **Windows** `C:\osm`, **Linux** `/var/lib/osm`. Derived: `{data_dir}/.temp` clones, `{data_dir}/.serve` serve logs, `{data_dir}/logs` app + job logs, `{data_dir}/jobs` history, `{data_dir}/queue.json`. |
+| `data_dir` | **One root** for everything OSM writes. Default **Windows** `C:\osm`, **Linux** `/var/lib/osm`. Derived: `{data_dir}/.temp` clones, `{data_dir}/.serve` serve logs, `{data_dir}/logs` app + job + `wrapper-exit.log` + `service/` wrapper logs, `{data_dir}/jobs` history, `{data_dir}/queue.json`. |
 | `log_level` | Minimum level for both sinks |
 | `opencode_bin` | Path or name on PATH |
 | `hang_timeout_seconds` | No-progress watchdog inside one attempt (default ~180). Runs only when `busy` **and not compacting** **and** this turn has not produced an assistant yet. Not the request timeout. |
@@ -1043,8 +1049,10 @@ Clone the repo for reference only. Do not import it as a dependency.
   bundled interpreter (`--no-index`).
 - additive single-file exe (Windows + Linux only): PyInstaller
   onefile from `packaging/build_exe.py`. Same workflow, native
-  runners. Artifact zip is the exe plus `settings.local.yaml`.
-  Starts backend in this console and the :5173 proxy in a second
+  runners. Also ships `*-windows-x64-service.zip` (exe +
+  `install-service.bat` + `WinSW.exe` + `settings.local.yaml`) and
+  the Linux `*-service.zip`. Starts backend in this console and the
+  :5173 proxy in a second
   window. A busy listen port is freed by killing that listener
   (`kill_pid` / `may_kill`). Does not replace the zip
   or change `start.bat` / `start.sh`. Git and OpenCode stay on

@@ -12,9 +12,11 @@ Needs web/dist/index.html (npm run build, or packaging/build_dist.py --in-place)
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -37,6 +39,15 @@ def host_suffix() -> str:
     raise SystemExit(
         f"Single-file exe is Windows and Linux only (this host is {sys.platform})."
     )
+
+
+def service_kit_filename(version: str, suffix: str) -> str:
+    src = repo_root() / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from opencode_manager.brand import APP_SLUG
+
+    return f"{APP_SLUG}-{version}-{suffix}-service.zip"
 
 
 def artifact_filename(version: str, suffix: str) -> str:
@@ -156,6 +167,76 @@ def pyinstaller_args(
     return args
 
 
+def ensure_winsw(root: Path) -> Path:
+    """WinSW next to the service installer. Fetch if vendor/ is empty."""
+    target = root / "vendor" / "bin" / "windows" / "WinSW.exe"
+    if target.is_file():
+        return target
+    dist_py = root / "packaging" / "build_dist.py"
+    spec = importlib.util.spec_from_file_location("osm_build_dist", dist_py)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"Cannot load {dist_py} to fetch WinSW")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ver = mod.read_versions(root / "packaging" / "versions.env")
+    mod.fetch_winsw(ver, target.parent)
+    if not target.is_file():
+        raise SystemExit("WinSW.exe is required for the Windows service zip")
+    return target
+
+
+def write_service_kit(zip_path: Path, files: list[tuple[Path, str]], readme: str) -> None:
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("README.txt", readme)
+        for src, arcname in files:
+            if not src.is_file():
+                raise SystemExit(f"Service kit missing {src}")
+            zf.write(src, arcname=arcname)
+
+
+def service_kit_readme(*, windows: bool) -> str:
+    if windows:
+        return (
+            "aMIR-mini — Windows service kit\n"
+            "\n"
+            "Extract this zip to a permanent folder (not Desktop or Downloads).\n"
+            "Keep every file in that same folder.\n"
+            "\n"
+            "  amir-mini-*-windows-x64.exe\n"
+            "  install-service.bat\n"
+            "  uninstall-service.bat\n"
+            "  WinSW.exe\n"
+            "  settings.local.yaml          (data_dir C:\\osm)\n"
+            "\n"
+            "Install (starts now and at every boot):\n"
+            "  1. Open Command Prompt as Administrator\n"
+            "  2. cd to the extracted folder\n"
+            "  3. install-service.bat\n"
+            "\n"
+            "Dashboard: http://127.0.0.1:4096/jobs\n"
+            "Do not double-click the exe while the service is running (same port).\n"
+            "\n"
+            "If it does not start:\n"
+            "  C:\\osm\\logs\\wrapper-exit.log\n"
+            "  C:\\osm\\logs\\service\\\n"
+            "  C:\\osm\\logs\\crash.log\n"
+        )
+    return (
+        "aMIR-mini — Linux service kit\n"
+        "\n"
+        "Extract this zip to a permanent folder. Keep every file there.\n"
+        "\n"
+        "  ./install-service.sh     # enable --now (starts at boot)\n"
+        "  ./uninstall-service.sh\n"
+        "\n"
+        "User systemd units also need:  loginctl enable-linger \"$USER\"\n"
+        "Dashboard: http://127.0.0.1:4096/jobs\n"
+        "Logs: {data_dir}/logs/wrapper-exit.log and {data_dir}/logs/service/\n"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build OSM single-file exe for this OS")
     parser.add_argument(
@@ -239,32 +320,40 @@ def main(argv: list[str] | None = None) -> int:
     )
     overlay_dest = out_dir / "settings.local.yaml"
     shutil.copy2(overlay_src, overlay_dest)
+    kit_files: list[tuple[Path, str]] = [
+        (final, dest_name),
+        (overlay_dest, "settings.local.yaml"),
+    ]
     if suffix.startswith("windows"):
         for launcher in ("install-service.bat", "uninstall-service.bat"):
             src_l = root / "scripts" / launcher
             if src_l.is_file():
-                shutil.copy2(src_l, out_dir / launcher)
-                print(f"[OK] {out_dir / launcher}")
-        winsw = root / "vendor" / "bin" / "windows" / "WinSW.exe"
-        if winsw.is_file():
-            shutil.copy2(winsw, out_dir / "WinSW.exe")
-            print(f"[OK] {out_dir / 'WinSW.exe'}")
-        else:
-            print("[WARN] vendor/bin/windows/WinSW.exe missing; service install needs that file.")
+                dest_l = out_dir / launcher
+                shutil.copy2(src_l, dest_l)
+                kit_files.append((dest_l, launcher))
+                print(f"[OK] {dest_l}")
+        winsw = ensure_winsw(root)
+        dest_w = out_dir / "WinSW.exe"
+        shutil.copy2(winsw, dest_w)
+        kit_files.append((dest_w, "WinSW.exe"))
+        print(f"[OK] {dest_w}")
     else:
-        unit = root / "packaging" / "amir-mini.service"
-        # generated at install time; ship the installer script
         for launcher in ("install-service.sh", "uninstall-service.sh"):
             src_l = root / "scripts" / launcher
             if src_l.is_file():
                 dest_l = out_dir / launcher
                 shutil.copy2(src_l, dest_l)
                 dest_l.chmod(dest_l.stat().st_mode | 0o111)
+                kit_files.append((dest_l, launcher))
                 print(f"[OK] {dest_l}")
+    kit_name = service_kit_filename(version, suffix)
+    kit_path = out_dir / kit_name
+    write_service_kit(kit_path, kit_files, service_kit_readme(windows=suffix.startswith("windows")))
     size_mb = final.stat().st_size / (1024 * 1024)
     print(f"[OK] {final} ({size_mb:.1f} MB)")
     print(f"[OK] {overlay_dest}")
-    print("Two-window exe is unchanged. Use install-service.* to run as a service.")
+    print(f"[OK] {kit_path}")
+    print("Two-window exe is unchanged. Use install-service.* from the service zip.")
     return 0
 
 

@@ -345,8 +345,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - **App log** (whole process): `{data_dir}/logs/app.log`.
 - **Crash log**: `{data_dir}/logs/crash.log` (uncaught exceptions,
   signals, faulthandler, clean vs abrupt exit). If Windows security
-  kills the process, Python cannot write; the start script appends
-  the exit code to `{project}/logs/wrapper-exit.log`.
+  kills the process, Python cannot write; the start script and the
+  service run wrapper append the exit code to
+  `{data_dir}/logs/wrapper-exit.log` (Windows default
+  `C:\osm\logs\wrapper-exit.log`). Start scripts also keep a copy
+  under `{project}/logs/wrapper-exit.log`. WinSW / systemd
+  stdout-stderr go to `{data_dir}/logs/service/`.
 - **Per-job logs**: `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`
   (accept time, UTC). One file per job. `job_id` and `jira_id`
   also stay on each line.
@@ -388,9 +392,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     service (backend only: API + SPA on `listen_port`). Does **not**
     change the two-window exe. Windows uses vendored WinSW
     (`vendor/bin/windows/WinSW.exe`) wrapping the payload exe
-    `--backend-only` or `.venv` `python -m opencode_manager.app`.
-    Linux writes a systemd unit (user unit unless root). Git GCM
-    popups do not work in a service; store credentials first.
+    `--backend-only` or `.venv` `python -m opencode_manager.app`
+    via a run wrapper that appends `{data_dir}/logs/wrapper-exit.log`
+    (Windows `C:\osm\logs\wrapper-exit.log`). WinSW / systemd
+    stdout-stderr: `{data_dir}/logs/service/`. Linux writes a
+    systemd unit (user unit unless root). Git GCM popups do not
+    work in a service; store credentials first.
     `uninstall-service.*` removes the unit.
   - Separate OpenCode-only zip (`packaging/build_opencode_dist.py`):
     `amir-mini-opencode-1.18.10-windows-x64.zip` and
@@ -419,10 +426,13 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   ancestors. It does **not** replace the zip, does
   **not** change `start.bat` / `start.sh`, and does **not** vendor Git
   or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
-  OS — no cross-compile. `agents/` is not in the exe. The exe artifact
-  zip is the binary plus `settings.local.yaml` (Windows `C:\osm`, Linux
-  `/var/lib/osm`) and the service installers (`install-service.*`,
-  Windows also `WinSW.exe` when vendored). The exe default is still
+  OS — no cross-compile. `agents/` is not in the exe. CI also ships
+  `amir-mini-<ver>-windows-x64-service.zip` (exe + `install-service.bat`
+  + `uninstall-service.bat` + `WinSW.exe` + `settings.local.yaml` with
+  `C:\osm`) and the Linux `*-service.zip` (binary + `install-service.sh`
+  + overlay). Extract that zip to a permanent folder and run
+  `install-service.bat` (elevated) for a boot-start service. The exe
+  default is still
   two consoles. Keep the files in the same folder. Windows does **not**
   fall back to `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not
   writable, the exe falls back to `$XDG_DATA_HOME/osm` or

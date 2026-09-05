@@ -71,4 +71,8 @@ ec=$?
 set -e
 echo "Backend exited. code=${ec}"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) exit=${ec}" >> "$ROOT/logs/wrapper-exit.log"
+DATA_DIR="${OSM_DATA_DIR:-/var/lib/osm}"
+if mkdir -p "$DATA_DIR/logs" 2>/dev/null; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) exit=${ec}" >> "$DATA_DIR/logs/wrapper-exit.log" || true
+fi
 exit "$ec"

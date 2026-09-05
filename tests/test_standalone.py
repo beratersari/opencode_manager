@@ -305,6 +305,8 @@ def test_build_exe_names_and_does_not_touch_start_scripts() -> None:
     mod = _load_build_exe()
     assert mod.artifact_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64.exe"
     assert mod.artifact_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64"
+    assert mod.service_kit_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64-service.zip"
+    assert mod.service_kit_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64-service.zip"
     text = (ROOT / "packaging" / "build_exe.py").read_text(encoding="utf-8")
     assert "start.bat" in text and "Does not change" in text
     start_bat = (ROOT / "scripts" / "start.bat").read_text(encoding="utf-8")
@@ -344,8 +346,53 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "windows-latest" in text
     assert "ubuntu-latest" in text
     assert "dist/settings.local.yaml" in text
+    assert "-service.zip" in text
+    assert "WinSW.exe" in text
     assert "name: Single-file exe" in text
     assert "packaging/build_exe.py" in text
+
+
+def test_write_service_kit_has_windows_files(tmp_path: Path) -> None:
+    import zipfile
+
+    mod = _load_build_exe()
+    exe = tmp_path / "amir-mini-1.0-windows-x64.exe"
+    overlay = tmp_path / "settings.local.yaml"
+    bat = tmp_path / "install-service.bat"
+    unbat = tmp_path / "uninstall-service.bat"
+    winsw = tmp_path / "WinSW.exe"
+    for path, text in (
+        (exe, "exe"),
+        (overlay, "data_dir: C:\\osm\n"),
+        (bat, "install"),
+        (unbat, "uninstall"),
+        (winsw, "winsw"),
+    ):
+        path.write_text(text, encoding="utf-8")
+    dest = tmp_path / "kit.zip"
+    mod.write_service_kit(
+        dest,
+        [
+            (exe, exe.name),
+            (overlay, "settings.local.yaml"),
+            (bat, "install-service.bat"),
+            (unbat, "uninstall-service.bat"),
+            (winsw, "WinSW.exe"),
+        ],
+        mod.service_kit_readme(windows=True),
+    )
+    names = set(zipfile.ZipFile(dest).namelist())
+    assert names == {
+        "README.txt",
+        exe.name,
+        "settings.local.yaml",
+        "install-service.bat",
+        "uninstall-service.bat",
+        "WinSW.exe",
+    }
+    readme = zipfile.ZipFile(dest).read("README.txt").decode("utf-8")
+    assert "install-service.bat" in readme
+    assert r"C:\osm" in readme
 
 
 def test_standalone_does_not_import_start_scripts() -> None:

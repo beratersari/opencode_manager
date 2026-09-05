@@ -97,6 +97,8 @@ Açılışta `Settings.ensure_dirs()` şu ağacı oluşturur:
 ├── logs/
 │   ├── app.log                     # process geneli
 │   ├── crash.log                   # yakalanmamış hata / sinyal
+│   ├── wrapper-exit.log            # start / servis sarmalayıcı çıkış kodu
+│   ├── service/                    # WinSW / systemd stdout-stderr
 │   └── {jira_id}_{job_id}_{UTC}.log
 ├── jobs/
 │   └── {job_id}.json               # kalıcı geçmiş (clone silinse de kalır)
@@ -167,9 +169,11 @@ Kapasite doluysa (`max_concurrent_jobs`) **başka** ticket'lar FIFO'ya yazılır
 |---|---|
 | `{data_dir}/logs/app.log` | Tüm process |
 | `{data_dir}/logs/crash.log` | Yakalanmamış exception, sinyal, faulthandler |
+| `{data_dir}/logs/wrapper-exit.log` | Start script ve OS servisi sarmalayıcısı process çıkış kodunu yazar (Python yazamaz). Windows varsayılan: `C:\osm\logs\wrapper-exit.log` |
+| `{data_dir}/logs/service/` | WinSW / systemd stdout-stderr (servis ayağa kalkamazsa buraya bak) |
 | `{data_dir}/logs/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log` | İş başına bir dosya (kabul anı, UTC) |
 | `{data_dir}/.serve/{job_id}.log` | O işin `opencode serve` stdout/stderr |
-| `{proje}/logs/wrapper-exit.log` | Windows güvenlik yazılımı process'i kill ederse start script exit kodu yazar (Python yazamaz) |
+| `{proje}/logs/wrapper-exit.log` | Start script'in ikinci kopyası (eski konum) |
 
 Her satır `job_id` + `jira_id` taşır (`log_context` contextvars). URL'deki `user:pass@`, Azure `user@`, `:pass@` redakte edilir. `PAT` anahtarı loglanmaz.
 
@@ -926,7 +930,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 | Dosya | Görevi |
 |---|---|
 | `install.bat` / `install.sh` | Manager: bundled Python ile `.venv`, `vendor/python-wheels`, `web/dist` kontrol. Ağ yok. |
-| `install-service.bat` / `.sh` | OS servisi (sadece backend). İki pencereli exe değişmez. Windows: WinSW. |
+| `install-service.bat` / `.sh` | OS servisi (sadece backend). İki pencereli exe değişmez. Windows: `amir-mini-*-windows-x64-service.zip` (exe + WinSW + overlay). |
 | `install-opencode.bat` / `.sh` + `install_opencode.py` | `<user>/.opencode` sil, `vendor/bin` kopyala |
 | `start.bat` / `start.sh` | Backend + frontend |
 | `start-backend.*` / `run-backend.bat` | uvicorn / manager |

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 from opencode_manager import __version__
 from opencode_manager.brand import APP_NAME
-from opencode_manager.crash import crash_log_path
+from opencode_manager.crash import crash_log_path, wrapper_exit_log_path
 from opencode_manager.log import redact
 from opencode_manager.models import utc_now
 from opencode_manager.settings import Settings
@@ -45,13 +45,24 @@ def build_report_context(manager: Any) -> Dict[str, Any]:
         "app_log": read_capped_text(Path(settings.app_log_path or ""), max_bytes=_MAX_APP_LOG),
         "crash_log": read_capped_text(crash_log_path(Path(settings.job_log_dir)), max_bytes=_MAX_CRASH_LOG),
         "wrapper_exit_log": read_capped_text(
-            Path(settings.project_root) / "logs" / "wrapper-exit.log",
+            _wrapper_exit_path(settings),
             max_bytes=_MAX_WRAPPER_LOG,
         ),
         "opencode_logs": _opencode_cli_logs(),
         "serve_logs_present": _serve_log_names(settings),
         "server_time": utc_now(),
     }
+
+
+def _wrapper_exit_path(settings: Settings) -> Path:
+    """Prefer {data_dir}/logs/wrapper-exit.log; keep project/logs as a leftover."""
+    primary = wrapper_exit_log_path(Path(settings.job_log_dir or settings.data_dir / "logs"))
+    if primary.is_file():
+        return primary
+    legacy = Path(settings.project_root) / "logs" / "wrapper-exit.log"
+    if legacy.is_file():
+        return legacy
+    return primary
 
 
 def public_settings(settings: Settings) -> Dict[str, Any]:

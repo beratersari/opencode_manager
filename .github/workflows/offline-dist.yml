@@ -274,6 +274,12 @@ jobs:
             `${{ steps.ver.outputs.dist_name }}-linux-x64`. One file, no `install.bat`.
             Still needs Git and OpenCode on PATH. Starts API + SPA and the :5173 proxy.
 
+            Permanent Windows service (starts at boot): extract
+            `${{ steps.ver.outputs.dist_name }}-windows-x64-service.zip`
+            to a fixed folder and run `install-service.bat` as Administrator.
+            That zip has the exe, `install-service.bat`, `WinSW.exe`, and
+            `settings.local.yaml` (`C:\osm`).
+
             ## Offline OpenCode 1.18.10 installer
 
             Separate artifact (OpenCode CLI only, always 1.18.10):
@@ -354,6 +360,28 @@ jobs:
             ls -la dist || true
             exit 1
           fi
+          kit="dist/${prefix}-${suffix}-service.zip"
+          if [ ! -f "$kit" ]; then
+            echo "Missing service kit: $kit"
+            ls -la dist || true
+            exit 1
+          fi
+          python - "$kit" "$suffix" <<'PY'
+import sys, zipfile
+path, suffix = sys.argv[1], sys.argv[2]
+names = set(zipfile.ZipFile(path).namelist())
+need = {"README.txt", "settings.local.yaml"}
+if suffix == "windows-x64":
+    need.update({"install-service.bat", "uninstall-service.bat", "WinSW.exe"})
+    if not any(n.endswith(".exe") and n != "WinSW.exe" for n in names):
+        raise SystemExit(f"{path} missing payload exe; has {sorted(names)}")
+else:
+    need.update({"install-service.sh", "uninstall-service.sh"})
+missing = sorted(need - names)
+if missing:
+    raise SystemExit(f"{path} missing {missing}; has {sorted(names)}")
+print("OK kit", path, "members", sorted(names))
+PY
           count=$(find dist -maxdepth 1 -type f ! -name '*.spec' | wc -l)
           echo "OK $file ($(du -h "$file" | awk '{print $1}')) files_in_dist_root=$count"
 
@@ -363,6 +391,7 @@ jobs:
           name: ${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-exe
           path: |
             dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}
+            dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-service.zip
             dist/settings.local.yaml
           if-no-files-found: error
           retention-days: 30

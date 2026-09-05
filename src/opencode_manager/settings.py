@@ -32,6 +32,22 @@ def _default_data_dir() -> Path:
     return Path("/var/lib/osm")
 
 
+def data_dir_from_root(root: Path) -> Path:
+    """data_dir for installers: OSM_DATA_DIR, then settings.local.yaml, then OS default."""
+    env = (os.environ.get("OSM_DATA_DIR") or "").strip()
+    if env:
+        return Path(env)
+    overlay = Path(root) / "settings.local.yaml"
+    data = _read_yaml(overlay)
+    raw = data.get("data_dir") if isinstance(data, dict) else None
+    if raw:
+        path = Path(str(raw))
+        if not path.is_absolute():
+            path = Path(root) / path
+        return path
+    return _default_data_dir()
+
+
 @dataclass
 class Settings:
     listen_host: str = "127.0.0.1"

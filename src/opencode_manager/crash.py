@@ -21,6 +21,16 @@ def crash_log_path(job_log_dir: Path) -> Path:
     return Path(job_log_dir) / "crash.log"
 
 
+def wrapper_exit_log_path(job_log_dir: Path) -> Path:
+    """Parent-recorded process exit. Default Windows path: C:\\osm\\logs\\wrapper-exit.log."""
+    return Path(job_log_dir) / "wrapper-exit.log"
+
+
+def service_wrapper_log_dir(job_log_dir: Path) -> Path:
+    """WinSW / systemd stdout-stderr next to wrapper-exit.log."""
+    return Path(job_log_dir) / "service"
+
+
 def mark_clean_shutdown() -> None:
     global _clean
     _clean = True

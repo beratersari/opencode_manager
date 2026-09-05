@@ -18,6 +18,13 @@ set "EC=!ERRORLEVEL!"
 echo.
 echo Backend exited. code=!EC!
 >>"%CD%\logs\wrapper-exit.log" echo %DATE% %TIME% exit=!EC!
+if defined OSM_DATA_DIR (
+    if not exist "%OSM_DATA_DIR%\logs" mkdir "%OSM_DATA_DIR%\logs" 2>nul
+    >>"%OSM_DATA_DIR%\logs\wrapper-exit.log" echo %DATE% %TIME% exit=!EC!
+) else (
+    if not exist "C:\osm\logs" mkdir "C:\osm\logs" 2>nul
+    >>"C:\osm\logs\wrapper-exit.log" echo %DATE% %TIME% exit=!EC!
+)
 if not "!EC!"=="0" echo No Python traceback usually means the process was killed from outside.
 pause
 exit /b !EC!

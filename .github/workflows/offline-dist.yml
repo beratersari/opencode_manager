@@ -197,5 +197,117 @@ jobs:
             3. `start.bat` / `./start.sh`
                - API + SPA: http://127.0.0.1:8080/jobs
                - Optional SPA proxy: http://127.0.0.1:5173/
+
+            ## Single-file exe (Windows + Linux)
+
+            Also attached: `${{ steps.ver.outputs.dist_name }}-windows-x64.exe` and
+            `${{ steps.ver.outputs.dist_name }}-linux-x64`. One file, no `install.bat`.
+            Still needs Git and OpenCode on PATH. Starts API + SPA and the :5173 proxy.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  exe:
+    name: Single-file exe (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            suffix: windows-x64
+            ext: .exe
+          - os: ubuntu-latest
+            suffix: linux-x64
+            ext: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Product version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            v="${{ github.ref_name }}"
+            v="${v#v}"
+          else
+            v="$(tr -d '[:space:]' < VERSION)-g${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "dist_name=opencode-manager-$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install Python package + PyInstaller
+        run: python -m pip install -e ".[exe]"
+
+      - name: Build SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build single-file exe
+        env:
+          OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: python packaging/build_exe.py --out-dir dist
+
+      - name: Assert one executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix="${{ matrix.suffix }}"
+          prefix="${{ steps.ver.outputs.dist_name }}"
+          if [ "$suffix" = "windows-x64" ]; then
+            file="dist/${prefix}-${suffix}.exe"
+          else
+            file="dist/${prefix}-${suffix}"
+          fi
+          if [ ! -f "$file" ]; then
+            echo "Missing exe: $file"
+            ls -la dist || true
+            exit 1
+          fi
+          count=$(find dist -maxdepth 1 -type f ! -name '*.spec' | wc -l)
+          echo "OK $file ($(du -h "$file" | awk '{print $1}')) files_in_dist_root=$count"
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-exe
+          path: dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 30
+
+  attach-exe-release:
+    name: Attach exes to GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [exe]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download exe artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-exe'
+          merge-multiple: true
+          path: dist-exes
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-exes/*
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

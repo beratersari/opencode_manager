@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
 import yaml
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def resource_root() -> Path:
+    """Repo root in source; PyInstaller extract dir when frozen."""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if getattr(sys, "frozen", False) and meipass:
+        return Path(str(meipass))
+    return Path(__file__).resolve().parents[2]
+
+
+def executable_dir() -> Path:
+    """Directory of the running exe (frozen) or the project root."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return resource_root()
 
 
 def _default_data_dir() -> Path:
@@ -39,7 +53,7 @@ class Settings:
     git_clone_timeout_seconds: float = 1800.0
     retry_backoff_seconds: float = 2.0
     retry_backoff_cap_seconds: float = 30.0
-    project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
+    project_root: Path = field(default_factory=resource_root)
 
     def __post_init__(self) -> None:
         self.apply_layout()
@@ -82,12 +96,12 @@ class Settings:
             ) from exc
 
 
-def _as_path(value: Any, default: Path) -> Path:
+def _as_path(value: Any, default: Path, *, base: Optional[Path] = None) -> Path:
     if value is None or value == "":
         return default
     path = Path(str(value))
     if not path.is_absolute():
-        path = _PROJECT_ROOT / path
+        path = (base or resource_root()) / path
     return path
 
 
@@ -101,12 +115,16 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_settings(path: Optional[Path] = None) -> Settings:
-    settings_path = path or Path(os.environ.get("OSM_SETTINGS", _PROJECT_ROOT / "settings.yaml"))
+    root = resource_root()
+    overlay_dir = executable_dir()
+    settings_path = path or Path(os.environ.get("OSM_SETTINGS", root / "settings.yaml"))
     data = _read_yaml(settings_path)
     # Local machine overrides. Not used when tests pass an explicit path.
+    # Frozen exe: settings.yaml is bundled; settings.local.yaml sits next to the exe.
     if path is None and not os.environ.get("OSM_SETTINGS"):
-        data = {**data, **_read_yaml(_PROJECT_ROOT / "settings.local.yaml")}
+        data = {**data, **_read_yaml(overlay_dir / "settings.local.yaml")}
     s = Settings()
+    s.project_root = root
     s.listen_host = str(data.get("listen_host", s.listen_host))
     s.listen_port = int(data.get("listen_port", s.listen_port))
     s.max_concurrent_jobs = int(data.get("max_concurrent_jobs", s.max_concurrent_jobs))
@@ -116,7 +134,7 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     s.callback_retry_count = int(data.get("callback_retry_count", s.callback_retry_count))
     hosts = data.get("callback_allowed_hosts") or []
     s.callback_allowed_hosts = [str(h).strip().lower() for h in hosts if str(h).strip()]
-    s.data_dir = _as_path(data.get("data_dir"), s.data_dir)
+    s.data_dir = _as_path(data.get("data_dir"), s.data_dir, base=overlay_dir)
     s.work_dir = s.data_dir / ".temp"
     s.job_log_dir = s.data_dir / "logs"
     s.job_store_dir = s.data_dir / "jobs"

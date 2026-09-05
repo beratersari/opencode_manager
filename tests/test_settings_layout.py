@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from opencode_manager.settings import Settings, load_settings
+from opencode_manager.settings import Settings, executable_dir, load_settings, resource_root
 
 
 def test_yaml_data_dir_derives_all_paths(tmp_path: Path) -> None:
@@ -25,6 +25,12 @@ def test_explicit_work_dir_keeps_serve_next_to_clones(tmp_path: Path) -> None:
     assert s.work_dir == tmp_path / "work"
     assert s.serve_dir == tmp_path / "work" / ".serve"
     assert s.app_log_path == tmp_path / "joblogs" / "app.log"
+
+
+def test_resource_root_matches_repo() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert resource_root() == root
+    assert executable_dir() == root
 
 
 def test_ensure_dirs_permission_error_mentions_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

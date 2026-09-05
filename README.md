@@ -286,6 +286,27 @@ installer: `install-opencode.*` deletes `<user>/.opencode` (Windows:
 `start-frontend` is a Python SPA proxy on `:5173` (not Vite). The manager
 also serves the same SPA at http://127.0.0.1:4096/jobs.
 
+### Single-file exe (Windows + Linux)
+
+A separate CI artifact is **one executable** (no `install.bat`, no
+folder). It starts both the manager (`:4096`, API + SPA) and the
+`:5173` proxy. `start.bat` / `start.sh` are unchanged.
+
+- `opencode-manager-<version>-windows-x64.exe`
+- `opencode-manager-<version>-linux-x64`
+
+Git and OpenCode stay on PATH (the exe prepends `~/.opencode/bin`).
+Put `settings.local.yaml` next to the file to override settings. If
+`C:\osm` / `/var/lib/osm` is not writable, it uses
+`%LOCALAPPDATA%\osm` or `~/.local/share/osm`.
+
+Build on the target OS (no cross-compile), after `web/dist` exists:
+
+```bash
+pip install -e ".[exe]"
+python packaging/build_exe.py
+```
+
 ### Build the vendor payload (needs network, once)
 
 On a machine that can reach GitHub / PyPI / npm:

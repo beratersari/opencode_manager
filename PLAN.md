@@ -1040,6 +1040,11 @@ Clone the repo for reference only. Do not import it as a dependency.
   --platform` so Linux CI does not require `uvloop` for
   `win_amd64`. Target `install.*` creates `.venv` with the
   bundled interpreter (`--no-index`).
+- additive single-file exe (Windows + Linux only): PyInstaller
+  onefile from `packaging/build_exe.py`. Same workflow, native
+  runners. One file starts backend + frontend in-process. Does not
+  replace the zip or change `start.bat` / `start.sh`. Git and
+  OpenCode stay on PATH.
 
 **Do not copy**
 
@@ -1091,10 +1096,11 @@ opencode_manager/
       store.py          # job history JSON
       chat.py           # snapshot + live transcript
       frontend_proxy.py # optional :5173 SPA proxy (no Node)
+    standalone.py       # one-process API + :5173; single-file exe entry
   web/                  # React + Vite + Tailwind SPA (jobs tab only)
   web/dist/             # CI-built SPA; no Node on the target
   scripts/              # offline install + start (Windows .bat, Linux .sh)
-  packaging/            # versions.env + build_dist.py (needs network)
+  packaging/            # versions.env + build_dist.py + build_exe.py
   vendor/               # CI zip only: bundled CPython + wheels + OpenCode bin
   agents/               # closed-defect notes (not shipped in the zip)
 # runtime under data_dir (Windows C:\osm, Linux /var/lib/osm):

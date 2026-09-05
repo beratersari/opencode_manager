@@ -386,6 +386,17 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   `pip download --platform win_amd64` of `uvicorn[standard]` as-is:
   host markers still require `uvloop` (no Windows wheel) and the
   whole Windows set is skipped.
+- Additive single-file exe (`packaging/build_exe.py`, same workflow,
+  native Windows + Linux jobs): `opencode-manager-<ver>-windows-x64.exe`
+  and `opencode-manager-<ver>-linux-x64`. The artifact is that one
+  file. It starts API + SPA (`:4096`) and the `:5173` proxy in-process
+  (`opencode_manager.standalone`). It does **not** replace the zip, does
+  **not** change `start.bat` / `start.sh`, and does **not** vendor Git
+  or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
+  OS — no cross-compile. `agents/` is not in the exe. Operator overlay
+  is `settings.local.yaml` next to the exe. If the default `data_dir`
+  is not writable, the exe falls back to `%LOCALAPPDATA%\osm` /
+  `$XDG_DATA_HOME/osm` (or `~/.local/share/osm`).
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
 - Do not vendor Git, Codex, `glab`, portable Node, or

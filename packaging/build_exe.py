@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Build a single-file Windows or Linux executable (this OS only).
+
+  python packaging/build_exe.py
+  python packaging/build_exe.py --out-dir dist
+
+Does not change start.bat / start.sh. Does not vendor Git or OpenCode.
+Must run on the target OS (PyInstaller cannot cross-compile).
+Needs web/dist/index.html (npm run build, or packaging/build_dist.py --in-place).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+from pathlib import Path
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def read_product_version(root: Path) -> str:
+    env = (os.environ.get("OSM_PRODUCT_VERSION") or "").strip()
+    if env:
+        return env
+    return (root / "VERSION").read_text(encoding="utf-8").strip()
+
+
+def host_suffix() -> str:
+    if sys.platform.startswith("win"):
+        return "windows-x64"
+    if sys.platform.startswith("linux"):
+        return "linux-x64"
+    raise SystemExit(
+        f"Single-file exe is Windows and Linux only (this host is {sys.platform})."
+    )
+
+
+def artifact_filename(version: str, suffix: str) -> str:
+    name = f"opencode-manager-{version}-{suffix}"
+    if suffix.startswith("windows"):
+        return f"{name}.exe"
+    return name
+
+
+def add_data_sep() -> str:
+    return ";" if sys.platform.startswith("win") else ":"
+
+
+def uvicorn_hidden_imports() -> list[str]:
+    names = [
+        "uvicorn.logging",
+        "uvicorn.loops",
+        "uvicorn.loops.auto",
+        "uvicorn.loops.asyncio",
+        "uvicorn.protocols",
+        "uvicorn.protocols.http",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.http.h11_impl",
+        "uvicorn.protocols.websockets",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.protocols.websockets.wsproto_impl",
+        "uvicorn.lifespan",
+        "uvicorn.lifespan.on",
+        "uvicorn.lifespan.off",
+        "websockets",
+        "websockets.legacy",
+        "websockets.legacy.server",
+        "httpx",
+        "yaml",
+        "pydantic",
+        "pydantic_core",
+        "multipart",
+        "email_validator",
+        "anyio",
+        "starlette",
+        "fastapi",
+        "watchfiles",
+        "httptools",
+        "colorama",
+    ]
+    if not sys.platform.startswith("win"):
+        names.append("uvloop")
+        names.append("uvicorn.loops.uvloop")
+    return names
+
+
+def package_hidden_imports() -> list[str]:
+    import pkgutil
+
+    src = repo_root() / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+
+    import opencode_manager
+
+    names = ["opencode_manager"]
+    for info in pkgutil.walk_packages(
+        opencode_manager.__path__, opencode_manager.__name__ + "."
+    ):
+        names.append(info.name)
+    return names
+
+
+def pyinstaller_args(
+    *,
+    entry: Path,
+    src: Path,
+    settings_yaml: Path,
+    web_dist: Path,
+    work: Path,
+    out_dir: Path,
+    internal_name: str = "opencode-manager",
+) -> list[str]:
+    sep = add_data_sep()
+    args = [
+        str(entry),
+        "--onefile",
+        "--console",
+        "--noupx",
+        "--clean",
+        "--noconfirm",
+        f"--name={internal_name}",
+        f"--distpath={out_dir}",
+        f"--workpath={work}",
+        f"--specpath={work}",
+        f"--paths={src}",
+        f"--add-data={settings_yaml}{sep}.",
+        f"--add-data={web_dist}{sep}web/dist",
+        "--exclude-module=tkinter",
+        "--exclude-module=matplotlib",
+        "--exclude-module=numpy",
+        "--exclude-module=pytest",
+        "--exclude-module=IPython",
+        "--collect-submodules=opencode_manager",
+        "--copy-metadata=pydantic",
+        "--copy-metadata=pydantic_core",
+        "--copy-metadata=uvicorn",
+        "--copy-metadata=fastapi",
+        "--copy-metadata=starlette",
+        "--copy-metadata=httpx",
+        "--copy-metadata=anyio",
+    ]
+    if sys.platform.startswith("win"):
+        args.append("--exclude-module=uvloop")
+    for name in package_hidden_imports() + uvicorn_hidden_imports():
+        args.append(f"--hidden-import={name}")
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build OSM single-file exe for this OS")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Directory for the final exe (default: <repo>/dist)",
+    )
+    args = parser.parse_args(argv)
+
+    root = repo_root()
+    suffix = host_suffix()
+    version = read_product_version(root)
+    dest_name = artifact_filename(version, suffix)
+    web_dist = root / "web" / "dist"
+    if not (web_dist / "index.html").is_file():
+        print(
+            f"[ERROR] {web_dist / 'index.html'} is missing.",
+            file=sys.stderr,
+        )
+        print(
+            "Build the SPA first:  cd web && npm ci && npm run build",
+            file=sys.stderr,
+        )
+        print(
+            "Or:  python packaging/build_dist.py --in-place",
+            file=sys.stderr,
+        )
+        return 1
+    settings_yaml = root / "settings.yaml"
+    if not settings_yaml.is_file():
+        print(f"[ERROR] {settings_yaml} is missing.", file=sys.stderr)
+        return 1
+
+    try:
+        import PyInstaller.__main__
+    except ImportError:
+        print(
+            "[ERROR] PyInstaller is not installed. "
+            'pip install -e ".[exe]"  (or pip install pyinstaller)',
+            file=sys.stderr,
+        )
+        return 1
+
+    out_dir = Path(args.out_dir).resolve() if args.out_dir else root / "dist"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    work = out_dir / "exe-build" / suffix
+    if work.exists():
+        shutil.rmtree(work)
+    work.mkdir(parents=True, exist_ok=True)
+
+    entry = root / "src" / "opencode_manager" / "standalone.py"
+    src = root / "src"
+    print(f"Building {dest_name} (onefile, {suffix})...")
+    PyInstaller.__main__.run(
+        pyinstaller_args(
+            entry=entry,
+            src=src,
+            settings_yaml=settings_yaml,
+            web_dist=web_dist,
+            work=work,
+            out_dir=work / "dist",
+        )
+    )
+
+    built = work / "dist" / (
+        "opencode-manager.exe" if suffix.startswith("windows") else "opencode-manager"
+    )
+    if not built.is_file():
+        print(f"[ERROR] PyInstaller did not write {built}", file=sys.stderr)
+        return 1
+    final = out_dir / dest_name
+    if final.exists():
+        final.unlink()
+    shutil.copy2(built, final)
+    if not suffix.startswith("windows"):
+        final.chmod(final.stat().st_mode | 0o111)
+    size_mb = final.stat().st_size / (1024 * 1024)
+    print(f"[OK] {final} ({size_mb:.1f} MB)")
+    print("This file is the whole artifact. Git and OpenCode stay on PATH.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

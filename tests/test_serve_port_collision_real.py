@@ -140,6 +140,70 @@ def test_two_real_serves_get_distinct_ports_and_own_health(
             stop_serve(handle)
 
 
+def _start_many(tmp_path: Path, binary: str, n: int, *, timeout: float) -> list:
+    handles: list = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(n)
+
+    def worker(i: int) -> None:
+        barrier.wait()
+        try:
+            cwd = tmp_path / f"job_{i}"
+            cwd.mkdir()
+            handle = start_serve(
+                bin_name=binary,
+                cwd=cwd,
+                log_path=tmp_path / f"job_{i}.log",
+                timeout=timeout,
+            )
+            with lock:
+                handles.append(handle)
+        except BaseException as exc:  # noqa: BLE001
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=timeout + 30)
+    if errors:
+        for handle in handles:
+            stop_serve(handle)
+        raise AssertionError(errors)
+    return handles
+
+
+def test_sixteen_concurrent_serves_all_get_unique_ports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binary = str(_launcher(tmp_path))
+    real_popen = serve_mod.subprocess.Popen
+
+    def popen(cmd, **kwargs):  # noqa: ANN001, ANN003
+        argv = list(cmd)
+        if argv and str(argv[0]).endswith((".cmd", ".bat")):
+            argv = [sys.executable, str(tmp_path / "fake_opencode.py"), *argv[1:]]
+        return real_popen(argv, **kwargs)
+
+    monkeypatch.setattr(serve_mod.subprocess, "Popen", popen)
+    handles = _start_many(tmp_path, binary, 16, timeout=12.0)
+    try:
+        ports = [h.port for h in handles]
+        pids = [h.pid for h in handles]
+        assert len(handles) == 16
+        assert len(set(ports)) == 16, ports
+        assert len(set(pids)) == 16, pids
+        for handle in handles:
+            assert handle.proc.poll() is None
+            res = httpx.get(f"{handle.base_url}/global/health", timeout=2.0)
+            assert res.status_code == 200
+    finally:
+        for handle in handles:
+            stop_serve(handle)
+
+
 def test_occupied_port_does_not_count_as_this_child_health(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -202,6 +266,25 @@ def test_occupied_port_does_not_count_as_this_child_health(
     finally:
         kill_pid(occupier.pid)
         occupier.wait(timeout=5)
+
+
+@pytest.mark.skipif(not shutil.which("opencode"), reason="opencode not on PATH")
+def test_eight_concurrent_opencode_serves_unique_ports(tmp_path: Path) -> None:
+    handles = _start_many(tmp_path, "opencode", 8, timeout=45.0)
+    try:
+        ports = [h.port for h in handles]
+        pids = [h.pid for h in handles]
+        assert len(handles) == 8
+        assert len(set(ports)) == 8, ports
+        assert len(set(pids)) == 8, pids
+        for handle in handles:
+            assert handle.proc.poll() is None
+            res = httpx.get(f"{handle.base_url}/global/health", timeout=3.0)
+            assert res.status_code == 200
+            assert isinstance(res.json(), dict)
+    finally:
+        for handle in handles:
+            stop_serve(handle)
 
 
 @pytest.mark.skipif(not shutil.which("opencode"), reason="opencode not on PATH")

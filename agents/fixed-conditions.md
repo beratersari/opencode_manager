@@ -34,6 +34,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Health 200 is ignored if this serve process already exited | `test_wait_health_rejects_dead_child_even_if_http_200` |
 | Health 200 from another listener is not this child's serve | `test_wait_health_ignores_200_from_other_listener`, `test_occupied_port_does_not_count_as_this_child_health` |
 | Two real serves (stub and OpenCode) get distinct ports | `test_two_real_serves_get_distinct_ports_and_own_health`, `test_two_real_opencode_serves_get_distinct_ports` |
+| Many concurrent serves all get unique ports | `test_sixteen_concurrent_serves_all_get_unique_ports`, `test_eight_concurrent_opencode_serves_unique_ports` |
 | After health, wait for the directory instance before `POST /session` | `test_instance_wait_runs_before_session_create`, `test_wait_directory_retries_until_session_list_returns` |
 | Directory instance timeout is `serve-dead` (not create-fail) | `test_instance_wait_timeout_is_serve_dead` |
 

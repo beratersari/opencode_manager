@@ -20,6 +20,7 @@ from typing import Optional
 import uvicorn
 
 from opencode_manager.app import create_app
+from opencode_manager.cleanup.port import free_listen_port, port_is_busy
 from opencode_manager.dashboard.frontend_proxy import build_app as build_frontend
 from opencode_manager.settings import Settings, executable_dir, load_settings, resource_root
 
@@ -242,8 +243,26 @@ def _uvicorn_server(app: object, host: str, port: int, log_level: str) -> uvicor
     return server
 
 
+def _free_or_fail(host: str, port: int, *, label: str) -> int:
+    if not port_is_busy(host, port):
+        return 0
+    print(f"[INFO] {label} port {port} is busy; killing the leftover listener...")
+    free_listen_port(host, port)
+    if port_is_busy(host, port):
+        print(
+            f"[ERROR] {label} port {port} is still busy. "
+            "Stop the other process or set listen_port in settings.local.yaml.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"[OK] {label} port {port} is free")
+    return 0
+
+
 async def serve_backend(prepared: Prepared, *, spawn_frontend: bool = False) -> int:
     settings = prepared.settings
+    if _free_or_fail(settings.listen_host, settings.listen_port, label="Backend") != 0:
+        return 1
     backend = _uvicorn_server(
         prepared.backend_app,
         settings.listen_host,
@@ -278,6 +297,8 @@ async def serve_backend(prepared: Prepared, *, spawn_frontend: bool = False) -> 
 
 
 async def serve_frontend(prepared: Prepared) -> int:
+    if _free_or_fail(prepared.frontend_host, prepared.frontend_port, label="Frontend") != 0:
+        return 1
     server = _uvicorn_server(
         prepared.frontend_app,
         prepared.frontend_host,

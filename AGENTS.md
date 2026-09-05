@@ -398,8 +398,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   and `opencode-manager-<ver>-linux-x64`. The artifact is that one
   file. Opening it uses this console as **OSM-Backend** (`:4096`) and
   opens a second console **OSM-Frontend** (`:5173`) via
-  `opencode_manager.standalone` (`CREATE_NEW_CONSOLE` on Windows). It
-  does **not** replace the zip, does
+  `opencode_manager.standalone` (`CREATE_NEW_CONSOLE` on Windows). If
+  `listen_port` (or `:5173`) is busy, the exe finds the LISTENING
+  PID (`netstat` / `ss`, not a Win32_Process snapshot) and
+  `kill_pid`s it so this instance can bind. Never this process or
+  ancestors. It does **not** replace the zip, does
   **not** change `start.bat` / `start.sh`, and does **not** vendor Git
   or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
   OS — no cross-compile. `agents/` is not in the exe. The exe artifact

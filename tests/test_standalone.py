@@ -220,6 +220,34 @@ def test_serve_backend_opens_frontend_window(
     assert spawned == [(prepared.frontend_host, 5173)]
 
 
+def test_serve_backend_returns_1_if_port_stays_busy(
+    tmp_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    dist = tmp_path / "web" / "dist"
+    dist.mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    tmp_settings.project_root = tmp_path
+    tmp_settings.listen_port = 4096
+    prepared = prepare_backend(tmp_settings)
+    monkeypatch.setattr("opencode_manager.standalone.port_is_busy", lambda *_a, **_k: True)
+    monkeypatch.setattr("opencode_manager.standalone.free_listen_port", lambda *_a, **_k: [99])
+    started = {"n": 0}
+
+    class FakeServer:
+        def __init__(self, *_a, **_k) -> None:
+            started["n"] += 1
+
+        async def serve(self) -> None:
+            return None
+
+    monkeypatch.setattr("opencode_manager.standalone._uvicorn_server", lambda *_a, **_k: FakeServer())
+    rc = asyncio.run(serve_backend(prepared, spawn_frontend=False))
+    assert rc == 1
+    assert started["n"] == 0
+
+
 def test_serve_prepared_runs_backend_only(
     tmp_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

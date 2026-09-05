@@ -1041,7 +1041,8 @@ Clone the repo for reference only. Do not import it as a dependency.
   onefile from `packaging/build_exe.py`. Same workflow, native
   runners. Artifact zip is the exe plus `settings.local.yaml`.
   Starts backend in this console and the :5173 proxy in a second
-  window. Does not replace the zip
+  window. A busy listen port is freed by killing that listener
+  (`kill_pid` / `may_kill`). Does not replace the zip
   or change `start.bat` / `start.sh`. Git and OpenCode stay on
   PATH. Windows `data_dir` is `C:\osm` (no AppData fallback).
 

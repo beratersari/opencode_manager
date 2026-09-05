@@ -294,8 +294,9 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 A separate CI artifact is the executable plus `settings.local.yaml`
 (no `install.bat`). Keep both in the same folder. Opening the exe
 uses this console as **OSM-Backend** (`:4096`) and opens a second
-console **OSM-Frontend** (`:5173`). `start.bat` / `start.sh` are
-unchanged.
+console **OSM-Frontend** (`:5173`). If `:4096` (or `:5173`) is
+already taken, the exe kills that leftover listener and binds.
+`start.bat` / `start.sh` are unchanged.
 
 - `opencode-manager-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
 - `opencode-manager-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)

@@ -181,7 +181,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   hardcode `4096`. Reserve that port in-process so two workers cannot
   draw the same number between `bind(0)` and the child bind. Record
   `{pid, port, base_url, cwd}` on the job **immediately after Popen**,
-  before the health wait. Health requires this child still running.
+  before the health wait. Health requires this child still running
+  and listening on that port (not some other process's 200).
 - If `GET /global/health` is not 200 in time: kill **this** child,
   fail **this** attempt (`serve-dead`). Outer `retry_count` applies.
   Do not leave the process up.

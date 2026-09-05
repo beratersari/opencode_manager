@@ -75,6 +75,38 @@ def test_wait_health_rejects_dead_child_even_if_http_200(monkeypatch) -> None:
         wait_health("http://127.0.0.1:9", "/tmp", timeout=2.0, proc=Dead())
 
 
+def test_wait_health_ignores_200_from_other_listener(monkeypatch) -> None:
+    class Live:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self) -> dict:
+            return {"healthy": True}
+
+    class FakeClient:
+        def __init__(self, *a, **k):  # noqa: ANN002, ARG002
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):  # noqa: ANN002
+            return False
+
+        def get(self, *a, **k):  # noqa: ANN002, ARG002
+            return FakeResp()
+
+    monkeypatch.setattr(serve_mod.httpx, "Client", FakeClient)
+    monkeypatch.setattr(serve_mod, "pids_listening_on", lambda port: [9999])
+    with pytest.raises(TimeoutError):
+        wait_health("http://127.0.0.1:9", "/tmp", timeout=0.5, proc=Live(), port=9)
+
+
 def test_wait_health_accepts_live_child(monkeypatch) -> None:
     class Live:
         def poll(self):
@@ -100,6 +132,14 @@ def test_wait_health_accepts_live_child(monkeypatch) -> None:
             return FakeResp()
 
     monkeypatch.setattr(serve_mod.httpx, "Client", FakeClient)
-    assert wait_health("http://127.0.0.1:9", "/tmp", timeout=2.0, proc=Live()) == {
+    monkeypatch.setattr(serve_mod, "pids_listening_on", lambda port: [77])
+
+    class LivePid:
+        pid = 77
+
+        def poll(self):
+            return None
+
+    assert wait_health("http://127.0.0.1:9", "/tmp", timeout=2.0, proc=LivePid()) == {
         "healthy": True
     }

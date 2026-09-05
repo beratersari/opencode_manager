@@ -127,8 +127,8 @@ How we pick the job port:
   `--hostname 127.0.0.1 --port <that>`. Another OSM worker cannot
   draw the same number in that gap.
 - `wait_health` requires this child still running (`proc.poll()` is
-  `None`). A 200 from whatever is already on that URL is not enough
-  if this process already exited (bind lost the race).
+  `None`) **and** that this pid is the LISTENING holder of the port.
+  A 200 from whatever is already on that URL is not this job's serve.
 - Record `{pid, port, cwd}` on the job. All HTTP to OpenCode for that
   job uses only that base URL.
 - Those ports are never published. n8n never sees them.

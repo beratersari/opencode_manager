@@ -17,6 +17,7 @@ from typing import Callable, Optional, Set
 import httpx
 
 from opencode_manager.cleanup.kill import kill_pid
+from opencode_manager.cleanup.port import pids_listening_on
 from opencode_manager.log import clip, get_logger, log_command, log_fail, redact
 
 logger = get_logger()
@@ -210,7 +211,12 @@ def _spawn_and_wait(
         on_spawn(handle)
     try:
         health = wait_health(
-            base, str(cwd), timeout=timeout, should_stop=should_stop, proc=proc
+            base,
+            str(cwd),
+            timeout=timeout,
+            should_stop=should_stop,
+            proc=proc,
+            port=port,
         )
     except Exception as exc:
         tail = _serve_log_tail(log_path)
@@ -243,6 +249,7 @@ def wait_health(
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     proc: Optional[subprocess.Popen] = None,
+    port: Optional[int] = None,
 ) -> dict:
     deadline = time.time() + timeout
     last: Optional[Exception] = None
@@ -266,6 +273,14 @@ def wait_health(
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, dict):
+                        if proc is not None and port is not None:
+                            holders = pids_listening_on(int(port))
+                            if holders and int(proc.pid) not in holders:
+                                last = Exception(
+                                    f"health 200 listeners={holders} != pid={proc.pid}"
+                                )
+                                time.sleep(0.3)
+                                continue
                         return data
                 last = Exception(f"HTTP {response.status_code} body={clip(response.text, 200)}")
             except RuntimeError:

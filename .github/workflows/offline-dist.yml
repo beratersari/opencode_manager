@@ -75,6 +75,33 @@ jobs:
                 exit 1
               fi
             done
+            if [ "$suffix" = "windows-linux" ]; then
+              for rel in settings.local.windows.yaml settings.local.linux.yaml; do
+                if [ ! -e "$stage/$rel" ]; then
+                  echo "Missing $suffix path: $rel"
+                  exit 1
+                fi
+              done
+              if [ -e "$stage/settings.local.yaml" ]; then
+                echo "windows-linux zip must not ship a single settings.local.yaml"
+                exit 1
+              fi
+            else
+              if [ ! -e "$stage/settings.local.yaml" ]; then
+                echo "Missing $suffix path: settings.local.yaml"
+                exit 1
+              fi
+              if [ "$suffix" = "windows-x64" ] && ! grep -q 'C:\\osm' "$stage/settings.local.yaml"; then
+                echo "windows zip settings.local.yaml must set C:\\osm"
+                cat "$stage/settings.local.yaml"
+                exit 1
+              fi
+              if [ "$suffix" = "linux-x64" ] && ! grep -q '/var/lib/osm' "$stage/settings.local.yaml"; then
+                echo "linux zip settings.local.yaml must set /var/lib/osm"
+                cat "$stage/settings.local.yaml"
+                exit 1
+              fi
+            fi
             if [ -d "$stage/web/node_modules" ]; then
               echo "web/node_modules must not be in $suffix"
               exit 1
@@ -284,7 +311,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-exe
-          path: dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}
+          path: |
+            dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}
+            dist/settings.local.yaml
           if-no-files-found: error
           retention-days: 30
 
@@ -300,14 +329,30 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: '*-exe'
-          merge-multiple: true
+          merge-multiple: false
           path: dist-exes
+
+      - name: Stage release files
+        run: |
+          set -euo pipefail
+          mkdir -p release-exes
+          for dir in dist-exes/*; do
+            [ -d "$dir" ] || continue
+            name="$(basename "$dir")"
+            find "$dir" -maxdepth 1 -type f ! -name 'settings.local.yaml' -exec cp {} release-exes/ \;
+            if echo "$name" | grep -q windows; then
+              cp "$dir/settings.local.yaml" release-exes/settings.local.windows.yaml
+            else
+              cp "$dir/settings.local.yaml" release-exes/settings.local.linux.yaml
+            fi
+          done
+          ls -la release-exes
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist-exes/*
+            release-exes/*
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

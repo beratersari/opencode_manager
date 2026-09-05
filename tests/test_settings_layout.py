@@ -1,8 +1,9 @@
+import os
 from pathlib import Path
 
 import pytest
 
-from opencode_manager.settings import Settings, executable_dir, load_settings, resource_root
+from opencode_manager.settings import Settings, _default_data_dir, executable_dir, load_settings, resource_root
 
 
 def test_yaml_data_dir_derives_all_paths(tmp_path: Path) -> None:
@@ -31,6 +32,13 @@ def test_resource_root_matches_repo() -> None:
     root = Path(__file__).resolve().parents[1]
     assert resource_root() == root
     assert executable_dir() == root
+
+
+def test_os_default_data_dir() -> None:
+    if os.name == "nt":
+        assert _default_data_dir() == Path(r"C:\osm")
+    else:
+        assert _default_data_dir() == Path("/var/lib/osm")
 
 
 def test_ensure_dirs_permission_error_mentions_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

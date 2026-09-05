@@ -260,8 +260,11 @@ directly. Download the one for your OS (or the combined Windows+Linux zip):
 - `opencode-manager-<version>-darwin.zip` (Apple Silicon + Intel)
 - `opencode-manager-<version>-windows-linux.zip` (Windows + Linux together)
 
-Each zip has the matching bundled CPython, wheels, OpenCode CLI, and
-`web/dist`. `agents/` is not shipped. Extract it. Install Git. Then:
+Each zip has the matching bundled CPython, wheels, OpenCode CLI,
+`web/dist`, and `settings.local.yaml` (Windows `C:\osm`, Linux
+`/var/lib/osm`). The combined zip has both templates; install copies
+the one for your OS. `agents/` is not shipped. Extract it. Install
+Git. Then:
 
 ```bash
 # Windows
@@ -288,17 +291,18 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 ### Single-file exe (Windows + Linux)
 
-A separate CI artifact is **one executable** (no `install.bat`, no
-folder). It starts both the manager (`:4096`, API + SPA) and the
-`:5173` proxy. `start.bat` / `start.sh` are unchanged.
+A separate CI artifact is the executable plus `settings.local.yaml`
+(no `install.bat`). Keep both in the same folder. It starts both the
+manager (`:4096`, API + SPA) and the `:5173` proxy. `start.bat` /
+`start.sh` are unchanged.
 
-- `opencode-manager-<version>-windows-x64.exe`
-- `opencode-manager-<version>-linux-x64`
+- `opencode-manager-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
+- `opencode-manager-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)
 
 Git and OpenCode stay on PATH (the exe prepends `~/.opencode/bin`).
-Put `settings.local.yaml` next to the file to override settings. If
-`C:\osm` / `/var/lib/osm` is not writable, it uses
-`%LOCALAPPDATA%\osm` or `~/.local/share/osm`.
+Windows always uses `C:\osm` unless you change the overlay. On Linux,
+if `/var/lib/osm` is not writable, the exe falls back to
+`~/.local/share/osm`.
 
 Build on the target OS (no cross-compile), after `web/dist` exists:
 

@@ -70,15 +70,11 @@ def test_frozen_loads_local_overlay_next_to_exe(
 
 def test_fallback_data_dir_respects_xdg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     path = fallback_data_dir()
-    if sys.platform.startswith("win"):
-        assert path == tmp_path / "local" / "osm"
-    else:
-        assert path == tmp_path / "xdg" / "osm"
+    assert path == tmp_path / "xdg" / "osm"
 
 
-def test_apply_writable_data_dir_falls_back(
+def test_apply_writable_data_dir_windows_keeps_c_osm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     blocked = tmp_path / "blocked"
@@ -91,10 +87,13 @@ def test_apply_writable_data_dir_falls_back(
         return real_mkdir(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "mkdir", boom)
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    if sys.platform.startswith("win"):
+        with pytest.raises(PermissionError):
+            apply_writable_data_dir(s)
+        return
     out = apply_writable_data_dir(s)
-    assert out.data_dir != blocked
+    assert out.data_dir == tmp_path / "xdg" / "osm"
     assert out.work_dir == out.data_dir / ".temp"
     assert out.job_store_dir == out.data_dir / "jobs"
 
@@ -214,10 +213,9 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "Single-file exe" in text
     assert "windows-latest" in text
     assert "ubuntu-latest" in text
-    assert "path: dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}" in text
-    exe_job = text.split("exe:")[1].split("attach-exe-release:")[0]
-    assert "start.bat" not in exe_job
-    assert "start.sh" not in exe_job
+    assert "dist/settings.local.yaml" in text
+    assert "name: Single-file exe" in text
+    assert "packaging/build_exe.py" in text
 
 
 def test_standalone_does_not_import_start_scripts() -> None:

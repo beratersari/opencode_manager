@@ -96,6 +96,8 @@ def test_ci_uploads_stage_dir_not_nested_zip() -> None:
     assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-linux-x64/" in text
     assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-darwin/" in text
     assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-linux/" in text
+    assert "settings.local.yaml" in text
+    assert "settings.local.windows.yaml" in text
     assert "path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip" not in text.split("Create GitHub Release")[0]
 
 
@@ -162,6 +164,51 @@ def test_install_sh_picks_os_specific_python() -> None:
     assert "osm_chmod_launchers" in lib
     assert "osm_ensure_linux_data_dir" in text
     assert "osm_chmod_launchers" in text
+
+
+def test_settings_local_templates_set_os_defaults() -> None:
+    root = Path(__file__).resolve().parents[1]
+    win = (root / "packaging" / "settings.local.windows.yaml").read_text(encoding="utf-8")
+    lin = (root / "packaging" / "settings.local.linux.yaml").read_text(encoding="utf-8")
+    assert "data_dir: C:\\osm" in win
+    assert "data_dir: /var/lib/osm" in lin
+    assert "C:\\osm" not in lin
+    assert "/var/lib/osm" not in win
+
+
+def test_stage_settings_local_writes_os_overlay(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    mod = _load()
+    win_payload = tmp_path / "windows"
+    lin_payload = tmp_path / "linux"
+    both = tmp_path / "winlinux"
+    win_payload.mkdir()
+    lin_payload.mkdir()
+    both.mkdir()
+    mod.stage_settings_local(root, win_payload, "windows")
+    mod.stage_settings_local(root, lin_payload, "linux")
+    mod.stage_settings_local(root, both, "winlinux")
+    assert (win_payload / "settings.local.yaml").read_text(encoding="utf-8").find("C:\\osm") >= 0
+    assert (lin_payload / "settings.local.yaml").read_text(encoding="utf-8").find("/var/lib/osm") >= 0
+    assert not (both / "settings.local.yaml").exists()
+    assert (both / "settings.local.windows.yaml").is_file()
+    assert (both / "settings.local.linux.yaml").is_file()
+
+
+def test_install_bat_promotes_windows_overlay() -> None:
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "install.bat").read_text(
+        encoding="utf-8"
+    )
+    assert "settings.local.windows.yaml" in text
+    assert "C:\\osm" in text
+
+
+def test_osm_lib_rewrites_shipped_linux_default() -> None:
+    lib = (Path(__file__).resolve().parents[1] / "scripts" / "osm-lib.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "osm_local_yaml_is_linux_default" in lib
+    assert "settings.local.linux.yaml" in lib
 
 
 def test_shipped_settings_yaml_does_not_force_linux_data_dir() -> None:

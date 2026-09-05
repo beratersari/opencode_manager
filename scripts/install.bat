@@ -119,6 +119,17 @@ if exist "%WEB_DIST%\assets" (
 )
 
 echo.
+echo Step 4: settings.local.yaml...
+if exist "%ROOT%\settings.local.yaml" (
+    echo [OK] settings.local.yaml present
+) else if exist "%ROOT%\settings.local.windows.yaml" (
+    copy /Y "%ROOT%\settings.local.windows.yaml" "%ROOT%\settings.local.yaml" >nul
+    echo [OK] settings.local.yaml from settings.local.windows.yaml ^(data_dir C:\osm^)
+) else (
+    echo [OK] no overlay; Windows default data_dir is C:\osm
+)
+
+echo.
 echo ========================================
 echo   Manager install complete
 echo ========================================

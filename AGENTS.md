@@ -366,12 +366,18 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     `vendor/python/darwin-arm64|darwin-x64/bin/python3`), then install from
     `vendor/python-wheels` and check `web/dist`. Do not use a
     system Python. Recreate `.venv` from scratch each install.
-    On Linux, if `/var/lib/osm` is not writable and
-    `settings.local.yaml` is absent, `install.sh` writes that overlay
-    with `data_dir` = `$XDG_DATA_HOME/osm` or `~/.local/share/osm`.
-    The code default stays `/var/lib/osm`. Do not require root for
-    `./install.sh` then `./start.sh`. Restore `+x` on the zip-root
-    launchers (some extractors drop Unix modes).
+    Each OS zip ships `settings.local.yaml` (`packaging/settings.local.windows.yaml`
+    → `data_dir: C:\osm`, `packaging/settings.local.linux.yaml` →
+    `data_dir: /var/lib/osm`). The combined Windows+Linux zip ships both
+    templates; `install.bat` / `install.sh` copy the matching one if
+    `settings.local.yaml` is missing. On Linux, if `/var/lib/osm` is not
+    writable and the overlay is absent **or still names** `/var/lib/osm`,
+    `install.sh` rewrites it to `$XDG_DATA_HOME/osm` or
+    `~/.local/share/osm`. A custom `data_dir` in the overlay is left
+    alone. The code default stays `/var/lib/osm` on Linux and `C:\osm`
+    on Windows. Do not require root for `./install.sh` then `./start.sh`.
+    Restore `+x` on the zip-root launchers (some extractors drop Unix
+    modes).
   - `install-opencode.bat` / `install-opencode.sh` — OpenCode CLI
     only. Install root is `<user>/.opencode` (Windows:
     `%USERPROFILE%\.opencode`, not AppData). Detect that folder,
@@ -393,10 +399,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   (`opencode_manager.standalone`). It does **not** replace the zip, does
   **not** change `start.bat` / `start.sh`, and does **not** vendor Git
   or OpenCode (PATH, plus `~/.opencode/bin` prepended). Build on that
-  OS — no cross-compile. `agents/` is not in the exe. Operator overlay
-  is `settings.local.yaml` next to the exe. If the default `data_dir`
-  is not writable, the exe falls back to `%LOCALAPPDATA%\osm` /
-  `$XDG_DATA_HOME/osm` (or `~/.local/share/osm`).
+  OS — no cross-compile. `agents/` is not in the exe. The exe artifact
+  zip is the binary plus `settings.local.yaml` (Windows `C:\osm`, Linux
+  `/var/lib/osm`). Keep both in the same folder. Windows does **not**
+  fall back to `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not
+  writable, the exe falls back to `$XDG_DATA_HOME/osm` or
+  `~/.local/share/osm`.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
 - Do not vendor Git, Codex, `glab`, portable Node, or

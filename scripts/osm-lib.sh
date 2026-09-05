@@ -65,15 +65,27 @@ osm_chmod_launchers() {
   done
 }
 
-# Linux default is /var/lib/osm (needs root once). If this user cannot
-# write it and there is no settings.local.yaml, write one pointing at
+# True when the overlay still names the Linux default (shipped zip).
+osm_local_yaml_is_linux_default() {
+  grep -qE '^[[:space:]]*data_dir:[[:space:]]*["'"'"']?/var/lib/osm["'"'"']?[[:space:]]*$' "$1"
+}
+
+# Linux default is /var/lib/osm (needs root once). Combined zip may only
+# have settings.local.linux.yaml; promote it. If the overlay is missing
+# or still points at /var/lib/osm and that path is not writable, write
 # $XDG_DATA_HOME/osm or ~/.local/share/osm so ./start.sh works.
+# A custom data_dir in settings.local.yaml is left alone.
 osm_ensure_linux_data_dir() {
   local root="$1"
   local default_dir="/var/lib/osm"
   local local_yaml="$root/settings.local.yaml"
 
-  if [[ -f "$local_yaml" ]]; then
+  if [[ ! -f "$local_yaml" && -f "$root/settings.local.linux.yaml" ]]; then
+    cp "$root/settings.local.linux.yaml" "$local_yaml"
+    echo "[OK] settings.local.yaml from settings.local.linux.yaml"
+  fi
+
+  if [[ -f "$local_yaml" ]] && ! osm_local_yaml_is_linux_default "$local_yaml"; then
     echo "[OK] settings.local.yaml present (data_dir overlay left as-is)"
     return 0
   fi

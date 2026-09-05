@@ -227,9 +227,17 @@ def main(argv: list[str] | None = None) -> int:
     shutil.copy2(built, final)
     if not suffix.startswith("windows"):
         final.chmod(final.stat().st_mode | 0o111)
+    overlay_src = root / "packaging" / (
+        "settings.local.windows.yaml"
+        if suffix.startswith("windows")
+        else "settings.local.linux.yaml"
+    )
+    overlay_dest = out_dir / "settings.local.yaml"
+    shutil.copy2(overlay_src, overlay_dest)
     size_mb = final.stat().st_size / (1024 * 1024)
     print(f"[OK] {final} ({size_mb:.1f} MB)")
-    print("This file is the whole artifact. Git and OpenCode stay on PATH.")
+    print(f"[OK] {overlay_dest}")
+    print("Put both files in the same folder. Git and OpenCode stay on PATH.")
     return 0
 
 

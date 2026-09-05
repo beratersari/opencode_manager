@@ -962,13 +962,16 @@ Two sinks, **one data root** (`data_dir`):
 Create the directories on startup if they do not exist.
 
 Shipped `settings.yaml` omits `data_dir` so the OS default applies
-(do not hardcode `/var/lib/osm` in the Windows zip). On Linux,
-`install.sh` tries `/var/lib/osm`. If that path is not writable and
-`settings.local.yaml` is missing, it writes
+(do not hardcode `/var/lib/osm` in the Windows zip). Each OS zip
+also ships `settings.local.yaml`: Windows `C:\osm`, Linux
+`/var/lib/osm`. The combined zip ships both templates; install
+copies the matching one. On Linux, `install.sh` tries `/var/lib/osm`.
+If that path is not writable and the overlay is missing or still
+names `/var/lib/osm`, it writes
 `data_dir: $XDG_DATA_HOME/osm` (or `~/.local/share/osm`) so a
 non-root `./install.sh` / `./start.sh` still works. Passwordless
 `sudo` may create `/var/lib/osm` and chown it instead. The code
-default stays `/var/lib/osm`.
+default stays `/var/lib/osm` on Linux and `C:\osm` on Windows.
 
 Every line:
 
@@ -1042,9 +1045,10 @@ Clone the repo for reference only. Do not import it as a dependency.
   bundled interpreter (`--no-index`).
 - additive single-file exe (Windows + Linux only): PyInstaller
   onefile from `packaging/build_exe.py`. Same workflow, native
-  runners. One file starts backend + frontend in-process. Does not
-  replace the zip or change `start.bat` / `start.sh`. Git and
-  OpenCode stay on PATH.
+  runners. Artifact zip is the exe plus `settings.local.yaml`.
+  Starts backend + frontend in-process. Does not replace the zip
+  or change `start.bat` / `start.sh`. Git and OpenCode stay on
+  PATH. Windows `data_dir` is `C:\osm` (no AppData fallback).
 
 **Do not copy**
 

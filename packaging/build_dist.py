@@ -574,6 +574,33 @@ def stage_app(root: Path, payload: Path) -> None:
             print(f"  + {launcher} (zip root)")
 
 
+def settings_local_templates(root: Path) -> tuple[Path, Path]:
+    win = root / "packaging" / "settings.local.windows.yaml"
+    lin = root / "packaging" / "settings.local.linux.yaml"
+    if not win.is_file() or not lin.is_file():
+        raise SystemExit("packaging/settings.local.windows.yaml and .linux.yaml are required")
+    return win, lin
+
+
+def stage_settings_local(root: Path, payload: Path, pack: str) -> None:
+    """Ship an OS-specific settings.local.yaml. Combined zip keeps both templates."""
+    win, lin = settings_local_templates(root)
+    if pack == "windows":
+        shutil.copy2(win, payload / "settings.local.yaml")
+        print("  + settings.local.yaml (Windows C:\\osm)")
+        return
+    if pack in {"linux", "darwin"}:
+        shutil.copy2(lin, payload / "settings.local.yaml")
+        print("  + settings.local.yaml (Linux /var/lib/osm)")
+        return
+    if pack == "winlinux":
+        shutil.copy2(win, payload / "settings.local.windows.yaml")
+        shutil.copy2(lin, payload / "settings.local.linux.yaml")
+        print("  + settings.local.windows.yaml + settings.local.linux.yaml")
+        return
+    raise SystemExit(f"unknown pack for settings.local.yaml: {pack}")
+
+
 def wheel_for_pack(name: str, pack: str) -> bool:
     n = name.lower()
     if "py3-none-any" in n or "py2.py3-none-any" in n:
@@ -763,6 +790,7 @@ def main(argv: list[str] | None = None) -> int:
             shutil.rmtree(payload)
         print(f"\nStep 5: Staging {name}...")
         stage_app(root, payload)
+        stage_settings_local(root, payload, pid)
         copy_spa(spa, payload)
         vendor = payload / "vendor"
         n_wheels = copy_wheels_for_pack(wheel_src, vendor / "python-wheels", pid)

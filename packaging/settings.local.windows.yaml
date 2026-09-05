@@ -1,0 +1,3 @@
+# Operator overlay (loaded after settings.yaml).
+# Windows default data root: clones, logs, and job history.
+data_dir: C:\osm

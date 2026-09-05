@@ -49,9 +49,7 @@ def prepend_opencode_path() -> None:
 
 
 def fallback_data_dir() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "osm"
+    """Linux-only per-user path. Windows stays on C:\\osm."""
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg) / "osm"
@@ -59,14 +57,13 @@ def fallback_data_dir() -> Path:
 
 
 def apply_writable_data_dir(settings: Settings) -> Settings:
-    """If the default data_dir cannot be created, use a per-user path.
-
-    Zip install.sh writes settings.local.yaml for this. The exe has no installer.
-    """
+    """Linux: if /var/lib/osm is not writable, use XDG. Windows: keep C:\\osm."""
     try:
         settings.ensure_dirs()
         return settings
     except PermissionError:
+        if os.name == "nt":
+            raise
         fallback = fallback_data_dir()
         print(
             f"[INFO] data_dir {settings.data_dir} is not writable; using {fallback}",

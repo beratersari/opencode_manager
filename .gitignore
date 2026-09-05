@@ -9,11 +9,14 @@ venv/
 dist/
 build/
 /logs/
+/rel-data/
+/service/
 /.temp/
 /.serve/
 /jobs/
 /queue.json
 *.log
+*.tsbuildinfo
 web/node_modules/
 web/dist/
 .env

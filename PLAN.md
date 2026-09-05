@@ -1253,6 +1253,7 @@ build them).
 - [ ] Missing / empty / not `provider/id` `model` → HTTP **400**, no callback.
 - [ ] After serve health, unknown `model` vs `/config/providers` (or readable empty inventory) → job **500**, no user message, no remaining retries, not a timeout.
 - [ ] Unreadable inventory (transport / HTTP / JSON error) skips preflight; do not treat it as empty.
+- [ ] A failed `list_messages` does not replace `chat_snapshot` or `assess_idle([])`.
 - [ ] `retry_count < 1` treated as `1`.
 - [ ] Same `jira_id` already running → HTTP **409**, no callback.
 - [ ] Same `jira_id` already queued → HTTP **409**, no callback.

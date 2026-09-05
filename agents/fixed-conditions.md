@@ -122,6 +122,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Readable empty inventory fails the job before any user POST | `test_empty_model_inventory_fails_job_before_prompt` |
 | Unreadable inventory skips preflight (not treated as empty) | `test_unreadable_model_inventory_skips_preflight` |
 | OpenCode model-not-found is job 500, not attempt timeout | `test_prompt_async_unknown_model_fails_job_immediately` |
+| Idle `list_messages` flake does not assess an empty transcript | `test_idle_list_flake_does_not_assess_empty_or_wipe_snapshot` |
 
 ## Idle assess
 

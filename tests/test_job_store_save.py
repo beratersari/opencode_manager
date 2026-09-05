@@ -260,6 +260,70 @@ def test_hang_does_not_fire_when_list_fails_after_assistant(tmp_settings: Settin
     assert outcome == "timeout"
 
 
+def test_idle_list_flake_does_not_assess_empty_or_wipe_snapshot(
+    tmp_settings: Settings,
+) -> None:
+    from tests.job_end_helpers import assistant_msg, user_msg
+
+    messages = [
+        user_msg("u1", "do it"),
+        assistant_msg("a1", "turn is done", finish="stop"),
+    ]
+    kept = [{"id": "keep-me", "role": "assistant", "text": "prior snapshot"}]
+
+    class _IdleFlake:
+        def __init__(self) -> None:
+            self.ticks = 0
+            self.list_calls = 0
+
+        def health(self) -> bool:
+            return True
+
+        def status(self) -> dict:
+            self.ticks += 1
+            if self.ticks == 1:
+                return {"ses_save": {"type": "busy"}}
+            return {"ses_save": {"type": "idle"}}
+
+        def list_messages(self, session_id: str) -> list:  # noqa: ARG002
+            self.list_calls += 1
+            if self.ticks == 2:
+                raise RuntimeError("list_messages flaked")
+            return list(messages)
+
+        def abort(self, session_id: str) -> None:  # noqa: ARG002
+            return None
+
+    job = _job("job_idle_flake")
+    job.chat_snapshot = list(kept)
+    job.session_id = "ses_save"
+    client = _IdleFlake()
+    snapshots: list[list] = []
+
+    class _RecStore(JobStore):
+        def save(self, record: JobRecord) -> None:
+            snapshots.append(list(record.chat_snapshot or []))
+            super().save(record)
+
+    store = _RecStore(tmp_settings.job_store_dir)
+    outcome = _inner_loop(
+        job=job,
+        client=client,
+        store=store,
+        settings=tmp_settings,
+        deadline=time.time() + 4.0,
+        should_stop=lambda: False,
+        baseline_assistant_id="",
+        baseline_n=0,
+        baseline_compact_n=0,
+    )
+    assert outcome == "success"
+    assert job.text == "turn is done"
+    assert client.list_calls >= 3
+    assert snapshots
+    assert all(row != [] for row in snapshots)
+
+
 def test_queue_survives_replace_access_denied(tmp_path: Path, monkeypatch) -> None:
     from opencode_manager.queue import JobQueue
 

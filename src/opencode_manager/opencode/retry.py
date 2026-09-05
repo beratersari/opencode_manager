@@ -498,8 +498,9 @@ def _inner_loop(
             logger.warning("list messages failed: %s", exc)
             messages = []
             listed_ok = False
-        job.chat_snapshot = snapshot_chat(messages, job.session_id)
-        if looks_like_unknown_model_error(str(messages)):
+        if listed_ok:
+            job.chat_snapshot = snapshot_chat(messages, job.session_id)
+        if listed_ok and looks_like_unknown_model_error(str(messages)):
             raise JobFailed(500, unknown_model_message(job.model, []))
         text = last_assistant_text_since(messages, baseline_assistant_id)
         new_assistant = False
@@ -597,6 +598,9 @@ def _inner_loop(
         # idle — after a POST, OpenCode may not flip busy for a beat.
         if awaiting_turn:
             time.sleep(0.4)
+            continue
+        if not listed_ok:
+            time.sleep(1.0)
             continue
 
         verdict = assess_idle(messages, baseline_assistant_id=baseline_assistant_id)

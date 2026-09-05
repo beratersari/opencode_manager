@@ -73,6 +73,37 @@ def test_git_timeout_after_dest_created_deletes_clone(tmp_settings: Settings, mo
     assert not dest.exists()
 
 
+def test_omitted_source_branch_skips_ls_remote(tmp_settings: Settings, monkeypatch) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    job = JobRecord(
+        job_id="job_nobr",
+        jira_id="T-NOBR",
+        repo_url="https://gitlab.example/g/r.git",
+        source_branch="",
+        status="running",
+    )
+    called = {"ls": 0, "clone": 0}
+
+    def ls_must_not(*_a, **_k) -> bool:
+        called["ls"] += 1
+        return False
+
+    def clone_ok(*_a, **_k) -> None:
+        called["clone"] += 1
+
+    class _Ok:
+        status_code = 200
+        text = "done"
+
+    monkeypatch.setattr("opencode_manager.worker.ls_remote_has_branch", ls_must_not)
+    monkeypatch.setattr("opencode_manager.worker.clone_repo", clone_ok)
+    monkeypatch.setattr("opencode_manager.worker.run_opencode_job", lambda *_a, **_k: _Ok())
+    terminal = OpenCodeRunner(tmp_settings, store).run(job, should_stop=lambda: False)
+    assert terminal.status_code == 200
+    assert called["ls"] == 0
+    assert called["clone"] == 1
+
+
 def test_missing_branch_404_still_deletes_leftover_dest(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     job = JobRecord(

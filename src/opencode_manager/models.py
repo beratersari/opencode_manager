@@ -65,7 +65,7 @@ class JobRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     repo_url: str
-    source_branch: str
+    source_branch: str = ""
     session_id: Optional[str] = None
     prompt: str
     model: str
@@ -75,7 +75,7 @@ class JobRequest(BaseModel):
     jira_id: str
     callback_url: str = ""
 
-    @field_validator("repo_url", "source_branch", "prompt", "model", "agent_mode", "jira_id")
+    @field_validator("repo_url", "prompt", "model", "agent_mode", "jira_id")
     @classmethod
     def _non_empty(cls, value: str) -> str:
         text = (value or "").strip()
@@ -93,13 +93,12 @@ class JobRequest(BaseModel):
     def _session(cls, value: Optional[str]) -> Optional[str]:
         return usable_session_id(value)
 
-    @field_validator("source_branch")
+    @field_validator("source_branch", mode="before")
     @classmethod
-    def _branch(cls, value: str) -> str:
-        text = usable_source_branch(value)
-        if not text:
-            raise ValueError("source_branch must be a real remote branch")
-        return text
+    def _branch(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return usable_source_branch(str(value)) or ""
 
     @field_validator("jira_id")
     @classmethod
@@ -238,7 +237,6 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
     """Return a 400 message or None if the body is usable."""
     required = (
         "repo_url",
-        "source_branch",
         "prompt",
         "model",
         "timeout_in_seconds",
@@ -279,8 +277,6 @@ def validate_request_fields(body: Dict[str, Any]) -> Optional[str]:
         return "timeout_in_seconds must be >= 1"
     if not _JIRA_ID_RE.match(str(body["jira_id"]).strip()):
         return "jira_id must be a Windows-safe ticket id"
-    if usable_source_branch(str(body.get("source_branch") or "")) is None:
-        return "missing required field: source_branch"
     return None
 
 

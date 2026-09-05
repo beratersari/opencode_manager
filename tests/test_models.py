@@ -118,17 +118,26 @@ def test_valid_body():
     assert validate_request_fields(_ok()) is None
 
 
-def test_source_branch_dash_one_is_missing():
-    from opencode_manager.models import JobRequest
+def test_source_branch_is_optional():
+    from opencode_manager.models import JobRequest, usable_source_branch
 
-    assert validate_request_fields(_ok(source_branch="-1"))
-    assert validate_request_fields(_ok(source_branch="  -1  "))
-    try:
-        JobRequest.model_validate(_ok(source_branch="-1"))
-    except Exception as exc:
-        assert "source_branch" in str(exc)
-    else:
-        raise AssertionError("source_branch=-1 must be rejected")
+    assert usable_source_branch("-1") is None
+    assert usable_source_branch("") is None
+    assert usable_source_branch("  ") is None
+    assert usable_source_branch("develop") == "develop"
+    assert validate_request_fields(_ok(source_branch="-1")) is None
+    assert validate_request_fields(_ok(source_branch="  -1  ")) is None
+    assert validate_request_fields(_ok(source_branch="")) is None
+    assert validate_request_fields(_ok(source_branch=None)) is None
+    body = _ok()
+    del body["source_branch"]
+    assert validate_request_fields(body) is None
+    req = JobRequest.model_validate(_ok(source_branch="-1"))
+    assert req.source_branch == ""
+    req2 = JobRequest.model_validate(body)
+    assert req2.source_branch == ""
+    req3 = JobRequest.model_validate(_ok(source_branch="feature/x"))
+    assert req3.source_branch == "feature/x"
 
 
 def test_unsafe_jira_id_is_400():

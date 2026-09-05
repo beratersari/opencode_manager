@@ -202,7 +202,7 @@ Gerekli gövde:
 | Alan | Not |
 |---|---|
 | `repo_url` | `http` / `https` / `file`. `git@` / `ssh://` yasak. |
-| `source_branch` | Uzakta var olmalı. `-1` / boş → 400. Uzakta yok → 202 sonra callback **404**. |
+| `source_branch` | İsteğe bağlı. Gönderilirse uzakta var olmalı. `-1` / boş / yok → ls-remote yok, default HEAD clone. Uzakta yok → 202 sonra callback **404**. |
 | `prompt` | ORIGINAL; job boyunca **bir kez** POST. |
 | `model` | `provider/id` (örn. `opencode/mimo-v2.5-free`) |
 | `agent_mode` | Yalnız `planner` veya `orchestrator`. n8n `working_mode`'u kendisi map'ler. |

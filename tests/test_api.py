@@ -78,6 +78,26 @@ def test_inbound_session_dash_one_is_accepted_as_none(tmp_settings: Settings) ->
         assert res.json()["job_id"].startswith("job_")
 
 
+def test_inbound_source_branch_optional(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        for i, mutate in enumerate(
+            (
+                lambda b: b.pop("source_branch"),
+                lambda b: b.__setitem__("source_branch", "-1"),
+                lambda b: b.__setitem__("source_branch", ""),
+                lambda b: b.__setitem__("source_branch", "  "),
+                lambda b: b.__setitem__("source_branch", None),
+            )
+        ):
+            body = _body(jira_id=f"BR-{i}")
+            mutate(body)
+            res = client.post("/jobs", json=body)
+            assert res.status_code == 202, body
+            job_id = res.json()["job_id"]
+            detail = client.get(f"/api/jobs/{job_id}").json()["job"]
+            assert detail["source_branch"] == ""
+
+
 def test_planner_agent_is_accepted(tmp_settings: Settings) -> None:
     with _client(tmp_settings) as client:
         res = client.post("/jobs", json=_body(agent_mode="planner", jira_id="PLAN-1"))
@@ -126,11 +146,8 @@ def test_bad_model_400(tmp_settings: Settings) -> None:
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda b: b.pop("source_branch"),
         lambda b: b.pop("jira_id"),
         lambda b: b.pop("timeout_in_seconds"),
-        lambda b: b.__setitem__("source_branch", "  "),
-        lambda b: b.__setitem__("source_branch", "-1"),
         lambda b: b.__setitem__("timeout_in_seconds", 0),
         lambda b: b.__setitem__("timeout_in_seconds", "nope"),
         lambda b: b.__setitem__("repo_url", "git@host:g/r.git"),

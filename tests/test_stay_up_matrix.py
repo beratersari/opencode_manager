@@ -78,9 +78,6 @@ BAD_JOBS: List[Dict[str, Any]] = [
     {"label": "empty body", "json": {}},
     {"label": "not an object", "json": []},
     {"label": "missing prompt", "json": _ok(), "drop": "prompt"},
-    {"label": "missing branch", "json": _ok(), "drop": "source_branch"},
-    {"label": "branch dash-one", "json": _ok(source_branch="-1")},
-    {"label": "branch blank", "json": _ok(source_branch="   ")},
     {"label": "ssh git@", "json": _ok(repo_url="git@host:g/r.git")},
     {"label": "ssh scheme", "json": _ok(repo_url="ssh://git@host/g/r.git")},
     {"label": "ftp repo", "json": _ok(repo_url="ftp://host/r.git")},
@@ -254,14 +251,17 @@ def test_runner_exception_is_error_not_crash(tmp_settings: Settings) -> None:
         _alive(client)
 
 
-def test_source_branch_placeholder_never_starts_a_job(tmp_settings: Settings) -> None:
+def test_source_branch_placeholder_is_accepted(tmp_settings: Settings) -> None:
     runner = FakeRunner()
     app = create_app(tmp_settings, runner=runner)
     with TestClient(app) as client:
         res = client.post("/jobs", json=_ok(jira_id="PROJ-12881", source_branch="-1"))
-        assert res.status_code == 400
-        assert res.json()["job_id"] == ""
-        assert runner.calls == []
+        assert res.status_code == 202
+        job_id = res.json()["job_id"]
+        assert job_id.startswith("job_")
+        job = _wait_job(client, job_id)
+        assert job["source_branch"] == ""
+        assert runner.calls
         _alive(client)
 
 

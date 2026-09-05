@@ -82,7 +82,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | RM child retry only if helper died and folder remains | `test_rm_retry_only_when_helper_died_and_folder_remains`, `test_rm_no_second_child_when_helper_survives_empty` |
 | Dashboard `/ws` does not parse every job JSON | `test_ws_uses_live_counts_not_list_all` |
 | No kill path may target OSM or its ancestors | `test_may_kill_never_allows_osm_or_system`, `test_kill_pid_never_sends_signal_to_osm` |
-| n8n `source_branch=-1` is inbound 400 | `test_source_branch_dash_one_is_missing` |
+| n8n `source_branch=-1` / omitted is optional (no ls-remote) | `test_source_branch_is_optional`, `test_inbound_source_branch_optional`, `test_omitted_source_branch_skips_ls_remote` |
 | System images never get a Windows cwd PEB read | `test_windows_cwd_candidate_is_clone_tools_only` |
 | Holder-stop error still deletes the clone | `test_job_end_deletes_clone_if_stop_holders_raises` |
 | `stop_job_holders` continues after `reap_path` fails | `test_stop_job_holders_survives_reap_error` |

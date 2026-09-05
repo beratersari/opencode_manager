@@ -272,7 +272,7 @@ n8n exports: `n8n-callback.json` (Wait webhook + `callback_url`) and
 | Field | Required | Meaning |
 |---|---|---|
 | `repo_url` | yes | HTTPS clone URL. Cloned as given. SSH rejected. A leftover `PAT` key is ignored. |
-| `source_branch` | yes | Remote branch that must already exist. OSM does not check it out; the OpenCode agent does. |
+| `source_branch` | no | Remote branch that must already exist if sent. Omit / empty / `-1` → clone default HEAD, no `ls-remote`. OSM does not check it out; the OpenCode agent does when a real name is in the prompt. |
 | `session_id` | no | If it is a live OpenCode `ses_*` we can resume, continue it. Else create new. |
 | `prompt` | yes | User text sent as the session turn. |
 | `model` | yes | OpenCode model name, `provider/id` (e.g. `opencode/hy3-free`). Sent on every user message for this job. Missing, empty, or not `provider/id` → **400**. No settings default. After serve is healthy, if this id is not in `GET /config/providers` → callback **500** immediately (no prompt loop). |
@@ -828,9 +828,10 @@ check needs the network; it runs in the worker so the
 inbound handler stays fast. n8n must treat 202 as “accepted, wait for
 callback” — including this 404.
 
-Empty / omitted `source_branch` on the JSON body is still inbound
-**400** (bad request, no callback). That is a missing field, not a
-missing remote ref.
+Empty / omitted / `-1` `source_branch` on the JSON body is **not**
+an inbound 400. The worker skips `ls-remote` and clones the remote
+default HEAD. A real name that is missing on the remote is still
+**202 + callback 404**.
 
 No target branch. No push. No MR.
 
@@ -1225,7 +1226,7 @@ build them).
 - [ ] Mint `job_id` on accept; n8n does not send it.
 - [ ] Response/callback JSON always has `text`, `session_id`, `status_code`, `jira_id`, `job_id`.
 - [ ] Missing required field → HTTP **400**, no callback.
-- [ ] Empty / omitted `source_branch` on the body → HTTP **400**, no callback.
+- [ ] Empty / omitted / `-1` `source_branch` on the body → accept; skip `ls-remote`; clone default HEAD.
 - [ ] `callback_url` omitted or empty → accept; no callback; poll `GET /jobs/{job_id}`.
 - [ ] `callback_url` present but not `http`/`https` → HTTP **400**, no callback.
 - [ ] `GET /jobs/{job_id}`: unknown 404; live 202; terminal HTTP 200 with envelope `status_code`.
@@ -1277,7 +1278,7 @@ build them).
 - [ ] Direct clone of `repo_url`. No request `PAT`. Leftover `PAT` key is ignored.
 - [ ] Every git child: `GIT_TERMINAL_PROMPT=0`, no `DISPLAY`. Windows: GCM `manager`, stored cred or login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=` on Windows. Linux: helper off.
 - [ ] After clone, origin URL has no userinfo.
-- [ ] Worker `ls-remote` (or equivalent) after HTTP 202 to prove `source_branch` exists.
+- [ ] Worker `ls-remote` after HTTP 202 only when a real `source_branch` was sent. Omit / empty / `-1` skips it.
 - [ ] Missing remote branch: cleanup anything created, callback 404, stop.
 - [ ] Clone error or git timeout: same job-end delete, then callback 500. Git-phase failures must not skip the delete `finally`.
 - [ ] Do not create a branch from `main` / `master` / target.

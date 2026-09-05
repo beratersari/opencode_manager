@@ -15,7 +15,7 @@ from opencode_manager.git.clone import GitError, clone_path_for, clone_repo, ls_
 from opencode_manager.git.detect import classify_host
 from opencode_manager.log import clip, get_logger, log_fail
 from opencode_manager.log_context import bind, clear
-from opencode_manager.models import Envelope, JobRecord, utc_now
+from opencode_manager.models import Envelope, JobRecord, usable_source_branch, utc_now
 from opencode_manager.opencode.retry import JobFailed, run_opencode_job
 from opencode_manager.settings import Settings
 
@@ -66,28 +66,32 @@ class OpenCodeRunner:
                 if not _remove_clone(dest, reason="before-clone"):
                     log_fail(logger, "leftover clone could not be deleted", clone_path=dest)
                     return Terminal(500, f"could not remove leftover clone at {dest}")
-            logger.info("ls-remote check for source_branch=%s", job.source_branch)
-            if not ls_remote_has_branch(
-                job.repo_url,
-                job.source_branch,
-                timeout=self.settings.git_clone_timeout_seconds,
-                job=job,
-                store=self.store,
-                should_stop=should_stop,
-            ):
-                logger.warning(
-                    "source_branch missing on remote: %s repo=%s",
-                    job.source_branch,
+            branch = usable_source_branch(job.source_branch)
+            if branch:
+                logger.info("ls-remote check for source_branch=%s", branch)
+                if not ls_remote_has_branch(
                     job.repo_url,
-                )
-                return Terminal(404, f"source_branch {job.source_branch!r} does not exist on the remote")
+                    branch,
+                    timeout=self.settings.git_clone_timeout_seconds,
+                    job=job,
+                    store=self.store,
+                    should_stop=should_stop,
+                ):
+                    logger.warning(
+                        "source_branch missing on remote: %s repo=%s",
+                        branch,
+                        job.repo_url,
+                    )
+                    return Terminal(404, f"source_branch {branch!r} does not exist on the remote")
+                logger.info("source_branch exists; clone only (agent will checkout %s)", branch)
+            else:
+                logger.info("no source_branch; clone default remote HEAD")
             if should_stop():
                 return Terminal(500, "manager shutting down")
-            logger.info("source_branch exists; clone only (agent will checkout %s)", job.source_branch)
             clone_repo(
                 job.repo_url,
                 dest,
-                job.source_branch,
+                branch or "",
                 timeout=self.settings.git_clone_timeout_seconds,
                 job=job,
                 store=self.store,

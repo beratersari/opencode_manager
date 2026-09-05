@@ -113,7 +113,7 @@ There is never a `queued` or `in_progress` callback. `{…}` below is filled in.
 | **202** | `Job accepted and is now in progress.` | Slot free; worker started | Yes — one terminal POST later |
 | **202** | `Job accepted and queued.` | Capacity full; other ticket | Yes — one terminal POST later |
 | **409** | `jira_id {jira_id} already has a live job` | Same ticket running or queued | No |
-| **400** | `missing required field: {name}` | Missing/empty `repo_url`, `source_branch`, `prompt`, `model`, `agent_mode`, `timeout_in_seconds`, `retry_count`, `jira_id`, or `callback_url` | No |
+| **400** | `missing required field: {name}` | Missing/empty `repo_url`, `prompt`, `model`, `agent_mode`, `timeout_in_seconds`, `retry_count`, or `jira_id` | No |
 | **400** | `SSH repo_url is rejected` | `git@` or `ssh://` | No |
 | **400** | `repo_url must be http(s) or file` | Other scheme | No |
 | **400** | `model must be provider/id` | Not `provider/id` | No |
@@ -159,7 +159,7 @@ Boot leftovers (`process restarted; leftover job was not resumed`) are history-o
 | Field | Required | Notes |
 |---|---|---|
 | `repo_url` | yes | HTTPS (or `file://`). Cloned as given. No `git@` / `ssh://`. |
-| `source_branch` | yes | Must already exist on the remote. OSM does not check it out; the OpenCode agent does. |
+| `source_branch` | no | If sent, must already exist on the remote. Omit / `""` / `-1` skips `ls-remote` and clones the default HEAD. OSM does not check it out; the OpenCode agent does. |
 | `prompt` | yes | Sent once, as the first user message. |
 | `model` | yes | `provider/id`, e.g. `opencode/mimo-v2.5-free`. |
 | `agent_mode` | yes | `planner` or `orchestrator`. n8n maps `working_mode` before POST. |

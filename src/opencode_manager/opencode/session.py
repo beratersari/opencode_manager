@@ -410,6 +410,10 @@ class OpenCodeClient:
                 )
             except Exception as exc:  # noqa: BLE001
                 last = str(exc)
+                if not self.health():
+                    raise RuntimeError(
+                        f"serve died during directory wait last={last}"
+                    ) from exc
                 time.sleep(0.4)
                 continue
             if response.status_code < 500:

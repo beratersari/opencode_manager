@@ -278,6 +278,15 @@ def test_wait_directory_retries_until_session_list_returns() -> None:
         server.shutdown()
 
 
+def test_wait_directory_raises_when_serve_dies() -> None:
+    from opencode_manager.opencode.session import OpenCodeClient
+
+    client = OpenCodeClient("http://127.0.0.1:1", "/tmp/clone")
+    with pytest.raises(RuntimeError, match="serve died during directory wait"):
+        client.wait_directory(timeout=2.0)
+    client.close()
+
+
 def test_wait_directory_times_out_when_session_list_never_answers() -> None:
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

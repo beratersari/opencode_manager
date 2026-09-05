@@ -385,15 +385,16 @@ response is the result (seconds: short-lived serve + OpenCode
 | Missing fields, unsafe `jira_id`, `session_id` empty / `-1` / not `ses_*` | **400** | |
 | `jira_id` queued or running | **409** | Include that job’s `job_id` + `session_id`. Do not touch OpenCode. |
 | Another delete for this `jira_id` already running | **409** | |
-| OpenCode 2xx or 404 | **200** | Idempotent. |
-| Serve boot fail / other OpenCode error | **500** | Kill this serve. No retry loop. |
+| OpenCode 2xx or 404 | **200** | Idempotent. 404 only after the directory instance has answered. |
+| Serve boot fail / directory wait fail / other OpenCode error | **500** | Kill this serve. No retry loop. |
 
 How: occupy `jira_id` in an in-memory delete set (so `POST /jobs`
 409s) → `clone_path_for` (mkdir empty dest only if missing; no git
-clone) → `start_serve` → `DELETE /session/:id` with
-`x-opencode-directory` → kill **this** serve → if we created the dest,
-hard-delete only that empty dir. Leave a pre-existing leftover clone.
-No `JobRecord`. Log on `app.log` with `jira_id`.
+clone) → `start_serve` → health → `wait_directory` (`GET /session`) →
+`DELETE /session/:id` with `x-opencode-directory` → kill **this**
+serve → if we created the dest, hard-delete only that empty dir.
+Leave a pre-existing leftover clone. No `JobRecord`. Log on `app.log`
+with `jira_id`.
 
 ### 4.4b Poll (`GET /jobs/{job_id}`)
 
@@ -1236,7 +1237,7 @@ build them).
 
 - [ ] `POST /jobs` accepts the JSON fields in §4.1.
 - [ ] `DELETE /sessions` accepts `{ jira_id, session_id }`; same envelope; `job_id` empty; no callback; no history row.
-- [ ] `DELETE /sessions`: live `jira_id` or delete in flight → **409**; empty/`-1`/not `ses_*` → **400**; OpenCode 404 → **200**; boot/shutdown → **503**.
+- [ ] `DELETE /sessions`: live `jira_id` or delete in flight → **409**; empty/`-1`/not `ses_*` → **400**; wait for directory instance before DELETE; OpenCode 404 after that → **200**; boot/shutdown → **503**.
 - [ ] `POST /jobs` while a session delete is in flight for that `jira_id` → **409**.
 - [ ] Inbound handler never waits for clone or OpenCode (ack only).
 - [ ] Mint `job_id` on accept; n8n does not send it.

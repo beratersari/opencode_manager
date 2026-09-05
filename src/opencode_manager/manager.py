@@ -543,6 +543,53 @@ class Manager:
                     job_id="",
                 )
             client = self._open_code_client_cls(handle.base_url, str(dest))
+            wait_directory = getattr(client, "wait_directory", None)
+            if callable(wait_directory):
+                try:
+                    try:
+                        wait_directory(
+                            timeout=float(self.session_delete_health_timeout),
+                            should_stop=lambda: self.stopping,
+                        )
+                    except TypeError:
+                        wait_directory(timeout=float(self.session_delete_health_timeout))
+                except RuntimeError as exc:
+                    if "shutting down" in str(exc).lower():
+                        logger.warning(
+                            "DELETE /sessions directory wait stop jira_id=%s", jira_id
+                        )
+                        return 503, Envelope(
+                            text="manager is not accepting jobs",
+                            session_id=session_id,
+                            status_code=503,
+                            jira_id=jira_id,
+                            job_id="",
+                        )
+                    logger.error(
+                        "DELETE /sessions directory wait failed jira_id=%s err=%s",
+                        jira_id,
+                        exc,
+                    )
+                    return 500, Envelope(
+                        text=f"directory instance not ready: {exc}",
+                        session_id=session_id,
+                        status_code=500,
+                        jira_id=jira_id,
+                        job_id="",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "DELETE /sessions directory wait failed jira_id=%s err=%s",
+                        jira_id,
+                        exc,
+                    )
+                    return 500, Envelope(
+                        text=f"directory instance not ready: {exc}",
+                        session_id=session_id,
+                        status_code=500,
+                        jira_id=jira_id,
+                        job_id="",
+                    )
             try:
                 response = client.delete_session(session_id)
             except Exception as exc:  # noqa: BLE001

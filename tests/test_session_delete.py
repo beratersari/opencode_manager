@@ -81,11 +81,18 @@ class _DummyHandle:
 class _FakeDeleteClient:
     status = 200
     calls: List[str] = []
+    wait_calls: List[float] = []
     fail_exc: Optional[BaseException] = None
+    wait_exc: Optional[BaseException] = None
 
     def __init__(self, base_url: str, directory: str) -> None:
         self.base_url = base_url
         self.directory = directory
+
+    def wait_directory(self, timeout: float, should_stop=None) -> None:  # noqa: ANN001, ARG002
+        type(self).wait_calls.append(float(timeout))
+        if self.wait_exc is not None:
+            raise self.wait_exc
 
     def delete_session(self, session_id: str) -> Any:
         type(self).calls.append(session_id)
@@ -97,10 +104,18 @@ class _FakeDeleteClient:
         return None
 
 
-def _install_fake_opencode(manager: Manager, *, status: int = 200, fail_exc=None) -> _FakeDeleteClient:
+def _install_fake_opencode(
+    manager: Manager,
+    *,
+    status: int = 200,
+    fail_exc=None,
+    wait_exc=None,
+) -> _FakeDeleteClient:
     _FakeDeleteClient.status = status
     _FakeDeleteClient.calls = []
+    _FakeDeleteClient.wait_calls = []
     _FakeDeleteClient.fail_exc = fail_exc
+    _FakeDeleteClient.wait_exc = wait_exc
     manager._start_delete_serve = lambda **_kwargs: _DummyHandle()  # type: ignore[method-assign]
     manager._stop_delete_serve = lambda _handle: None  # type: ignore[method-assign]
     manager._open_code_client_cls = _FakeDeleteClient
@@ -191,10 +206,45 @@ def test_delete_200_and_no_history_row(tmp_settings: Settings) -> None:
         assert body["jira_id"] == "PROJ-1"
         assert body["job_id"] == ""
         assert body["status_code"] == 200
+        assert _FakeDeleteClient.wait_calls == [manager.session_delete_health_timeout]
         assert _FakeDeleteClient.calls == ["ses_abc123"]
         assert len(manager.store.list_all()) == before
         assert not dest.exists()
         assert manager._session_deletes == set()
+
+
+def test_delete_waits_directory_before_opencode_delete(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        manager = client.app.state.manager
+        _install_fake_opencode(manager, status=200)
+        res = client.request("DELETE", "/sessions", json=_delete_body())
+        assert res.status_code == 200
+        assert _FakeDeleteClient.wait_calls == [manager.session_delete_health_timeout]
+        assert _FakeDeleteClient.calls == ["ses_abc123"]
+
+
+def test_delete_wait_directory_fail_does_not_call_delete(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        _install_fake_opencode(
+            client.app.state.manager,
+            wait_exc=TimeoutError("opencode directory instance not ready"),
+        )
+        res = client.request("DELETE", "/sessions", json=_delete_body())
+        assert res.status_code == 500
+        assert res.json()["status_code"] == 500
+        assert "directory instance not ready" in res.json()["text"]
+        assert _FakeDeleteClient.wait_calls
+        assert _FakeDeleteClient.calls == []
+        assert client.app.state.manager._session_deletes == set()
+
+
+def test_delete_404_after_directory_ready_is_200(tmp_settings: Settings) -> None:
+    with _client(tmp_settings) as client:
+        _install_fake_opencode(client.app.state.manager, status=404)
+        res = client.request("DELETE", "/sessions", json=_delete_body())
+        assert res.status_code == 200
+        assert _FakeDeleteClient.wait_calls
+        assert _FakeDeleteClient.calls == ["ses_abc123"]
 
 
 def test_delete_404_is_idempotent_200(tmp_settings: Settings) -> None:
@@ -243,7 +293,9 @@ def test_overlapping_delete_and_jobs_are_409(tmp_settings: Settings) -> None:
         manager._open_code_client_cls = _FakeDeleteClient
         _FakeDeleteClient.status = 200
         _FakeDeleteClient.calls = []
+        _FakeDeleteClient.wait_calls = []
         _FakeDeleteClient.fail_exc = None
+        _FakeDeleteClient.wait_exc = None
 
         result: list[tuple[int, str]] = []
 

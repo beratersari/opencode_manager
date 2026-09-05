@@ -36,6 +36,8 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Two real serves (stub and OpenCode) get distinct ports | `test_two_real_serves_get_distinct_ports_and_own_health`, `test_two_real_opencode_serves_get_distinct_ports` |
 | Many concurrent serves all get unique ports | `test_sixteen_concurrent_serves_all_get_unique_ports`, `test_eight_concurrent_opencode_serves_unique_ports` |
 | After health, wait for the directory instance before `POST /session` | `test_instance_wait_runs_before_session_create`, `test_wait_directory_retries_until_session_list_returns` |
+| `DELETE /sessions` waits for the directory instance before DELETE | `test_delete_waits_directory_before_opencode_delete` |
+| Directory wait failure on session delete is 500 and does not DELETE | `test_delete_wait_directory_fail_does_not_call_delete` |
 | Directory instance timeout is `serve-dead` (not create-fail) | `test_instance_wait_timeout_is_serve_dead` |
 
 ## Clone path

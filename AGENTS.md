@@ -59,7 +59,10 @@ These look like bugs. They are not.
   `{ jira_id, session_id }`. Empty / `-1` / not `ses_*` → **400**.
   Live queued/running `jira_id` → **409** (include that job’s
   `job_id`). A delete already in flight for that ticket → **409**.
-  OpenCode 2xx or 404 → **200** (idempotent). Serve boot / other
+  OpenCode 2xx or 404 → **200** (idempotent). After serve health,
+  wait for the directory instance (`GET /session`) before
+  `DELETE /session/:id`. Treat 404 as success only after that
+  instance has answered. Serve boot / directory wait / other
   OpenCode failure → **500**. Boot/shutdown → **503**. `POST /jobs`
   for a ticket whose session delete is in flight is also **409**.
 - `callback_url` is optional. Omit or leave empty to **poll** instead

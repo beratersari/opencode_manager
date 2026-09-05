@@ -1,4 +1,4 @@
-# OpenCode Session Manager
+# aMIR-mini
 
 Worker between your orchestrator (n8n or any HTTP client) and **OpenCode**.
 You POST a job. OSM clones the branch, runs a per-job `opencode serve`, and
@@ -255,10 +255,10 @@ Actions artifact download is one zip of the folder (`install.bat` /
 `vendor/` at the top). Tag **Releases** attach the four `.zip` files
 directly. Download the one for your OS (or the combined Windows+Linux zip):
 
-- `opencode-manager-<version>-windows-x64.zip`
-- `opencode-manager-<version>-linux-x64.zip`
-- `opencode-manager-<version>-darwin.zip` (Apple Silicon + Intel)
-- `opencode-manager-<version>-windows-linux.zip` (Windows + Linux together)
+- `amir-mini-<version>-windows-x64.zip`
+- `amir-mini-<version>-linux-x64.zip`
+- `amir-mini-<version>-darwin.zip` (Apple Silicon + Intel)
+- `amir-mini-<version>-windows-linux.zip` (Windows + Linux together)
 
 Each zip has the matching bundled CPython, wheels, OpenCode CLI,
 `web/dist`, and `settings.local.yaml` (Windows `C:\osm`, Linux
@@ -293,13 +293,13 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 A separate CI artifact is the executable plus `settings.local.yaml`
 (no `install.bat`). Keep both in the same folder. Opening the exe
-uses this console as **OSM-Backend** (`:4096`) and opens a second
-console **OSM-Frontend** (`:5173`). If `:4096` (or `:5173`) is
+uses this console as **aMIR-mini Backend** (`:4096`) and opens a second
+console **aMIR-mini Frontend** (`:5173`). If `:4096` (or `:5173`) is
 already taken, the exe kills that leftover listener and binds.
 `start.bat` / `start.sh` are unchanged.
 
-- `opencode-manager-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
-- `opencode-manager-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)
+- `amir-mini-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
+- `amir-mini-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)
 
 Git and OpenCode stay on PATH (the exe prepends `~/.opencode/bin`).
 Windows always uses `C:\osm` unless you change the overlay. On Linux,
@@ -319,7 +319,7 @@ On a machine that can reach GitHub / PyPI / npm:
 
 ```bash
 python3 packaging/build_dist.py --in-place   # fills vendor/ + web/dist in this repo
-python3 packaging/build_dist.py              # writes dist/opencode-manager-*.zip
+python3 packaging/build_dist.py              # writes dist/amir-mini-*.zip
 ```
 
 ### From source (developers)

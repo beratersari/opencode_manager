@@ -1,4 +1,4 @@
-# OpenCode Session Manager (OSM)
+# aMIR-mini
 
 n8n (veya herhangi bir HTTP istemcisi) ile **OpenCode** arasında duran küçük bir Windows / Linux işçisi.
 
@@ -855,7 +855,7 @@ React + Vite + Tailwind + Geist. `virtual_developer` jobs sekmesinin görünüm�
 |---|---|
 | `__init__.py` | `__version__` |
 | `app.py` | FastAPI fabrikası, lifespan (`boot` / `shutdown`), `/ws`, uvicorn `main` |
-| `standalone.py` | Exe: OSM-Backend penceresi + OSM-Frontend penceresi |
+| `standalone.py` | Exe: aMIR-mini Backend + aMIR-mini Frontend pencereleri |
 | `api.py` | Tüm HTTP rotaları + SPA mount + dashboard yazmalarını 405 |
 | `manager.py` | Kabul, 409/400/503, kuyruk, thread, boot leftover, shutdown, `DELETE /sessions`, `live_counts` |
 | `worker.py` | Bir iş: clone → OpenCode → `finish_job` (callback) → clone sil |

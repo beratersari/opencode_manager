@@ -8,9 +8,9 @@ export function Shell() {
     <div className="vd-app">
       <aside className="vd-sidebar">
         <div className="vd-brand">
-          <div className="vd-mark">OM</div>
+          <div className="vd-mark">aM</div>
           <div>
-            <div className="text-sm font-semibold">OpenCode Manager</div>
+            <div className="text-sm font-semibold">aMIR-mini</div>
             <div className="text-[11px] text-text-muted">
               {live.connected ? 'live' : 'offline'}
               {live.running ? ` · ${live.running} running` : ''}

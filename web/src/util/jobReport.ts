@@ -121,7 +121,7 @@ function gitExplanation(job: JobItem): string {
   return [
     'No live git snapshot is available for this job.',
     '',
-    'OSM always deletes the clone when the job ends (success or fail).',
+    'aMIR-mini always deletes the clone when the job ends (success or fail).',
     'The next job for the same ticket re-clones to the same path.',
     'Chat vs disk drift is expected after delete.',
     '',
@@ -180,7 +180,7 @@ function processFiles(input: JobReportInput): Record<string, string> {
 
 function readme(kind: 'job' | 'general', job?: JobItem | null): string {
   const lines = [
-    'OpenCode Session Manager issue report',
+    'aMIR-mini issue report',
     '',
     `Kind: ${kind}`,
     '',
@@ -205,12 +205,12 @@ function readme(kind: 'job' | 'general', job?: JobItem | null): string {
       'job/record.json             Dashboard job record (no callback_url)',
       'job/parameters.json         Fields needed to reproduce the run',
       'job/retry_attempts.json     Outer-retry bookkeeping',
-      'job/prompts.json            User messages OSM POSTed',
+      'job/prompts.json            User messages aMIR-mini POSTed',
       'job/prompts/                Same prompts as individual text files',
       'job/chat.json               Transcript snapshot or live serve copy',
       'job/chat.md                 Same transcript, readable',
       'job/result.txt              Last assistant text (the job product)',
-      'job/system.log              OSM per-job manager log',
+      'job/system.log              aMIR-mini per-job manager log',
       'job/opencode-serve.log      stdout/stderr from this job\'s opencode serve',
       'job/git.txt                 Clone path / repo — no live git (clone is deleted)',
     )

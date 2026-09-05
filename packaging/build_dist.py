@@ -643,7 +643,7 @@ def copy_spa(spa: Path, payload: Path) -> None:
     if pkg.is_file():
         shutil.copy2(pkg, payload / "web" / "package.json")
     (payload / "web" / "DIST_SPA.txt").write_text(
-        "OpenCode Session Manager dashboard SPA (production build).\n"
+        "aMIR-mini dashboard SPA (production build).\n"
         "Served by the manager at http://127.0.0.1:4096/jobs\n"
         "No Node required at runtime.\n",
         encoding="utf-8",
@@ -681,7 +681,12 @@ def main(argv: list[str] | None = None) -> int:
     ver = read_versions(root / "packaging" / "versions.env")
     os_name, arch = host_platform()
     version = os.environ.get("OSM_PRODUCT_VERSION") or product_version(root)
-    prefix = args.dist_name or f"opencode-manager-{version}"
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from opencode_manager.brand import APP_NAME, APP_SLUG
+
+    prefix = args.dist_name or f"{APP_SLUG}-{version}"
     reqs = runtime_requirements(root)
     wheel_versions = [
         x.strip()
@@ -696,7 +701,7 @@ def main(argv: list[str] | None = None) -> int:
         host_pack = "darwin"
 
     print("========================================")
-    print("  OpenCode Session Manager - offline dist")
+    print(f"  {APP_NAME} - offline dist")
     print("========================================")
     print(f"Repo     : {root}")
     print(f"Host     : {os_name}-{arch}")
@@ -816,7 +821,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         (vendor / "requirements.txt").write_text("\n".join(reqs) + "\n", encoding="utf-8")
         (payload / "DIST_VERSION.txt").write_text(
-            "opencode-manager offline distribution\n"
+            "amir-mini offline distribution\n"
             f"ProductVersion={version}\n"
             f"Pack={pid}\n"
             f"DistName={name}\n"

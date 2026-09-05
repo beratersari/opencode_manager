@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — install OpenCode CLI (offline).
+# aMIR-mini — install OpenCode CLI (offline).
 # Detects a previous user install, deletes it, copies vendor/bin from scratch.
 # Does not install Python / the dashboard. Use install.sh for that.
 set -euo pipefail
@@ -19,7 +19,7 @@ cd "$ROOT"
 osm_chmod_launchers "$ROOT"
 
 echo "========================================"
-echo "  OpenCode Session Manager"
+echo "  aMIR-mini"
 echo "  OpenCode CLI install (offline, from scratch)"
 echo "========================================"
 echo

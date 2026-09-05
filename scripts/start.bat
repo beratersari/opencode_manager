@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - start BOTH backend (:4096) and frontend (:5173)
+REM aMIR-mini - start BOTH backend (:4096) and frontend (:5173)
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
 
@@ -22,7 +22,7 @@ set "LAUNCH=%HERE%"
 if exist "%ROOT%\scripts\start-backend.bat" set "LAUNCH=%ROOT%\scripts"
 
 echo ========================================
-echo   OpenCode Session Manager - Start all
+echo   aMIR-mini - Start all
 echo ========================================
 echo.
 echo   Backend  : http://127.0.0.1:4096/   ^(API + built SPA^)
@@ -44,7 +44,7 @@ echo === [1/2] Backend ===
 set "OSM_NONINTERACTIVE=1"
 call "%LAUNCH%\start-backend.bat"
 if errorlevel 1 (
-    echo [ERROR] Backend failed to start. See "OSM-Backend" window.
+    echo [ERROR] Backend failed to start. See "aMIR-mini Backend" window.
     set "OSM_NONINTERACTIVE="
     call :maybe_pause
     exit /b 1
@@ -71,7 +71,7 @@ echo Prefer UI:  http://127.0.0.1:5173/
 echo Also UI:    http://127.0.0.1:4096/jobs
 echo API:        http://127.0.0.1:4096/api/meta
 echo.
-echo Console windows: OSM-Backend, OSM-Frontend
+echo Console windows: aMIR-mini Backend, aMIR-mini Frontend
 echo.
 call :maybe_pause
 exit /b 0

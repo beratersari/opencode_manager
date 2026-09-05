@@ -20,14 +20,13 @@ from typing import Optional
 import uvicorn
 
 from opencode_manager.app import create_app
+from opencode_manager.brand import BACKEND_TITLE, FRONTEND_TITLE
 from opencode_manager.cleanup.port import free_listen_port, port_is_busy
 from opencode_manager.dashboard.frontend_proxy import build_app as build_frontend
 from opencode_manager.settings import Settings, executable_dir, load_settings, resource_root
 
 FRONTEND_HOST_DEFAULT = "0.0.0.0"
 FRONTEND_PORT_DEFAULT = 5173
-BACKEND_TITLE = "OSM-Backend"
-FRONTEND_TITLE = "OSM-Frontend"
 
 
 @dataclass

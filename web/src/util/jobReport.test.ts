@@ -16,7 +16,7 @@ describe('job report zip', () => {
   }
 
   const context = {
-    meta: { app_name: 'OpenCode Session Manager', version: '0.1.0' },
+    meta: { app_name: 'aMIR-mini', version: '0.1.0' },
     runtime: { python: '3.12', live: { running: 0, queued: 1 } },
     settings: { listen_port: 4096, opencode_bin: 'opencode' },
     queue: { items: [{ job_id: 'job_q', jira_id: 'Q-1' }], queued_count: 1 },

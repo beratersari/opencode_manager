@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from opencode_manager import __version__
+from opencode_manager.brand import APP_NAME
 from opencode_manager.dashboard.chat import job_chat_payload
 from opencode_manager.dashboard.report import build_report_context
 from opencode_manager.log import get_logger, read_job_log_lines, redact
@@ -110,7 +111,7 @@ def api_meta() -> Dict[str, Any]:
     return {
         "version": __version__,
         "server_time": utc_now(),
-        "app_name": "OpenCode Session Manager",
+        "app_name": APP_NAME,
     }
 
 

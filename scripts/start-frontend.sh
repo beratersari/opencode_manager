@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — start FRONTEND only (SPA proxy on :5173).
+# aMIR-mini — start FRONTEND only (SPA proxy on :5173).
 # Serves web/dist. Rebuilds it first when local Vite is present.
 set -euo pipefail
 
@@ -25,7 +25,7 @@ if [[ -x "$VENV_PY" ]]; then
 fi
 
 echo "========================================"
-echo "  OpenCode Session Manager - Frontend"
+echo "  aMIR-mini - Frontend"
 echo "========================================"
 echo "Project  : $ROOT"
 echo "UI       : http://${FRONTEND_HOST}:${FRONTEND_PORT}/  (open http://127.0.0.1:${FRONTEND_PORT}/ )"

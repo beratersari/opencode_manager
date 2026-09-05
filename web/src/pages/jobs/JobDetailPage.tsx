@@ -277,7 +277,7 @@ function LogsTab({
 }) {
   return (
     <div className="space-y-6">
-      <LogBlock title="Job log" empty="No OSM log lines for this job_id.">
+      <LogBlock title="Job log" empty="No aMIR-mini log lines for this job_id.">
         {lines.length > 0
           ? lines.map((line, i) => (
               <div key={`${line.timestamp}-${i}`} className="border-b border-border/50 py-0.5">

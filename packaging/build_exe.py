@@ -40,7 +40,12 @@ def host_suffix() -> str:
 
 
 def artifact_filename(version: str, suffix: str) -> str:
-    name = f"opencode-manager-{version}-{suffix}"
+    src = repo_root() / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from opencode_manager.brand import APP_SLUG
+
+    name = f"{APP_SLUG}-{version}-{suffix}"
     if suffix.startswith("windows"):
         return f"{name}.exe"
     return name
@@ -113,7 +118,7 @@ def pyinstaller_args(
     web_dist: Path,
     work: Path,
     out_dir: Path,
-    internal_name: str = "opencode-manager",
+    internal_name: str = "amir-mini",
 ) -> list[str]:
     sep = add_data_sep()
     args = [
@@ -216,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     built = work / "dist" / (
-        "opencode-manager.exe" if suffix.startswith("windows") else "opencode-manager"
+        "amir-mini.exe" if suffix.startswith("windows") else "amir-mini"
     )
     if not built.is_file():
         print(f"[ERROR] PyInstaller did not write {built}", file=sys.stderr)

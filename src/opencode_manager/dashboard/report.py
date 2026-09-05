@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from opencode_manager import __version__
+from opencode_manager.brand import APP_NAME
 from opencode_manager.crash import crash_log_path
 from opencode_manager.log import redact
 from opencode_manager.models import utc_now
@@ -30,7 +31,7 @@ def build_report_context(manager: Any) -> Dict[str, Any]:
     running, queued = _live_counts(manager)
     return {
         "meta": {
-            "app_name": "OpenCode Session Manager",
+            "app_name": APP_NAME,
             "version": __version__,
             "server_time": utc_now(),
         },

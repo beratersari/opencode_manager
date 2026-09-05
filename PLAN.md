@@ -1,4 +1,4 @@
-# OpenCode Session Manager — Plan
+# aMIR-mini — Plan
 
 A small Windows/Linux worker that sits between **n8n** and **OpenCode**.
 n8n sends a job. This service clones the request `repo_url` directly, runs
@@ -768,7 +768,7 @@ For every git child of a job:
   `http.extraHeader` Basic (password never on argv or in logs).
   `GIT_TERMINAL_PROMPT=0` still blocks a hidden console prompt.
   The manager must run in an interactive desktop session (the
-  OSM-Backend window), not as Session 0 / a service, or the dialog
+  aMIR-mini Backend window), not as Session 0 / a service, or the dialog
   cannot appear.
 - **Linux:** `credential.helper=` (empty). No OS store.
 - after clone, origin URL scrubbed of any userinfo. The source of
@@ -1096,7 +1096,7 @@ opencode_manager/
       store.py          # job history JSON
       chat.py           # snapshot + live transcript
       frontend_proxy.py # optional :5173 SPA proxy (no Node)
-    standalone.py       # exe: OSM-Backend window + OSM-Frontend window
+    standalone.py       # exe: aMIR-mini Backend + aMIR-mini Frontend windows
   web/                  # React + Vite + Tailwind SPA (jobs tab only)
   web/dist/             # CI-built SPA; no Node on the target
   scripts/              # offline install + start (Windows .bat, Linux .sh)

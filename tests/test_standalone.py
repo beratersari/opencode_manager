@@ -139,7 +139,7 @@ def test_prepare_frontend_does_not_boot_manager(tmp_settings: Settings, tmp_path
 
 
 def test_self_command_frozen_is_the_exe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    exe = tmp_path / "opencode-manager.exe"
+    exe = tmp_path / "amir-mini.exe"
     exe.write_bytes(b"x")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(exe))
@@ -303,13 +303,13 @@ def os_path_head() -> str:
 
 def test_build_exe_names_and_does_not_touch_start_scripts() -> None:
     mod = _load_build_exe()
-    assert mod.artifact_filename("1.2.3", "windows-x64") == "opencode-manager-1.2.3-windows-x64.exe"
-    assert mod.artifact_filename("1.2.3", "linux-x64") == "opencode-manager-1.2.3-linux-x64"
+    assert mod.artifact_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64.exe"
+    assert mod.artifact_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64"
     text = (ROOT / "packaging" / "build_exe.py").read_text(encoding="utf-8")
     assert "start.bat" in text and "Does not change" in text
     start_bat = (ROOT / "scripts" / "start.bat").read_text(encoding="utf-8")
     start_sh = (ROOT / "scripts" / "start.sh").read_text(encoding="utf-8")
-    assert "OSM-Backend" in start_bat
+    assert "aMIR-mini Backend" in start_bat
     assert "start-backend.sh" in start_sh
 
 

@@ -1,5 +1,5 @@
 @echo off
-REM Runs OSM in the OSM-Backend window. Do not nest this inside a quoted cmd /c.
+REM Runs aMIR-mini in the aMIR-mini Backend window. Do not nest this inside a quoted cmd /c.
 setlocal EnableDelayedExpansion
 cd /d "%~dp0\.."
 set "GIT_TERMINAL_PROMPT=0"

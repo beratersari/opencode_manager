@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — install manager (offline).
+# aMIR-mini — install manager (offline).
 # Python venv + wheels + prebuilt dashboard. Does NOT install OpenCode.
 # Use install-opencode.sh for the CLI.
 set -euo pipefail
@@ -19,7 +19,7 @@ WEB_DIST="$ROOT/web/dist"
 cd "$ROOT"
 
 echo "========================================"
-echo "  OpenCode Session Manager"
+echo "  aMIR-mini"
 echo "  Install (offline)"
 echo "========================================"
 echo

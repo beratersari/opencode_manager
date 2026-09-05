@@ -54,7 +54,7 @@ describe('JobDetailPage', () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
     fetchReportContext.mockResolvedValue({
-      meta: { app_name: 'OpenCode Session Manager' },
+      meta: { app_name: 'aMIR-mini' },
       runtime: {},
       settings: {},
       queue: { items: [], queued_count: 0 },

@@ -55,7 +55,7 @@ def build_app(*, dist: Path, backend: str) -> FastAPI:
     ensure_spa_mimetypes()
     backend = backend.rstrip("/")
     app = FastAPI(
-        title="OpenCode Session Manager Frontend",
+        title="aMIR-mini Frontend",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -278,7 +278,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     app = build_app(dist=dist, backend=args.backend)
     print("=" * 50)
-    print("  OpenCode Session Manager - Frontend")
+    print("  aMIR-mini - Frontend")
     print("=" * 50)
     print(f"SPA     : {dist}")
     print(f"Backend : {args.backend}")

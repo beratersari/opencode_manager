@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — start BOTH backend (:4096) and frontend (:5173).
+# aMIR-mini — start BOTH backend (:4096) and frontend (:5173).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +29,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "========================================"
-echo "  OpenCode Session Manager - Start all"
+echo "  aMIR-mini - Start all"
 echo "========================================"
 echo
 echo "  Backend  : http://127.0.0.1:${DASH_PORT}/   (API + built SPA)"

@@ -1,4 +1,4 @@
-# AGENTS.md — OpenCode Session Manager
+# AGENTS.md — aMIR-mini
 
 This file is binding for anyone implementing or changing this repo.
 The long rationale lives in [PLAN.md](PLAN.md). If this file and the
@@ -394,10 +394,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   host markers still require `uvloop` (no Windows wheel) and the
   whole Windows set is skipped.
 - Additive single-file exe (`packaging/build_exe.py`, same workflow,
-  native Windows + Linux jobs): `opencode-manager-<ver>-windows-x64.exe`
-  and `opencode-manager-<ver>-linux-x64`. The artifact is that one
-  file. Opening it uses this console as **OSM-Backend** (`:4096`) and
-  opens a second console **OSM-Frontend** (`:5173`) via
+  native Windows + Linux jobs): `amir-mini-<ver>-windows-x64.exe`
+  and `amir-mini-<ver>-linux-x64`. The artifact is that one
+  file. Opening it uses this console as **aMIR-mini Backend** (`:4096`) and
+  opens a second console **aMIR-mini Frontend** (`:5173`) via
   `opencode_manager.standalone` (`CREATE_NEW_CONSOLE` on Windows). If
   `listen_port` (or `:5173`) is busy, the exe finds the LISTENING
   PID (`netstat` / `ss`, not a Win32_Process snapshot) and

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opencode-manager"
 version = "0.1.0"
-description = "n8n ↔ OpenCode session/job worker"
+description = "aMIR-mini — n8n ↔ OpenCode session/job worker"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",

@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - install manager (offline)
+REM aMIR-mini - install manager (offline)
 REM Python venv + wheels + prebuilt dashboard. Does NOT install OpenCode.
 REM Use install-opencode.bat for the CLI.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
@@ -25,7 +25,7 @@ set "WEB_DIST=%ROOT%\web\dist"
 cd /d "%ROOT%"
 
 echo ========================================
-echo   OpenCode Session Manager
+echo   aMIR-mini
 echo   Install ^(offline^)
 echo ========================================
 echo.

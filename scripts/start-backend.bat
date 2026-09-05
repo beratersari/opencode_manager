@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - start BACKEND only (API + built SPA on :4096)
+REM aMIR-mini - start BACKEND only (API + built SPA on :4096)
 REM For a separate UI on :5173, use start-frontend.bat after this.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
@@ -32,7 +32,7 @@ if exist "%USERPROFILE%\.opencode\bin" set "PATH=%USERPROFILE%\.opencode\bin;%PA
 if exist "%ROOT%\vendor\bin" set "PATH=%ROOT%\vendor\bin;%PATH%"
 
 echo ========================================
-echo   OpenCode Session Manager - Backend
+echo   aMIR-mini - Backend
 echo ========================================
 echo Project : %ROOT%
 echo API+SPA : http://0.0.0.0:%DASH_PORT%/  ^(open http://127.0.0.1:%DASH_PORT%/jobs ^)
@@ -69,8 +69,8 @@ if not exist "%ROOT%\web\dist\index.html" (
     echo           Use the CI zip or run python packaging\build_dist.py --in-place.
 )
 
-echo Starting manager in window "OSM-Backend"...
-start "OSM-Backend" /D "%ROOT%" "%ROOT%\scripts\run-backend.bat"
+echo Starting manager in window "aMIR-mini Backend"...
+start "aMIR-mini Backend" /D "%ROOT%" "%ROOT%\scripts\run-backend.bat"
 
 echo Waiting for API http://127.0.0.1:%DASH_PORT%/api/meta ...
 set /a TRIES=0
@@ -78,7 +78,7 @@ set /a TRIES=0
 set /a TRIES+=1
 if %TRIES% GTR 45 (
     echo [ERROR] Backend did not become ready on port %DASH_PORT%.
-    echo Open the "OSM-Backend" window and read the traceback.
+    echo Open the "aMIR-mini Backend" window and read the traceback.
     echo Common issues: missing install, port in use, data_dir permissions.
     call :maybe_pause
     exit /b 1

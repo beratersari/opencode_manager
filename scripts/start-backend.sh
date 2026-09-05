@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode Session Manager — start BACKEND only (API + built SPA on :4096).
+# aMIR-mini — start BACKEND only (API + built SPA on :4096).
 # For a separate UI on :5173, use start-frontend.sh after this.
 set -euo pipefail
 
@@ -32,7 +32,7 @@ if [[ -d "$ROOT/vendor/bin" ]]; then
 fi
 
 echo "========================================"
-echo "  OpenCode Session Manager - Backend"
+echo "  aMIR-mini - Backend"
 echo "========================================"
 echo "Project : $ROOT"
 echo "API+SPA : http://0.0.0.0:${DASH_PORT}/  (open http://127.0.0.1:${DASH_PORT}/jobs )"

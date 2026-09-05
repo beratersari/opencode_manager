@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - start FRONTEND only (SPA proxy on :5173)
+REM aMIR-mini - start FRONTEND only (SPA proxy on :5173)
 REM Serves web\dist. Rebuilds it first when local Vite is present.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
 REM =============================================================================
@@ -29,7 +29,7 @@ set "OSM_PY="
 if exist "%VENV_PY%" set "OSM_PY=%VENV_PY%"
 
 echo ========================================
-echo   OpenCode Session Manager - Frontend
+echo   aMIR-mini - Frontend
 echo ========================================
 echo Project  : %ROOT%
 echo UI       : http://0.0.0.0:%FRONTEND_PORT%/  ^(open http://127.0.0.1:%FRONTEND_PORT%/ ^)
@@ -71,8 +71,8 @@ if errorlevel 1 (
 )
 echo [OK] Backend is reachable.
 
-echo Starting SPA proxy in window "OSM-Frontend"...
-start "OSM-Frontend" /D "%ROOT%" cmd /c ""%OSM_PY%" -m opencode_manager.dashboard.frontend_proxy --dist "%WEB_DIST%" --backend %BACKEND_URL% --host %FRONTEND_HOST% --port %FRONTEND_PORT% & echo. & echo Frontend exited. & pause"
+echo Starting SPA proxy in window "aMIR-mini Frontend"...
+start "aMIR-mini Frontend" /D "%ROOT%" cmd /c ""%OSM_PY%" -m opencode_manager.dashboard.frontend_proxy --dist "%WEB_DIST%" --backend %BACKEND_URL% --host %FRONTEND_HOST% --port %FRONTEND_PORT% & echo. & echo Frontend exited. & pause"
 
 echo Waiting for UI http://127.0.0.1:%FRONTEND_PORT%/ ...
 set /a TRIES=0
@@ -80,7 +80,7 @@ set /a TRIES=0
 set /a TRIES+=1
 if %TRIES% GTR 30 (
     echo [ERROR] Frontend did not become ready on port %FRONTEND_PORT%.
-    echo Open the "OSM-Frontend" window for errors.
+    echo Open the "aMIR-mini Frontend" window for errors.
     call :maybe_pause
     exit /b 1
 )

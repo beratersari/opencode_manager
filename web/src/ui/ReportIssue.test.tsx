@@ -53,7 +53,7 @@ describe('ReportIssue', () => {
     fetchLogs.mockResolvedValue({ lines: [] })
     fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
     fetchReportContext.mockResolvedValue({
-      meta: { app_name: 'OpenCode Session Manager' },
+      meta: { app_name: 'aMIR-mini' },
       runtime: {},
       settings: {},
       queue: { items: [], queued_count: 0 },

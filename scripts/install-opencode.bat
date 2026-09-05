@@ -1,6 +1,6 @@
 @echo off
 REM =============================================================================
-REM OpenCode Session Manager - install OpenCode CLI (offline)
+REM aMIR-mini - install OpenCode CLI (offline)
 REM Detects a previous user install, deletes it, copies vendor\bin from scratch.
 REM Does not install Python / the dashboard. Use install.bat for that.
 REM IMPORTANT: never use unescaped "->" in echo lines (cmd redirect).
@@ -22,7 +22,7 @@ if exist "%HERE%\pyproject.toml" (
 cd /d "%ROOT%"
 
 echo ========================================
-echo   OpenCode Session Manager
+echo   aMIR-mini
 echo   OpenCode CLI install ^(offline, from scratch^)
 echo ========================================
 echo.

@@ -329,6 +329,17 @@ That wipes `<user>/.opencode` and copies the pinned binary. Build:
 python packaging/build_opencode_dist.py
 ```
 
+### API reliability (200 mixed jobs)
+
+```bash
+python tester/reliability.py --count 200
+python tester/reliability.py --count 200 --live --osm http://127.0.0.1:4096
+```
+
+Prints inbound 202/400 rates and terminal 200/500/504 error rate. Live mode
+talks to a running manager (real clone + OpenCode). Without `--live` it
+starts an embedded OSM and uses a fake runner so only the HTTP path is real.
+
 ### Run as a service (new, does not change the exe)
 
 Backend only (API + dashboard on http://127.0.0.1:4096/jobs). The

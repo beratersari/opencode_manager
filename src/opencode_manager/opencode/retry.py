@@ -199,10 +199,14 @@ def run_opencode_job(
                     try:
                         remain = max(5.0, deadline - time.time())
                         try:
-                            known_models = list_models(timeout=min(60.0, remain))
+                            listed = list_models(timeout=min(60.0, remain))
                         except TypeError:
-                            known_models = list_models()
-                        inventory_ok = True
+                            listed = list_models()
+                        if listed is None:
+                            logger.info("model list check skipped: inventory unreadable")
+                        else:
+                            known_models = list(listed)
+                            inventory_ok = True
                     except Exception as exc:  # noqa: BLE001
                         logger.info("model list check skipped: %s", exc)
                 if inventory_ok and (

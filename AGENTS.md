@@ -206,9 +206,10 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   `connected`). If the request `model` is not on this serve, or the
   inventory is readable and empty: fail the **job** `500` immediately
   with the available ids. Do not POST a user message. Do not wait
-  for the attempt clock. Do not spend remaining `retry_count`. A
-  later OpenCode `ProviderModelNotFoundError` / "model not found" is
-  the same **500**, not a hang or `504`.
+  for the attempt clock. Do not spend remaining `retry_count`. If
+  the inventory endpoints error or never return a 2xx body, skip
+  that preflight and continue; a later `ProviderModelNotFoundError`
+  / "model not found" is the same **500**, not a hang or `504`.
 - Do not run `opencode --auto` as a one-shot CLI. Do not enable
   permission auto-approve.
 - Scope requests with `x-opencode-directory: <clone>`.

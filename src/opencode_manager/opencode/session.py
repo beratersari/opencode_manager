@@ -423,12 +423,20 @@ class OpenCodeClient:
             time.sleep(0.4)
         raise TimeoutError(f"opencode directory instance not ready last={last}")
 
-    def list_known_models(self, *, timeout: float = 15.0) -> List[str]:
-        """Model ids this serve will accept (``provider/id``). Empty if unknown."""
+    def list_known_models(self, *, timeout: float = 15.0) -> Optional[List[str]]:
+        """Model ids this serve will accept (``provider/id``).
+
+        Returns a list (possibly empty) only after a 2xx body parsed.
+        Returns ``None`` when every probe failed (transport / HTTP /
+        JSON). Empty vs ``None`` is the readable-empty vs unreadable
+        split required by preflight.
+        """
         deadline = time.time() + max(0.1, float(timeout))
+        saw_readable = False
         last: List[str] = []
         while time.time() < deadline:
             ids: List[str] = []
+            readable_tick = False
             for path in ("/config/providers", "/provider"):
                 remain = max(0.5, deadline - time.time())
                 try:
@@ -443,6 +451,7 @@ class OpenCodeClient:
                     ids.extend(known_model_ids_from_payload(response.json()))
                 except Exception:
                     continue
+                readable_tick = True
                 if ids:
                     break
             seen = set()
@@ -454,9 +463,11 @@ class OpenCodeClient:
                 out.append(mid)
             if out:
                 return out
-            last = out
+            if readable_tick:
+                saw_readable = True
+                last = out
             time.sleep(0.4)
-        return last
+        return last if saw_readable else None
 
     def session_payload(self, session_id: str) -> Dict[str, Any]:
         """GET /session/:id body. Empty on error. No per-poll log line."""

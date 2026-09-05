@@ -306,6 +306,12 @@ def test_opencode_client_http_paths() -> None:
     assert any("mimo" in x for x in ids)
 
     client.http = _FakeHTTP(getter=lambda p, **k: (_ for _ in ()).throw(RuntimeError("x")))  # type: ignore[assignment]
+    assert client.list_known_models(timeout=0.2) is None
+
+    client.http = _FakeHTTP(getter=lambda p, **k: _Resp(503, {}))  # type: ignore[assignment]
+    assert client.list_known_models(timeout=0.2) is None
+
+    client.http = _FakeHTTP(getter=lambda p, **k: _Resp(200, {"connected": {}}))  # type: ignore[assignment]
     assert client.list_known_models(timeout=0.2) == []
 
     client.http = _FakeHTTP(getter=lambda p, **k: _Resp(200, {"id": "ses_1"}))  # type: ignore[assignment]

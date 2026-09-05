@@ -420,6 +420,86 @@ def test_empty_model_inventory_fails_job_before_prompt(
     assert job.attempts == []
 
 
+def test_unreadable_model_inventory_skips_preflight(
+    tmp_settings: Settings, monkeypatch
+) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    clone = tmp_settings.work_dir / "clone"
+    clone.mkdir()
+    job = JobRecord(
+        job_id="job_unreadmodel",
+        jira_id="T-UNREAD",
+        prompt="do it",
+        model="opencode/hy3-free",
+        agent_mode="orchestrator",
+        retry_count=1,
+        timeout_in_seconds=30,
+        status="running",
+    )
+    posted: list[str] = []
+
+    class _Handle:
+        pid = 4246
+        port = 9
+        base_url = "http://127.0.0.1:9"
+
+    class _Client:
+        def __init__(self, *_a, **_k) -> None:
+            self.session_id = "ses_unread"
+
+        def health(self) -> bool:
+            return True
+
+        def wait_directory(self, timeout: float, should_stop=None) -> None:  # noqa: ANN001, ARG002
+            return None
+
+        def list_known_models(self, *, timeout: float = 15.0):  # noqa: ARG002
+            return None
+
+        def resume_or_create(self, inbound, title):  # noqa: ANN001, ARG002
+            return "ses_unread", True
+
+        def close(self) -> None:
+            return None
+
+        def abort(self, *_a, **_k) -> None:
+            return None
+
+        def status(self) -> dict:
+            return {}
+
+        def session_payload(self, session_id: str) -> dict:  # noqa: ARG002
+            return {}
+
+        def list_messages(self, session_id: str) -> list:  # noqa: ARG002
+            if not posted:
+                return []
+            from tests.job_end_helpers import assistant_msg, user_msg
+
+            return [
+                user_msg("u1", "do it"),
+                assistant_msg("a1", "ok from unread inventory", finish="stop"),
+            ]
+
+        def post_message(self, *_a, **_k) -> None:
+            posted.append("ORIGINAL")
+
+    monkeypatch.setattr("opencode_manager.opencode.retry.start_serve", lambda **_k: _Handle())
+    monkeypatch.setattr("opencode_manager.opencode.retry.stop_serve", lambda *_a, **_k: None)
+    monkeypatch.setattr("opencode_manager.opencode.retry.OpenCodeClient", _Client)
+    monkeypatch.setattr("opencode_manager.opencode.retry.kill_pid", lambda *_a, **_k: None)
+    result = run_opencode_job(
+        job,
+        settings=tmp_settings,
+        store=store,
+        clone=clone,
+        should_stop=lambda: False,
+    )
+    assert result.status_code == 200
+    assert result.text == "ok from unread inventory"
+    assert posted == ["ORIGINAL"]
+
+
 def test_unknown_model_fails_job_before_prompt(tmp_settings: Settings, monkeypatch) -> None:
     store = JobStore(tmp_settings.job_store_dir)
     clone = tmp_settings.work_dir / "clone"

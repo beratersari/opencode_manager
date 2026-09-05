@@ -120,6 +120,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Unknown `model` fails the job before any user POST | `test_unknown_model_fails_job_before_prompt` |
 | Readable empty inventory fails the job before any user POST | `test_empty_model_inventory_fails_job_before_prompt` |
+| Unreadable inventory skips preflight (not treated as empty) | `test_unreadable_model_inventory_skips_preflight` |
 | OpenCode model-not-found is job 500, not attempt timeout | `test_prompt_async_unknown_model_fails_job_immediately` |
 
 ## Idle assess

@@ -574,6 +574,8 @@ until OpenCode is actually idle:
 |---|---|
 | Compact / `Session auto-compacted` / `busy_compacting` / `Session.time.compacting` | **Wait.** OpenCode `GET /session/status` is only `idle` \| `retry` \| `busy` — compact is **not** a status type. Read `GET /session/:id` `time.compacting`. Do not run the hang clock. No OSM “Continue”. OpenCode itself may insert a synthetic user turn (`Continue if you have next steps…`, `synthetic` + `compaction_continue`) so `SessionPrompt.run` does not exit on the compact summary’s `finish=stop`. Leave that turn alone. |
 | `tool-calls` / unfinished finish **and the session is still busy** | Wait. |
+| Empty assistant stub after POST (`finish` missing, no text) | **Wait.** Not “this turn answered.” Not `incomplete`. OpenCode often inserts this id before it flips `busy`. Do not spend a retry. |
+| About to POST `INCOMPLETE_RESUME` while `busy` | **Wait** until idle (hang budget), then POST. Do not fail `hang` immediately — the first ORIGINAL may still be running. |
 | Compact recap that quotes “Shall I…?” | Still compact, not a live question. Wait. |
 | Clarifying question (live, last turn stopped) | **One** unattended nudge (see prompts below), then wait. Never re-send the original prompt. |
 | Compact-only loop (many **new** compact markers this wait, no work turn; ~8 cycles) | Abort the in-flight turn. Wait until the **same** session is **idle**. Then one compact-loop nudge. Do **not** Continue while compact is still running. Lifetime / resumed-session compact history does **not** count (KAN-95). |

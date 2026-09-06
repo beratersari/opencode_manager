@@ -356,7 +356,7 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "settings.local.windows.yaml" not in attach
     assert "settings.local.linux.yaml" not in attach
     assert "*-exe.zip" in attach
-    assert "-service.zip" not in attach
+    assert "*-service.zip" in attach
     assert "opencode-1.18.10" not in attach
 
 

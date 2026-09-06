@@ -292,12 +292,14 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 ### Single-file exe (Windows + Linux)
 
-The GitHub Release is **only** these two zips plus source:
+The GitHub Release is these zips plus source:
 
 - `amir-mini-<version>-windows-x64-exe.zip` — exe + `settings.local.yaml` (`C:\osm`)
 - `amir-mini-<version>-linux-x64-exe.zip` — binary + `settings.local.yaml` (`/var/lib/osm`)
+- `amir-mini-<version>-windows-x64-service.zip` — exe + `settings.local.yaml` + `install-service.bat` + `WinSW.exe`. Extract to a permanent folder, then `install-service.bat` (Administrator).
+- `amir-mini-<version>-linux-x64-service.zip` — binary + `settings.local.yaml` + `install-service.sh`.
 
-Extract and keep both files in the same folder. Opening the exe
+Extract and keep every file in the same folder. Opening the exe
 uses this console as **aMIR-mini Backend** (`:4096`) and opens a
 second console **aMIR-mini Frontend** (`:5173`). If `:4096` (or
 `:5173`) is already taken, the exe kills that leftover listener

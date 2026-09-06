@@ -519,6 +519,40 @@ and `tests/test_fixed_conditions.py`. Do not re-report those as open
 bugs. If you change one of those paths, update the tests in the same
 change.
 
+## Git branches and GitHub
+
+- Default branch is `main`. Day-to-day work is `develop`. Do not
+  push commits to `main`; open a pull request from `develop` (or a
+  topic branch) into `main`.
+- After renaming a branch, **in the same change** grep the whole
+  repo for the old name. Update every `.github/workflows/*`
+  `on.push.branches` / `on.pull_request.branches` filter, plus
+  badges and docs that name the default branch. A ref rename is not
+  done until CI on the new default branch actually starts.
+- A workflow file must be valid YAML. Unindented heredoc bodies
+  (`<<'PY'`) break GitHub’s parser and the run fails with **zero
+  jobs** — no artifacts, no exe on the release.
+
+## Releases
+
+- A GitHub Release is not done until the product files are on the
+  release page: `amir-mini-<ver>-windows-x64.exe`,
+  `amir-mini-<ver>-linux-x64`, the `*-service.zip` kits, and the
+  offline installer zips Offline Distribution publishes. Do not
+  tell the user the release is ready while Assets is empty.
+- Do not publish “CI will attach later” and walk away. If the tag
+  workflow does not start or fails, fix it, re-run or move the tag
+  onto a commit whose workflow parses, and confirm the files are
+  attached before calling the release done.
+- Release body is a **self-written changelog** (what a user gets
+  in this version). Never paste commit subjects, SHAs, compare
+  links, or a “Full Changelog” commits URL. Do not set
+  `generate_release_notes: true` on `softprops/action-gh-release`
+  — that overwrites the notes with a commit dump.
+- After a default-branch rename, confirm the workflow on the
+  tagged commit is valid YAML and its branch filters match before
+  cutting the release.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for

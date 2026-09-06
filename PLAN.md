@@ -1066,6 +1066,11 @@ Clone the repo for reference only. Do not import it as a dependency.
   (`kill_pid` / `may_kill`). Does not replace the zip
   or change `start.bat` / `start.sh`. Git and OpenCode stay on
   PATH. Windows `data_dir` is `C:\osm` (no AppData fallback).
+- GitHub Release on `v*` tags attaches those zips and exes. The
+  release body is a hand-written changelog (no commit dump, no
+  `generate_release_notes`). Workflow `branches:` filters must
+  match the default branch (`main`). A release with an empty
+  Assets list is not done.
 
 **Do not copy**
 

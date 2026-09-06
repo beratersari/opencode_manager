@@ -88,6 +88,22 @@ def test_four_platform_packs() -> None:
     assert not mod.wheel_for_pack("foo-1.0-cp312-cp312-macosx_11_0_arm64.whl", "winlinux")
 
 
+def test_offline_dist_workflow_parses_and_targets_main() -> None:
+    import yaml
+
+    text = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "offline-dist.yml"
+    ).read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    assert isinstance(data, dict)
+    on = data.get("on") or data.get(True)
+    assert on["push"]["branches"] == ["main"]
+    assert on["pull_request"]["branches"] == ["main"]
+    assert "v*" in on["push"]["tags"]
+    assert "branches: [master]" not in text
+    assert "generate_release_notes: true" not in text
+
+
 def test_ci_uploads_stage_dir_not_nested_zip() -> None:
     text = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "offline-dist.yml").read_text(
         encoding="utf-8"

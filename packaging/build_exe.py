@@ -50,6 +50,15 @@ def service_kit_filename(version: str, suffix: str) -> str:
     return f"{APP_SLUG}-{version}-{suffix}-service.zip"
 
 
+def exe_kit_filename(version: str, suffix: str) -> str:
+    src = repo_root() / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from opencode_manager.brand import APP_SLUG
+
+    return f"{APP_SLUG}-{version}-{suffix}-exe.zip"
+
+
 def artifact_filename(version: str, suffix: str) -> str:
     src = repo_root() / "src"
     if str(src) not in sys.path:
@@ -185,15 +194,51 @@ def ensure_winsw(root: Path) -> Path:
     return target
 
 
-def write_service_kit(zip_path: Path, files: list[tuple[Path, str]], readme: str) -> None:
+def write_zip_kit(zip_path: Path, files: list[tuple[Path, str]], readme: str) -> None:
     if zip_path.exists():
         zip_path.unlink()
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("README.txt", readme)
         for src, arcname in files:
             if not src.is_file():
-                raise SystemExit(f"Service kit missing {src}")
+                raise SystemExit(f"Zip kit missing {src}")
             zf.write(src, arcname=arcname)
+
+
+def write_service_kit(zip_path: Path, files: list[tuple[Path, str]], readme: str) -> None:
+    write_zip_kit(zip_path, files, readme)
+
+
+def exe_kit_readme(*, windows: bool) -> str:
+    if windows:
+        return (
+            "aMIR-mini — two-window exe\n"
+            "\n"
+            "Extract this zip. Keep both files in the same folder.\n"
+            "\n"
+            "  amir-mini-*-windows-x64.exe\n"
+            "  settings.local.yaml          (data_dir C:\\osm)\n"
+            "\n"
+            "Open the exe. This console is the backend (:4096).\n"
+            "A second console is the frontend proxy (:5173).\n"
+            "\n"
+            "Git and OpenCode stay on PATH.\n"
+        )
+    return (
+        "aMIR-mini — two-window binary\n"
+        "\n"
+        "Extract this zip. Keep both files in the same folder.\n"
+        "\n"
+        "  amir-mini-*-linux-x64\n"
+        "  settings.local.yaml          (data_dir /var/lib/osm)\n"
+        "\n"
+        "Run the binary. This terminal is the backend (:4096).\n"
+        "A second terminal is the frontend proxy (:5173).\n"
+        "\n"
+        "Git and OpenCode stay on PATH.\n"
+        "If /var/lib/osm is not writable, the binary falls back to\n"
+        "$XDG_DATA_HOME/osm or ~/.local/share/osm.\n"
+    )
 
 
 def service_kit_readme(*, windows: bool) -> str:
@@ -349,9 +394,17 @@ def main(argv: list[str] | None = None) -> int:
     kit_name = service_kit_filename(version, suffix)
     kit_path = out_dir / kit_name
     write_service_kit(kit_path, kit_files, service_kit_readme(windows=suffix.startswith("windows")))
+    exe_zip_name = exe_kit_filename(version, suffix)
+    exe_zip_path = out_dir / exe_zip_name
+    write_zip_kit(
+        exe_zip_path,
+        [(final, dest_name), (overlay_dest, "settings.local.yaml")],
+        exe_kit_readme(windows=suffix.startswith("windows")),
+    )
     size_mb = final.stat().st_size / (1024 * 1024)
     print(f"[OK] {final} ({size_mb:.1f} MB)")
     print(f"[OK] {overlay_dest}")
+    print(f"[OK] {exe_zip_path}")
     print(f"[OK] {kit_path}")
     print("Two-window exe is unchanged. Use install-service.* from the service zip.")
     return 0

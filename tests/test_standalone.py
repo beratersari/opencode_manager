@@ -305,6 +305,8 @@ def test_build_exe_names_and_does_not_touch_start_scripts() -> None:
     mod = _load_build_exe()
     assert mod.artifact_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64.exe"
     assert mod.artifact_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64"
+    assert mod.exe_kit_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64-exe.zip"
+    assert mod.exe_kit_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64-exe.zip"
     assert mod.service_kit_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64-service.zip"
     assert mod.service_kit_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64-service.zip"
     text = (ROOT / "packaging" / "build_exe.py").read_text(encoding="utf-8")
@@ -345,11 +347,15 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "Single-file exe" in text
     assert "windows-latest" in text
     assert "ubuntu-latest" in text
-    assert "dist/settings.local.yaml" in text
+    assert "-exe.zip" in text
     assert "-service.zip" in text
     assert "WinSW.exe" in text
     assert "name: Single-file exe" in text
     assert "packaging/build_exe.py" in text
+    attach = text.split("attach-exe-release:")[-1]
+    assert "settings.local.windows.yaml" not in attach
+    assert "settings.local.linux.yaml" not in attach
+    assert "*.zip" in attach
 
 
 def test_write_service_kit_has_windows_files(tmp_path: Path) -> None:
@@ -392,6 +398,27 @@ def test_write_service_kit_has_windows_files(tmp_path: Path) -> None:
     }
     readme = zipfile.ZipFile(dest).read("README.txt").decode("utf-8")
     assert "install-service.bat" in readme
+    assert r"C:\osm" in readme
+
+
+def test_write_exe_kit_has_binary_and_config(tmp_path: Path) -> None:
+    import zipfile
+
+    mod = _load_build_exe()
+    exe = tmp_path / "amir-mini-1.0-windows-x64.exe"
+    overlay = tmp_path / "settings.local.yaml"
+    exe.write_text("exe", encoding="utf-8")
+    overlay.write_text("data_dir: C:\\osm\n", encoding="utf-8")
+    dest = tmp_path / "exe.zip"
+    mod.write_zip_kit(
+        dest,
+        [(exe, exe.name), (overlay, "settings.local.yaml")],
+        mod.exe_kit_readme(windows=True),
+    )
+    names = set(zipfile.ZipFile(dest).namelist())
+    assert names == {"README.txt", exe.name, "settings.local.yaml"}
+    readme = zipfile.ZipFile(dest).read("README.txt").decode("utf-8")
+    assert "settings.local.yaml" in readme
     assert r"C:\osm" in readme
 
 

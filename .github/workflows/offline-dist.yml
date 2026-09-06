@@ -308,55 +308,57 @@ jobs:
           OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: python packaging/build_exe.py --out-dir dist
 
-      - name: Assert one executable
+      - name: Assert exe and service zips
         shell: bash
         run: |
           set -euo pipefail
           suffix="${{ matrix.suffix }}"
           prefix="${{ steps.ver.outputs.dist_name }}"
-          if [ "$suffix" = "windows-x64" ]; then
-            file="dist/${prefix}-${suffix}.exe"
-          else
-            file="dist/${prefix}-${suffix}"
-          fi
-          if [ ! -f "$file" ]; then
-            echo "Missing exe: $file"
+          exe_zip="dist/${prefix}-${suffix}-exe.zip"
+          kit="dist/${prefix}-${suffix}-service.zip"
+          if [ ! -f "$exe_zip" ]; then
+            echo "Missing exe zip: $exe_zip"
             ls -la dist || true
             exit 1
           fi
-          kit="dist/${prefix}-${suffix}-service.zip"
           if [ ! -f "$kit" ]; then
             echo "Missing service kit: $kit"
             ls -la dist || true
             exit 1
           fi
-          python - "$kit" "$suffix" <<'PY'
+          python - "$exe_zip" "$kit" "$suffix" <<'PY'
           import sys, zipfile
-          path, suffix = sys.argv[1], sys.argv[2]
-          names = set(zipfile.ZipFile(path).namelist())
+          exe_zip, kit, suffix = sys.argv[1], sys.argv[2], sys.argv[3]
+          exe_names = set(zipfile.ZipFile(exe_zip).namelist())
+          exe_need = {"README.txt", "settings.local.yaml"}
+          if suffix == "windows-x64":
+              if not any(n.endswith(".exe") for n in exe_names):
+                  raise SystemExit(f"{exe_zip} missing payload exe; has {sorted(exe_names)}")
+          missing = sorted(exe_need - exe_names)
+          if missing:
+              raise SystemExit(f"{exe_zip} missing {missing}; has {sorted(exe_names)}")
+          names = set(zipfile.ZipFile(kit).namelist())
           need = {"README.txt", "settings.local.yaml"}
           if suffix == "windows-x64":
               need.update({"install-service.bat", "uninstall-service.bat", "WinSW.exe"})
               if not any(n.endswith(".exe") and n != "WinSW.exe" for n in names):
-                  raise SystemExit(f"{path} missing payload exe; has {sorted(names)}")
+                  raise SystemExit(f"{kit} missing payload exe; has {sorted(names)}")
           else:
               need.update({"install-service.sh", "uninstall-service.sh"})
           missing = sorted(need - names)
           if missing:
-              raise SystemExit(f"{path} missing {missing}; has {sorted(names)}")
-          print("OK kit", path, "members", sorted(names))
+              raise SystemExit(f"{kit} missing {missing}; has {sorted(names)}")
+          print("OK exe zip", exe_zip, "members", sorted(exe_names))
+          print("OK kit", kit, "members", sorted(names))
           PY
-          count=$(find dist -maxdepth 1 -type f ! -name '*.spec' | wc -l)
-          echo "OK $file ($(du -h "$file" | awk '{print $1}')) files_in_dist_root=$count"
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-exe
           path: |
-            dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}${{ matrix.ext }}
+            dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-exe.zip
             dist/${{ steps.ver.outputs.dist_name }}-${{ matrix.suffix }}-service.zip
-            dist/settings.local.yaml
           if-no-files-found: error
           retention-days: 30
 
@@ -381,15 +383,10 @@ jobs:
           mkdir -p release-exes
           for dir in dist-exes/*; do
             [ -d "$dir" ] || continue
-            name="$(basename "$dir")"
-            find "$dir" -maxdepth 1 -type f ! -name 'settings.local.yaml' -exec cp {} release-exes/ \;
-            if echo "$name" | grep -q windows; then
-              cp "$dir/settings.local.yaml" release-exes/settings.local.windows.yaml
-            else
-              cp "$dir/settings.local.yaml" release-exes/settings.local.linux.yaml
-            fi
+            find "$dir" -maxdepth 1 -type f -name '*.zip' -exec cp {} release-exes/ \;
           done
           ls -la release-exes
+          test -n "$(ls -A release-exes/*.zip 2>/dev/null)"
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2

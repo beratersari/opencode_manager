@@ -78,6 +78,32 @@ def _save(store: JobStore, job: JobRecord) -> None:
     persist_job(store, job)
 
 
+def _load_turn_baseline(
+    client: OpenCodeClient,
+    session_id: str,
+    *,
+    must_have_history: bool,
+) -> tuple[list, Optional[int]]:
+    """Last assistant id already in this ses_* before we POST this turn.
+
+    A resumed or already-bound session still ends with the previous job's
+    ``finish=stop``. If we cannot list messages, an empty baseline would
+    make ``assess_idle`` treat that stop as this job. Fail the attempt.
+    A newly created session may continue with an empty baseline.
+    """
+    try:
+        prior = client.list_messages(session_id)
+    except Exception as exc:  # noqa: BLE001
+        if must_have_history:
+            raise AttemptFailed(
+                "transport",
+                f"could not list messages for turn baseline: {exc}",
+            ) from exc
+        logger.info("baseline list failed on new session; treating as empty: %s", exc)
+        return [], None
+    return prior, compact_marker_count(prior)
+
+
 def run_opencode_job(
     job: JobRecord,
     *,
@@ -244,12 +270,11 @@ def run_opencode_job(
                         prompt_id, text = "INCOMPLETE_RESUME", prompts.INCOMPLETE_RESUME
                 else:
                     prompt_id, text = "ORIGINAL", job.prompt
-                try:
-                    prior = client.list_messages(job.session_id)
-                    compact_floor: Optional[int] = compact_marker_count(prior)
-                except Exception:
-                    prior = []
-                    compact_floor = None
+                prior, compact_floor = _load_turn_baseline(
+                    client,
+                    job.session_id,
+                    must_have_history=already_bound or not created,
+                )
                 baseline_assistant = last_assistant_id(prior)
                 logger.info(
                     "turn baseline messages=%s last_assistant=%s compact_markers=%s",

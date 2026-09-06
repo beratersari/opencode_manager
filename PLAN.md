@@ -53,7 +53,7 @@ are wrong.
 | 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is the **ticket id** (`jira_id`, Windows-safe folder). Dedup is one live job per ticket, so repo and branch are not in the path. Same ticket later ⇒ same folder. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same path ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
-| 6 | Git auth | **Direct clone of `repo_url`.** No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Never `-c credential.helper=`. **Linux:** helper off. |
+| 6 | Git auth | **Direct clone of the stored public `repo_url`.** Inbound userinfo is not kept on the job. No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Dialog retry uses the same dest (do not delete the partial clone first). Never `-c credential.helper=`. **Linux:** helper off. |
 | 7 | Source branch | Optional. OSM never `ls-remote`s or checks it out. Omit / `-1` / any name: clone default HEAD. Do not invent a branch from `main`. Job-end must not crash the manager. |
 | 8 | Codex | Never. OpenCode only. |
 
@@ -770,8 +770,11 @@ Always put the live id on every callback.
 
 ### 6.1 Direct clone (must)
 
-Clone the request `repo_url` as given. There is no `PAT` field and no
-oauth2 / `http.extraHeader` rewrite.
+Clone the stored public `repo_url` (no userinfo). Inbound
+`user:pass@` is not kept on the job for `git clone`. There is no
+`PAT` field and no oauth2 / `http.extraHeader` rewrite. Windows
+auth-dialog retry uses the same dest (the first failed clone may
+already have created the folder).
 
 For every git child of a job:
 
@@ -875,7 +878,9 @@ See §3.2 for why this is per job and how ports work.
     fail the job **500** now (`text` names the missing model and
     lists what this serve has). No user message. No inner loop. No
     remaining retries. Do not sit on the attempt clock. A later
-    OpenCode `ProviderModelNotFoundError` is the same **500**. If
+    OpenCode `ProviderModelNotFoundError` is the same **500**. The
+    inner poll also scans the message-list blob for that error
+    string (intentional: wrapped serve errors). If
     the inventory endpoints error (not a successful empty list),
     skip the preflight and still treat a later model-not-found
     as **500**.
@@ -1460,6 +1465,9 @@ Sessions, Storage, Settings, issue detail (`/tasks/:key`).
 
 - Same process and `listen_host` / `listen_port` as `POST /jobs`.
 - SPA routes: `/` → `/jobs`, `/jobs`, `/jobs/:jobId`. Nothing else.
+  **`GET /jobs/{job_id}` on the manager port is the n8n poller
+  (JSON envelope), not the SPA.** Job-detail HTML is the :5173
+  frontend proxy. Do not make the poller return `index.html`.
 - Live running jobs and the queue are visible. Terminal jobs stay
   visible after clone delete and after process restart.
 - 409 is only **running or queued**. History rows (including boot

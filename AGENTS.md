@@ -38,6 +38,25 @@ These look like bugs. They are not.
    attempt `timeout_in_seconds`, not hang. Hang is `busy` + not
    compacting + no assistant yet this turn + no new messages / compact
    markers.
+8. **History `repo_url` has no userinfo.** Persist and clone the
+   public URL. Inbound `user:pass@` / Azure `user@` is not kept on
+   the job for `git clone`. Windows uses GCM / the username-password
+   dialog. Linux keeps `credential.helper` empty. After clone, origin
+   is scrubbed the same way. Logs never show userinfo.
+9. **Windows auth retry uses the same dest.** The first `git clone`
+   may create `{work_dir}/{jira_id}` before it fails auth. The
+   dialog retry does **not** delete that folder first. Job-end still
+   hard-deletes the clone.
+10. **Unknown-model detect is a transcript scan.** Each poll runs
+    `looks_like_unknown_model_error` on the message list blob. That
+    is how wrapped `ProviderModelNotFoundError` is caught. A prompt
+    or tool log that literally says “model not found” can fail the
+    job `500` the same way. That is the detector.
+11. **`GET /jobs/{job_id}` is the n8n poller.** JSON envelope, not
+    the SPA. Job-detail HTML is the :5173 frontend proxy
+    (`/jobs/:jobId`) plus `GET /api/jobs/{id}` for data. Backend
+    `listen_port` `/jobs/{id}` staying JSON is required so the
+    poller does not receive `index.html`.
 
 ## Hard rules
 

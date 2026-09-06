@@ -291,15 +291,16 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 ### Single-file exe (Windows + Linux)
 
-A separate CI artifact is the executable plus `settings.local.yaml`
-(no `install.bat`). Keep both in the same folder. Opening the exe
-uses this console as **aMIR-mini Backend** (`:4096`) and opens a second
-console **aMIR-mini Frontend** (`:5173`). If `:4096` (or `:5173`) is
+A separate CI artifact is one zip with the executable and
+`settings.local.yaml` (no `install.bat`). Extract and keep both
+files in the same folder. Opening the exe uses this console as
+**aMIR-mini Backend** (`:4096`) and opens a second console
+**aMIR-mini Frontend** (`:5173`). If `:4096` (or `:5173`) is
 already taken, the exe kills that leftover listener and binds.
 `start.bat` / `start.sh` are unchanged.
 
-- `amir-mini-<version>-windows-x64.exe` + `settings.local.yaml` (`C:\osm`)
-- `amir-mini-<version>-linux-x64` + `settings.local.yaml` (`/var/lib/osm`)
+- `amir-mini-<version>-windows-x64-exe.zip` — exe + `settings.local.yaml` (`C:\osm`)
+- `amir-mini-<version>-linux-x64-exe.zip` — binary + `settings.local.yaml` (`/var/lib/osm`)
 - `amir-mini-<version>-windows-x64-service.zip` — exe + `install-service.bat` + `WinSW.exe` + `settings.local.yaml`. Extract to a permanent folder, then `install-service.bat` (Administrator) for a boot-start service.
 - `amir-mini-<version>-linux-x64-service.zip` — binary + `install-service.sh` + overlay.
 

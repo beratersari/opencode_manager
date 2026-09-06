@@ -114,7 +114,8 @@ def test_ci_uploads_stage_dir_not_nested_zip() -> None:
     assert "path: dist/stage/${{ steps.ver.outputs.dist_name }}-windows-linux/" in text
     assert "settings.local.yaml" in text
     assert "settings.local.windows.yaml" in text
-    assert "path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip" not in text.split("Create GitHub Release")[0]
+    assert "path: dist/${{ steps.ver.outputs.dist_name }}-windows-x64.zip" not in text
+    assert "Create GitHub Release" not in text
 
 
 def test_zip_does_not_stage_agents_folder() -> None:

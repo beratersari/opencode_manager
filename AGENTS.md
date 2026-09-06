@@ -470,29 +470,28 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   host markers still require `uvloop` (no Windows wheel) and the
   whole Windows set is skipped.
 - Additive single-file exe (`packaging/build_exe.py`, same workflow,
-  native Windows + Linux jobs). The GitHub Release ships **one zip
-  per product**, never a bare exe or a loose `settings.local.yaml`:
-  `amir-mini-<ver>-windows-x64-exe.zip` / `*-linux-x64-exe.zip`
-  (binary + `settings.local.yaml`) and
-  `amir-mini-<ver>-windows-x64-service.zip` / `*-linux-x64-service.zip`
-  (binary + overlay + installers; Windows also has
-  `install-service.bat`, `uninstall-service.bat`, `WinSW.exe`).
-  Extract the zip and keep every file in that folder. Opening the
-  two-window binary uses this console as **aMIR-mini Backend**
-  (`:4096`) and opens a second console **aMIR-mini Frontend**
-  (`:5173`) via `opencode_manager.standalone`
-  (`CREATE_NEW_CONSOLE` on Windows). If `listen_port` (or `:5173`)
-  is busy, the exe finds the LISTENING PID (`netstat` / `ss`, not a
-  Win32_Process snapshot) and `kill_pid`s it so this instance can
-  bind. Never this process or ancestors. It does **not** replace
-  the offline installer zip, does **not** change `start.bat` /
-  `start.sh`, and does **not** vendor Git or OpenCode (PATH, plus
+  native Windows + Linux jobs). The GitHub Release ships **only**
+  `amir-mini-<ver>-windows-x64-exe.zip`,
+  `amir-mini-<ver>-linux-x64-exe.zip` (each is the binary +
+  `settings.local.yaml`), and GitHub’s source archive. Do **not**
+  attach the offline installer zips (Python + OpenCode + source,
+  ~100 MB), the OpenCode-only zips, service kits, a bare exe, or a
+  loose overlay. Extract the exe zip and keep both files in that
+  folder. Opening the two-window binary uses this console as
+  **aMIR-mini Backend** (`:4096`) and opens a second console
+  **aMIR-mini Frontend** (`:5173`) via
+  `opencode_manager.standalone` (`CREATE_NEW_CONSOLE` on Windows).
+  If `listen_port` (or `:5173`) is busy, the exe finds the
+  LISTENING PID (`netstat` / `ss`, not a Win32_Process snapshot)
+  and `kill_pid`s it so this instance can bind. Never this process
+  or ancestors. It does **not** change `start.bat` / `start.sh`,
+  and does **not** vendor Git or OpenCode (PATH, plus
   `~/.opencode/bin` prepended). Build on that OS — no
-  cross-compile. `agents/` is not in the exe. Extract the service
-  zip to a permanent folder and run `install-service.bat`
-  (elevated) for a boot-start service. Windows does **not** fall
-  back to `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not
-  writable, the exe falls back to `$XDG_DATA_HOME/osm` or
+  cross-compile. `agents/` is not in the exe. Offline and service
+  zips may still be built by CI as workflow artifacts, not Release
+  assets. Windows does **not** fall back to
+  `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not writable,
+  the exe falls back to `$XDG_DATA_HOME/osm` or
   `~/.local/share/osm`.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
@@ -574,13 +573,13 @@ change.
 
 ## Releases
 
-- A GitHub Release is not done until the product files are on the
-  release page as **zips only** (no bare exe, no loose
-  `settings.local.yaml`): `amir-mini-<ver>-*-exe.zip` (binary +
-  config), `amir-mini-<ver>-*-service.zip` (binary + config +
-  service installers), and the offline installer zips Offline
-  Distribution publishes. Do not tell the user the release is
-  ready while Assets is empty.
+- A GitHub Release is not done until these files are on the page:
+  `amir-mini-<ver>-windows-x64-exe.zip`,
+  `amir-mini-<ver>-linux-x64-exe.zip` (binary + config each), and
+  GitHub’s source archive. Do **not** attach offline installer
+  zips, OpenCode-only zips, service kits, a bare exe, or
+  `settings.local.yaml` as its own download. Do not tell the user
+  the release is ready while those two exe zips are missing.
 - Do not publish “CI will attach later” and walk away. If the tag
   workflow does not start or fails, fix it, re-run or move the tag
   onto a commit whose workflow parses, and confirm the files are

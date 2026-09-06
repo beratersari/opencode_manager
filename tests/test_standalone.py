@@ -355,7 +355,9 @@ def test_ci_uploads_single_exe_artifact() -> None:
     attach = text.split("attach-exe-release:")[-1]
     assert "settings.local.windows.yaml" not in attach
     assert "settings.local.linux.yaml" not in attach
-    assert "*.zip" in attach
+    assert "*-exe.zip" in attach
+    assert "-service.zip" not in attach
+    assert "opencode-1.18.10" not in attach
 
 
 def test_write_service_kit_has_windows_files(tmp_path: Path) -> None:

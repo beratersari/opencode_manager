@@ -250,10 +250,11 @@ listen is `0.0.0.0:4096` in `settings.yaml`.
 
 ### Offline zip (no network on the target)
 
-CI workflow **Offline Distribution** builds **four** payloads. A GitHub
-Actions artifact download is one zip of the folder (`install.bat` /
-`vendor/` at the top). Tag **Releases** attach the four `.zip` files
-directly. Download the one for your OS (or the combined Windows+Linux zip):
+CI workflow **Offline Distribution** still builds **four** payloads
+as Actions artifacts (`install.bat` / `vendor/` at the top). They
+are **not** attached to the GitHub Release (too large; they vendor
+Python, OpenCode, and the source tree). Build them locally with
+`packaging/build_dist.py` if you need an offline installer:
 
 - `amir-mini-<version>-windows-x64.zip`
 - `amir-mini-<version>-linux-x64.zip`
@@ -291,18 +292,17 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 
 ### Single-file exe (Windows + Linux)
 
-A separate CI artifact is one zip with the executable and
-`settings.local.yaml` (no `install.bat`). Extract and keep both
-files in the same folder. Opening the exe uses this console as
-**aMIR-mini Backend** (`:4096`) and opens a second console
-**aMIR-mini Frontend** (`:5173`). If `:4096` (or `:5173`) is
-already taken, the exe kills that leftover listener and binds.
-`start.bat` / `start.sh` are unchanged.
+The GitHub Release is **only** these two zips plus source:
 
 - `amir-mini-<version>-windows-x64-exe.zip` — exe + `settings.local.yaml` (`C:\osm`)
 - `amir-mini-<version>-linux-x64-exe.zip` — binary + `settings.local.yaml` (`/var/lib/osm`)
-- `amir-mini-<version>-windows-x64-service.zip` — exe + `install-service.bat` + `WinSW.exe` + `settings.local.yaml`. Extract to a permanent folder, then `install-service.bat` (Administrator) for a boot-start service.
-- `amir-mini-<version>-linux-x64-service.zip` — binary + `install-service.sh` + overlay.
+
+Extract and keep both files in the same folder. Opening the exe
+uses this console as **aMIR-mini Backend** (`:4096`) and opens a
+second console **aMIR-mini Frontend** (`:5173`). If `:4096` (or
+`:5173`) is already taken, the exe kills that leftover listener
+and binds. `start.bat` / `start.sh` are unchanged. GitHub also
+attaches the source archive.
 
 Git and OpenCode stay on PATH (the exe prepends `~/.opencode/bin`).
 Windows always uses `C:\osm` unless you change the overlay. On Linux,

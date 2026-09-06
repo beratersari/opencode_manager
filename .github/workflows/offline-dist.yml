@@ -249,43 +249,7 @@ jobs:
             dist/${{ steps.ver.outputs.dist_name }}-windows-linux.zip
             dist/amir-mini-opencode-1.18.10-windows-x64.zip
             dist/amir-mini-opencode-1.18.10-linux-x64.zip
-          generate_release_notes: true
           fail_on_unmatched_files: true
-          body: |
-            ## Offline installer
-
-            Download the zip for your OS (or the combined Windows+Linux zip):
-
-            - `${{ steps.ver.outputs.dist_name }}-windows-x64.zip`
-            - `${{ steps.ver.outputs.dist_name }}-linux-x64.zip`
-            - `${{ steps.ver.outputs.dist_name }}-darwin.zip` (Apple Silicon + Intel)
-            - `${{ steps.ver.outputs.dist_name }}-windows-linux.zip` (Windows + Linux together)
-
-            1. Extract once. Install Git. Python is in the zip (`vendor/python/`).
-            2. Windows: `install.bat` then `install-opencode.bat`
-               macOS / Linux: `./install.sh` then `./install-opencode.sh`
-            3. `start.bat` / `./start.sh`
-               - API + SPA: http://127.0.0.1:8080/jobs
-               - Optional SPA proxy: http://127.0.0.1:5173/
-
-            ## Single-file exe (Windows + Linux)
-
-            Also attached: `${{ steps.ver.outputs.dist_name }}-windows-x64.exe` and
-            `${{ steps.ver.outputs.dist_name }}-linux-x64`. One file, no `install.bat`.
-            Still needs Git and OpenCode on PATH. Starts API + SPA and the :5173 proxy.
-
-            Permanent Windows service (starts at boot): extract
-            `${{ steps.ver.outputs.dist_name }}-windows-x64-service.zip`
-            to a fixed folder and run `install-service.bat` as Administrator.
-            That zip has the exe, `install-service.bat`, `WinSW.exe`, and
-            `settings.local.yaml` (`C:\osm`).
-
-            ## Offline OpenCode 1.18.10 installer
-
-            Separate artifact (OpenCode CLI only, always 1.18.10):
-
-            - `amir-mini-opencode-1.18.10-windows-x64.zip` — `install.bat`
-            - `amir-mini-opencode-1.18.10-linux-x64.zip` — `./install.sh`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -367,21 +331,21 @@ jobs:
             exit 1
           fi
           python - "$kit" "$suffix" <<'PY'
-import sys, zipfile
-path, suffix = sys.argv[1], sys.argv[2]
-names = set(zipfile.ZipFile(path).namelist())
-need = {"README.txt", "settings.local.yaml"}
-if suffix == "windows-x64":
-    need.update({"install-service.bat", "uninstall-service.bat", "WinSW.exe"})
-    if not any(n.endswith(".exe") and n != "WinSW.exe" for n in names):
-        raise SystemExit(f"{path} missing payload exe; has {sorted(names)}")
-else:
-    need.update({"install-service.sh", "uninstall-service.sh"})
-missing = sorted(need - names)
-if missing:
-    raise SystemExit(f"{path} missing {missing}; has {sorted(names)}")
-print("OK kit", path, "members", sorted(names))
-PY
+          import sys, zipfile
+          path, suffix = sys.argv[1], sys.argv[2]
+          names = set(zipfile.ZipFile(path).namelist())
+          need = {"README.txt", "settings.local.yaml"}
+          if suffix == "windows-x64":
+              need.update({"install-service.bat", "uninstall-service.bat", "WinSW.exe"})
+              if not any(n.endswith(".exe") and n != "WinSW.exe" for n in names):
+                  raise SystemExit(f"{path} missing payload exe; has {sorted(names)}")
+          else:
+              need.update({"install-service.sh", "uninstall-service.sh"})
+          missing = sorted(need - names)
+          if missing:
+              raise SystemExit(f"{path} missing {missing}; has {sorted(names)}")
+          print("OK kit", path, "members", sorted(names))
+          PY
           count=$(find dist -maxdepth 1 -type f ! -name '*.spec' | wc -l)
           echo "OK $file ($(du -h "$file" | awk '{print $1}')) files_in_dist_root=$count"
 

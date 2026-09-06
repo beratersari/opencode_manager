@@ -470,13 +470,17 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   host markers still require `uvloop` (no Windows wheel) and the
   whole Windows set is skipped.
 - Additive single-file exe (`packaging/build_exe.py`, same workflow,
-  native Windows + Linux jobs). The GitHub Release ships **only**
-  `amir-mini-<ver>-windows-x64-exe.zip`,
-  `amir-mini-<ver>-linux-x64-exe.zip` (each is the binary +
-  `settings.local.yaml`), and GitHub’s source archive. Do **not**
-  attach the offline installer zips (Python + OpenCode + source,
-  ~100 MB), the OpenCode-only zips, service kits, a bare exe, or a
-  loose overlay. Extract the exe zip and keep both files in that
+  native Windows + Linux jobs). The GitHub Release ships
+  `amir-mini-<ver>-windows-x64-exe.zip` /
+  `amir-mini-<ver>-linux-x64-exe.zip` (binary +
+  `settings.local.yaml`),
+  `amir-mini-<ver>-windows-x64-service.zip` /
+  `amir-mini-<ver>-linux-x64-service.zip` (binary + config +
+  service installers; Windows also has `install-service.bat`,
+  `uninstall-service.bat`, `WinSW.exe`), and GitHub’s source
+  archive. Do **not** attach the offline installer zips (Python +
+  OpenCode + source, ~100 MB), the OpenCode-only zips, a bare exe,
+  or a loose overlay. Extract a zip and keep every file in that
   folder. Opening the two-window binary uses this console as
   **aMIR-mini Backend** (`:4096`) and opens a second console
   **aMIR-mini Frontend** (`:5173`) via
@@ -487,12 +491,13 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   or ancestors. It does **not** change `start.bat` / `start.sh`,
   and does **not** vendor Git or OpenCode (PATH, plus
   `~/.opencode/bin` prepended). Build on that OS — no
-  cross-compile. `agents/` is not in the exe. Offline and service
-  zips may still be built by CI as workflow artifacts, not Release
-  assets. Windows does **not** fall back to
-  `%LOCALAPPDATA%\osm`. If Linux `/var/lib/osm` is not writable,
-  the exe falls back to `$XDG_DATA_HOME/osm` or
-  `~/.local/share/osm`.
+  cross-compile. `agents/` is not in the exe. Offline zips may
+  still be built by CI as workflow artifacts, not Release assets.
+  Extract the service zip to a permanent folder and run
+  `install-service.bat` (elevated) for a boot-start service.
+  Windows does **not** fall back to `%LOCALAPPDATA%\osm`. If Linux
+  `/var/lib/osm` is not writable, the exe falls back to
+  `$XDG_DATA_HOME/osm` or `~/.local/share/osm`.
 - No npm on the target. `start-frontend` is the Python SPA proxy
   (`dashboard.frontend_proxy`), not Vite.
 - Do not vendor Git, Codex, `glab`, portable Node, or
@@ -575,11 +580,13 @@ change.
 
 - A GitHub Release is not done until these files are on the page:
   `amir-mini-<ver>-windows-x64-exe.zip`,
-  `amir-mini-<ver>-linux-x64-exe.zip` (binary + config each), and
-  GitHub’s source archive. Do **not** attach offline installer
-  zips, OpenCode-only zips, service kits, a bare exe, or
+  `amir-mini-<ver>-linux-x64-exe.zip` (binary + config),
+  `amir-mini-<ver>-windows-x64-service.zip`,
+  `amir-mini-<ver>-linux-x64-service.zip` (binary + config +
+  installers), and GitHub’s source archive. Do **not** attach
+  offline installer zips, OpenCode-only zips, a bare exe, or
   `settings.local.yaml` as its own download. Do not tell the user
-  the release is ready while those two exe zips are missing.
+  the release is ready while those four product zips are missing.
 - Do not publish “CI will attach later” and walk away. If the tag
   workflow does not start or fails, fix it, re-run or move the tag
   onto a commit whose workflow parses, and confirm the files are

@@ -368,7 +368,7 @@ jobs:
           mkdir -p release-exes
           for dir in dist-exes/*; do
             [ -d "$dir" ] || continue
-            find "$dir" -maxdepth 1 -type f -name '*-exe.zip' -exec cp {} release-exes/ \;
+            find "$dir" -maxdepth 1 -type f \( -name '*-exe.zip' -o -name '*-service.zip' \) -exec cp {} release-exes/ \;
           done
           ls -la release-exes
           test -n "$(ls -A release-exes/*.zip 2>/dev/null)"

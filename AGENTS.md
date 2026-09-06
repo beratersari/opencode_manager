@@ -231,6 +231,14 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 
 Empty / non-`ses_*` / Codex UUID when we have no live id = create new, not an error.
 
+Before the first user POST of an attempt, list session messages for
+the turn baseline (last assistant id already in this `ses_*`). If
+that list **fails** on a resumed or already-bound `ses_*`, **fail
+this attempt** (`transport`). Do not treat an empty list as “no
+prior assistant” — the previous job’s `finish=stop` would be
+shipped as this job. A **newly created** session may continue with
+an empty baseline.
+
 ### Prompts
 
 The incoming `prompt` (`ORIGINAL`) is sent **once**, the first time a

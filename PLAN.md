@@ -755,6 +755,13 @@ a live `ses_*`)
   otherwise `ORIGINAL` (session was created, then the serve died
   before the task POST).
 
+Before the first user POST of an attempt, list messages for the
+turn baseline (last assistant already on this `ses_*`). If that
+list fails on a **resumed or already-bound** session, fail the
+attempt (`transport`). An empty baseline would make `assess_idle`
+treat the previous job’s `finish=stop` as this turn. A newly
+created session may continue with an empty baseline.
+
 Always put the live id on every callback.
 
 ---

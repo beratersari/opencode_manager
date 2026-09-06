@@ -51,6 +51,7 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Compact-as-busy does not hang the attempt | `test_inner_loop_does_not_hang_while_session_time_compacting` |
 | Hang does not fire after an assistant this turn | `test_hang_does_not_fire_after_assistant_this_turn` |
 | Follow-up on a resumed `ses_*` must not ship the previous job's `stop` text | `test_resumed_session_idle_old_stop_is_not_this_job_success`, `test_this_turn_text_does_not_copy_prior_assistant` |
+| Failed baseline `list_messages` on a resumed / already-bound `ses_*` is `transport`, not previous-job `200` | `tests/test_baseline_followup.py` |
 | Killed serve on a follow-up is `serve-dead` (new serve), not prior `stop` success | `test_inner_loop_killed_serve_is_not_prior_success`, `test_killed_serve_retries_new_serve_not_previous_text` |
 | Live: external kill of this job's serve starts a new serve that answers | `test_live_killed_serve_starts_new_serve_and_replies` |
 | Live: follow-up + killed serve does not callback the previous job text | `test_live_followup_killed_serve_does_not_reuse_prior_text` |

@@ -1069,7 +1069,7 @@ Clone the repo for reference only. Do not import it as a dependency.
 - GitHub Release on `v*` tags attaches those zips and exes. The
   release body is a hand-written changelog (no commit dump, no
   `generate_release_notes`). Workflow `branches:` filters must
-  match the default branch (`main`). A release with an empty
+  include the default branch (`develop`) and `main`. A release with an empty
   Assets list is not done.
 
 **Do not copy**

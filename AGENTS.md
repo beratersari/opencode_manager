@@ -521,9 +521,9 @@ change.
 
 ## Git branches and GitHub
 
-- Default branch is `main`. Day-to-day work is `develop`. Do not
-  push commits to `main`; open a pull request from `develop` (or a
-  topic branch) into `main`.
+- Default branch is `develop`. Day-to-day work is `develop`. `main`
+  is the release branch. Do not push commits to `main`; open a
+  pull request from `develop` (or a topic branch) into `main`.
 - After renaming a branch, **in the same change** grep the whole
   repo for the old name. Update every `.github/workflows/*`
   `on.push.branches` / `on.pull_request.branches` filter, plus

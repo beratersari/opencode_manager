@@ -1072,17 +1072,16 @@ Clone the repo for reference only. Do not import it as a dependency.
   bundled interpreter (`--no-index`).
 - additive single-file exe (Windows + Linux only): PyInstaller
   onefile from `packaging/build_exe.py`. Same workflow, native
-  runners. The release attaches **one zip per product**, never a
-  bare binary or a loose overlay: `*-exe.zip` (binary +
-  `settings.local.yaml`) and `*-service.zip` (binary + overlay +
-  `install-service.*`; Windows also has WinSW). Starts backend in
-  this console and the :5173 proxy in a second
-  window. A busy listen port is freed by killing that listener
-  (`kill_pid` / `may_kill`). Does not replace the offline
-  installer zip or change `start.bat` / `start.sh`. Git and
-  OpenCode stay on PATH. Windows `data_dir` is `C:\osm` (no
-  AppData fallback).
-- GitHub Release on `v*` tags attaches those zips. The
+  runners. The GitHub Release attaches **only**
+  `*-windows-x64-exe.zip` and `*-linux-x64-exe.zip` (binary +
+  `settings.local.yaml` each) plus GitHub’s source archive. Do not
+  attach offline installer zips, OpenCode-only zips, or service
+  kits. Starts backend in this console and the :5173 proxy in a
+  second window. A busy listen port is freed by killing that
+  listener (`kill_pid` / `may_kill`). Does not change
+  `start.bat` / `start.sh`. Git and OpenCode stay on PATH. Windows
+  `data_dir` is `C:\osm` (no AppData fallback).
+- GitHub Release on `v*` tags attaches those two exe zips. The
   release body is a hand-written changelog (no commit dump, no
   `generate_release_notes`). Workflow `branches:` filters must
   include the default branch (`develop`) and `main`. A release with an empty

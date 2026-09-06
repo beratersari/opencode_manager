@@ -251,6 +251,32 @@ def turn_has_new_assistant(messages: List[Dict[str, Any]], baseline_id: str) -> 
     return bool(got and got != (baseline_id or ""))
 
 
+# finish=null / empty is a stub or mid-stream. tool-calls / length are a real turn.
+_UNFINISHED_FINISH = frozenset({"tool-calls", "tool_calls", "length", "max_tokens", "max-tokens"})
+
+
+def assistant_turn_is_substantive(
+    messages: List[Dict[str, Any]],
+    baseline_id: str = "",
+) -> bool:
+    """True when this turn's assistant is more than an empty OpenCode stub.
+
+    OpenCode often inserts an assistant id with no ``finish`` and no text
+    immediately after a user POST. That is not "this turn answered" and
+    must not flip ``awaiting_turn`` or spend an incomplete retry.
+    """
+    turn = messages_after_id(messages, baseline_id)
+    for message in reversed(turn):
+        info = _info(message)
+        if (info.get("role") or message.get("role")) != "assistant":
+            continue
+        finish = str(info.get("finish") or message.get("finish") or "").strip().lower()
+        if finish == "stop" or finish in _UNFINISHED_FINISH:
+            return True
+        return False
+    return False
+
+
 def last_assistant_id(messages: List[Dict[str, Any]]) -> str:
     for message in reversed(messages):
         info = _info(message)

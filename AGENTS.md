@@ -33,11 +33,32 @@ These look like bugs. They are not.
    logs, attempts). It never starts or stops work. History outlives
    the clone.
 7. **Hang clock is “never started answering.”** Once this turn has a
-   new assistant message (id ≠ the pre-POST baseline), that counts as
-   progress for the rest of the wait. A frozen mid-generation is the
-   attempt `timeout_in_seconds`, not hang. Hang is `busy` + not
-   compacting + no assistant yet this turn + no new messages / compact
-   markers.
+   **substantive** assistant (a real `finish`, not an empty OpenCode
+   stub with no `finish` and no text), that counts as progress for
+   the rest of the wait. A frozen mid-generation is the attempt
+   `timeout_in_seconds`, not hang. Hang is `busy` + not compacting +
+   no substantive assistant yet this turn + no new messages / compact
+   markers. An immediate blank assistant id after POST is not
+   progress and is not `incomplete`.
+8. **History `repo_url` has no userinfo.** Persist and clone the
+   public URL. Inbound `user:pass@` / Azure `user@` is not kept on
+   the job for `git clone`. Windows uses GCM / the username-password
+   dialog. Linux keeps `credential.helper` empty. After clone, origin
+   is scrubbed the same way. Logs never show userinfo.
+9. **Windows auth retry uses the same dest.** The first `git clone`
+   may create `{work_dir}/{jira_id}` before it fails auth. The
+   dialog retry does **not** delete that folder first. Job-end still
+   hard-deletes the clone.
+10. **Unknown-model detect is a transcript scan.** Each poll runs
+    `looks_like_unknown_model_error` on the message list blob. That
+    is how wrapped `ProviderModelNotFoundError` is caught. A prompt
+    or tool log that literally says “model not found” can fail the
+    job `500` the same way. That is the detector.
+11. **`GET /jobs/{job_id}` is the n8n poller.** JSON envelope, not
+    the SPA. Job-detail HTML is the :5173 frontend proxy
+    (`/jobs/:jobId`) plus `GET /api/jobs/{id}` for data. Backend
+    `listen_port` `/jobs/{id}` staying JSON is required so the
+    poller does not receive `index.html`.
 
 ## Hard rules
 
@@ -231,6 +252,14 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 
 Empty / non-`ses_*` / Codex UUID when we have no live id = create new, not an error.
 
+Before the first user POST of an attempt, list session messages for
+the turn baseline (last assistant id already in this `ses_*`). If
+that list **fails** on a resumed or already-bound `ses_*`, **fail
+this attempt** (`transport`). Do not treat an empty list as “no
+prior assistant” — the previous job’s `finish=stop` would be
+shipped as this job. A **newly created** session may continue with
+an empty baseline.
+
 ### Prompts
 
 The incoming `prompt` (`ORIGINAL`) is sent **once**, the first time a
@@ -248,6 +277,9 @@ not attempt number. Never send it again after that one POST.
 Exact strings: PLAN.md §5.3. Do not invent a fifth resume prompt.
 
 Never POST a user message while the session is `busy` / compacting.
+  Exception: `INCOMPLETE_RESUME` **waits** until idle (up to
+  `hang_timeout_seconds`) instead of failing immediately — the first
+  ORIGINAL may still be running. Other prompts still refuse at once.
 
 ### Compact vs hang
 
@@ -280,17 +312,22 @@ Never POST a user message while the session is `busy` / compacting.
   — do not require a `compacting` status type. Do **not** run the
   hang clock (compact may last minutes with no new markers).
 - Hang watchdog: `busy` **and not compacting** **and** no new
-  message / compact marker **and no assistant yet this turn** for
-  `hang_timeout_seconds` → **outer retry**: abort → kill **this**
-  serve → new serve, same path. An assistant id that appeared after
-  the POST is progress (intentional; see product choice 7).
+  message / compact marker **and no substantive assistant yet this
+  turn** for `hang_timeout_seconds` → **outer retry**: abort → kill
+  **this** serve → new serve, same path. A blank stub assistant id
+  is not progress. A real `finish` after the POST is (see product
+  choice 7).
   If `ORIGINAL` was already POSTed: same `session_id` → `HANG_RESUME`.
   If `ORIGINAL` was never POSTed: create if we have no live id, then
   send `ORIGINAL`. Same if serve is dead.
 - Incomplete (session **idle**, last finish unfinished — `tool-calls`,
-  `length` / max tokens, null, not a clean `stop` — not compact,
+  `length` / max tokens, not a clean `stop` — not compact,
   not still-asking): **same serve**, POST `INCOMPLETE_RESUME`. Do
   **not** abort or kill serve. Counts against `retry_count`.
+  An empty stub assistant (`finish` missing, no text) is **not**
+  incomplete — wait for busy, a real finish, or the attempt clock.
+  If `INCOMPLETE_RESUME` would POST while `busy`, wait until idle
+  (up to hang timeout) instead of failing that attempt immediately.
 - Still asking after the one nudge, or compact-related leftover after
   inner handling: fail the job. No `INCOMPLETE_RESUME`.
 - Clean `stop` + only leftover OpenCode todos: success (text product).
@@ -521,9 +558,9 @@ change.
 
 ## Git branches and GitHub
 
-- Default branch is `main`. Day-to-day work is `develop`. Do not
-  push commits to `main`; open a pull request from `develop` (or a
-  topic branch) into `main`.
+- Default branch is `develop`. Day-to-day work is `develop`. `main`
+  is the release branch. Do not push commits to `main`; open a
+  pull request from `develop` (or a topic branch) into `main`.
 - After renaming a branch, **in the same change** grep the whole
   repo for the old name. Update every `.github/workflows/*`
   `on.push.branches` / `on.pull_request.branches` filter, plus

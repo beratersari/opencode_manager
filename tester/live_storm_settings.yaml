@@ -1,0 +1,13 @@
+listen_host: 127.0.0.1
+listen_port: 4097
+max_concurrent_jobs: 4
+callback_timeout_seconds: 10
+callback_retry_count: 2
+callback_allowed_hosts: ["*"]
+data_dir: tmp-live-storm
+log_level: INFO
+opencode_bin: opencode
+hang_timeout_seconds: 180
+git_clone_timeout_seconds: 300
+retry_backoff_seconds: 2
+retry_backoff_cap_seconds: 20

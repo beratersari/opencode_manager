@@ -24,5 +24,7 @@ web/dist/
 htmlcov/
 .DS_Store
 tester/replies.jsonl
+tester/live_storm*_report.json
+/tmp-live-storm/
 settings.local.yaml
 /vendor/

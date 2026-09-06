@@ -1,21 +1,41 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { fetchMeta } from '../api/client'
 import { ReportIssue } from '../ui/ReportIssue'
 import { useLive } from './live'
 
+const FALLBACK_NAME = 'aMIR-mini'
+
 export function Shell() {
   const live = useLive()
+  const [brand, setBrand] = useState({ app_name: FALLBACK_NAME, version: '' })
+
+  useEffect(() => {
+    let cancelled = false
+    fetchMeta()
+      .then((meta) => {
+        if (cancelled) return
+        setBrand({
+          app_name: (meta.app_name || '').trim() || FALLBACK_NAME,
+          version: (meta.version || '').trim(),
+        })
+      })
+      .catch(() => {
+        /* keep fallback name; version stays empty */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <div className="vd-app">
       <aside className="vd-sidebar">
         <div className="vd-brand">
-          <div className="vd-mark">aM</div>
-          <div>
-            <div className="text-sm font-semibold">aMIR-mini</div>
-            <div className="text-[11px] text-text-muted">
-              {live.connected ? 'live' : 'offline'}
-              {live.running ? ` · ${live.running} running` : ''}
-            </div>
-          </div>
+          <div className="text-sm font-semibold">{brand.app_name}</div>
+          {brand.version ? (
+            <div className="text-[11px] text-text-muted">{brand.version}</div>
+          ) : null}
         </div>
         <nav className="vd-nav">
           <NavLink to="/jobs" className={({ isActive }) => (isActive ? 'active' : '')}>

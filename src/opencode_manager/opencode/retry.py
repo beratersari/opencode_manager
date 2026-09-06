@@ -20,6 +20,7 @@ from opencode_manager.opencode.session import (
     last_assistant_id,
     last_assistant_text,
     last_assistant_text_since,
+    assistant_turn_is_substantive,
     model_is_known,
     turn_has_new_assistant,
     session_is_busy,
@@ -282,7 +283,18 @@ def run_opencode_job(
                     baseline_assistant or "(none)",
                     compact_floor if compact_floor is not None else "(unknown)",
                 )
-                _post_user(job, client, store, prompt_id, text)
+                _post_user(
+                    job,
+                    client,
+                    store,
+                    prompt_id,
+                    text,
+                    wait_busy_seconds=(
+                        float(settings.hang_timeout_seconds)
+                        if prompt_id == "INCOMPLETE_RESUME"
+                        else 0.0
+                    ),
+                )
                 outcome = _inner_loop(
                     job,
                     client,
@@ -404,17 +416,29 @@ def _post_user(
     store: JobStore,
     prompt_id: str,
     text: str,
+    *,
+    wait_busy_seconds: float = 0.0,
 ) -> None:
-    status = client.status()
-    if session_is_busy(status, job.session_id):
-        log_fail(
-            logger,
-            "refuse POST user message; session busy",
-            prompt_id=prompt_id,
-            session=job.session_id,
-            status=status,
+    deadline = time.time() + max(0.0, float(wait_busy_seconds))
+    while True:
+        status = client.status()
+        if not session_is_busy(status, job.session_id):
+            break
+        if time.time() >= deadline:
+            log_fail(
+                logger,
+                "refuse POST user message; session busy",
+                prompt_id=prompt_id,
+                session=job.session_id,
+                status=status,
+            )
+            raise AttemptFailed("hang", "session busy; refusing to POST a user message")
+        logger.info(
+            "defer POST %s; session busy, waiting up to %.0fs",
+            prompt_id,
+            max(0.0, deadline - time.time()),
         )
-        raise AttemptFailed("hang", "session busy; refusing to POST a user message")
+        time.sleep(0.4)
     logger.info(
         "POST user message prompt_id=%s chars=%s model=%s agent=%s session=%s preview=%s",
         prompt_id,
@@ -529,13 +553,19 @@ def _inner_loop(
             raise JobFailed(500, unknown_model_message(job.model, []))
         text = last_assistant_text_since(messages, baseline_assistant_id)
         new_assistant = False
+        substantive = False
         if listed_ok:
             new_assistant = turn_has_new_assistant(messages, baseline_assistant_id)
-            if new_assistant:
+            substantive = assistant_turn_is_substantive(
+                messages, baseline_assistant_id
+            )
+            # Empty OpenCode stub (id, no finish, no text) is not progress.
+            if substantive:
                 answered_this_turn = True
         elif answered_this_turn:
             new_assistant = True
-        if new_assistant and text:
+            substantive = True
+        if substantive and text:
             job.text = text
         _save(store, job)
 
@@ -557,12 +587,12 @@ def _inner_loop(
         elif not listed_ok and (answered_this_turn or compacting):
             last_progress = time.time()
             hang_started = None
-        if new_assistant:
+        if substantive:
             awaiting_turn = False
             new_assistant_logs += 1
             if _log_every(new_assistant_logs):
                 logger.info(
-                    "new assistant after this turn id=%s poll=%s",
+                    "substantive assistant after this turn id=%s poll=%s",
                     last_assistant_id(messages),
                     new_assistant_logs,
                 )
@@ -595,7 +625,7 @@ def _inner_loop(
             awaiting_turn = False
             # Mid-generation (assistant already this turn) is the attempt
             # clock, not hang. Latch survives a later list_messages failure.
-            if answered_this_turn or new_assistant:
+            if answered_this_turn or substantive:
                 hang_started = None
                 time.sleep(1.0)
                 continue

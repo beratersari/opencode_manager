@@ -51,6 +51,37 @@ def test_put_settings_rejects_bad_model(tmp_settings: Settings) -> None:
         assert bad.status_code == 400
 
 
+def test_review_timeout_does_not_change_n8n_job_timeout(tmp_settings: Settings) -> None:
+    app = create_app(tmp_settings, runner=N8nRunner())
+    with TestClient(app) as client:
+        client.put(
+            "/api/settings",
+            json={
+                "review_model": "opencode/big-pickle",
+                "review_timeout_seconds": 90,
+                "review_agent": "code-reviewer",
+            },
+        )
+        assert client.get("/api/settings").json()["review_timeout_seconds"] == 90
+        res = client.post(
+            "/jobs",
+            json={
+                "repo_url": "https://example.com/repo.git",
+                "prompt": "do the work",
+                "model": "opencode/big-pickle",
+                "agent_mode": "orchestrator",
+                "timeout_in_seconds": 1800,
+                "retry_count": 1,
+                "jira_id": "TO-1",
+            },
+        )
+        assert res.status_code == 202
+        job = app.state.manager.store.get(res.json()["job_id"])
+        assert job is not None
+        assert job.timeout_in_seconds == 1800
+        assert job.job_kind != "review"
+
+
 def test_packaging_local_templates_list_review_and_auth_fields() -> None:
     from pathlib import Path
 
@@ -65,3 +96,4 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
             "dashboard_token",
         ):
             assert key in text, f"{name} missing {key}"
+            assert f"\n{key}:" in text or text.startswith(f"{key}:"), f"{name} comments out {key}"

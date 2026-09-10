@@ -8,6 +8,12 @@ describe('jobMatchesFilter', () => {
     expect(jobMatchesFilter({ status: 'queued', live: true }, 'queue')).toBe(true)
   })
 
+  it('matches review jobs only on the review tab', () => {
+    expect(jobMatchesFilter({ status: 'success', job_kind: 'review' }, 'review')).toBe(true)
+    expect(jobMatchesFilter({ status: 'success', job_kind: 'ticket' }, 'review')).toBe(false)
+    expect(jobMatchesFilter({ status: 'success' }, 'review')).toBe(false)
+  })
+
   it('groups error statuses', () => {
     expect(jobMatchesFilter({ status: 'error' }, 'error')).toBe(true)
     expect(jobMatchesFilter({ status: 'timeout' }, 'error')).toBe(true)

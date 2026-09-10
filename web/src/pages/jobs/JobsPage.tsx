@@ -153,7 +153,20 @@ export function JobsPage() {
                   <span className="font-mono text-sm font-semibold">{j.jira_id}</span>
                   {j.live && <LiveDot />}
                   <StatusBadge status={j.status} size="sm" />
+                  {j.job_kind === 'review' ? (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                      Review
+                    </span>
+                  ) : null}
                 </div>
+                {j.source || j.mr_title ? (
+                  <div className="mt-1 truncate text-xs text-text">
+                    {j.source || j.mr_title}
+                    {j.provider ? (
+                      <span className="ml-2 font-mono text-[11px] text-text-muted">{j.provider}</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-1 font-mono text-[11px] text-text-muted">
                   {j.job_id} · {j.agent_mode} · {j.model} · {formatJobElapsed(j, now)}
                   {j.started_at || j.accepted_at

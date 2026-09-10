@@ -37,6 +37,13 @@ export type JobItem = {
   text?: string
   original_posted?: boolean
   attempts?: AttemptRow[]
+  job_kind?: string
+  source?: string
+  provider?: string
+  web_url?: string
+  mr_title?: string
+  trigger?: string
+  mr_key?: string
 }
 
 export type JobsPayload = {

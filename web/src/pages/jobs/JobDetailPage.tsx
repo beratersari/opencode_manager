@@ -200,11 +200,14 @@ function Overview({ job, elapsed }: { job: JobItem; elapsed: string }) {
         <MetaCard label="Status" valueNode={<StatusBadge status={job.status} />} />
         <MetaCard label="Elapsed" mono value={elapsed} />
         <MetaCard label="Jira" mono value={job.jira_id} />
+        <MetaCard label="Source" mono value={job.source || job.mr_title || '—'} />
+        <MetaCard label="Provider" value={job.provider || (job.job_kind === 'review' ? 'gitlab' : '—')} />
+        <MetaCard label="Trigger" value={job.trigger || job.job_kind || '—'} />
         <MetaCard label="Agent" value={job.agent_mode || '—'} />
         <MetaCard label="Model" mono value={job.model || '—'} />
         <MetaCard label="Session" mono value={job.session_id || '—'} />
         <MetaCard label="Branch" mono value={job.source_branch || '—'} />
-        <MetaCard label="Repo" mono className="sm:col-span-2" value={job.repo_url || '—'} />
+        <MetaCard label="Repo" mono className="sm:col-span-2" value={job.web_url || job.repo_url || '—'} />
         <MetaCard label="Clone" mono className="sm:col-span-2 lg:col-span-3" value={job.clone_path || '—'} />
         <MetaCard label="Serve" mono value={job.serve_port ? `${job.serve_pid}@${job.serve_port}` : '—'} />
         <MetaCard label="Attempt" value={`${job.attempt || 1} / ${job.retry_count || 1}`} />

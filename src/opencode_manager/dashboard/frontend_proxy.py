@@ -51,6 +51,28 @@ def media_type_for_path(path: Path) -> Optional[str]:
     return mimetypes.types_map.get(path.suffix.lower()) or mimetypes.guess_type(str(path))[0]
 
 
+def backend_ws_headers(headers: object) -> dict[str, str]:
+    """Copy browser login onto the backend /ws upgrade.
+
+    :5173 is a different origin from :4096. Without Cookie / Bearer here,
+    dashboard auth accepts /api/* and then rejects live updates.
+    """
+    get = getattr(headers, "get", None)
+    if not callable(get):
+        return {}
+    out: dict[str, str] = {}
+    cookie = str(get("cookie") or "").strip()
+    if cookie:
+        out["Cookie"] = cookie
+    auth = str(get("authorization") or "").strip()
+    if auth:
+        out["Authorization"] = auth
+    token = str(get("x-amir-mini-token") or get("x-creasy-token") or "").strip()
+    if token:
+        out["X-Amir-Mini-Token"] = token
+    return out
+
+
 def build_app(*, dist: Path, backend: str) -> FastAPI:
     ensure_spa_mimetypes()
     backend = backend.rstrip("/")
@@ -148,6 +170,7 @@ def build_app(*, dist: Path, backend: str) -> FastAPI:
                 ws_backend,
                 open_timeout=10,
                 ping_interval=20,
+                additional_headers=backend_ws_headers(client_ws.headers) or None,
             ) as server_ws:
 
                 async def client_to_server() -> None:

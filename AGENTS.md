@@ -696,6 +696,19 @@ merge titles (`Merge branch …`, `Merged from …`).
 This repo does not open product MRs. Do not use the target-clone
 form `[PROJ-123] type: …` here.
 
+### Atomic commits
+
+One commit is one concern. Do not mix a fix, a docs tweak, and a
+settings default in the same commit.
+
+- Split unrelated file changes into separate commits.
+- Keep the test that locks a behaviour in the **same** commit as
+  that behaviour. A `test` commit is only for tests that do not
+  change product code.
+- Do not bundle a version bump, a refactor, and a feature.
+- A default-branch rename still updates every workflow filter in
+  the same change (see Git branches and GitHub).
+
 ## Before you change behaviour
 
 If a change touches serve lifetime, session resume, clone path,

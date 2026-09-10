@@ -4,23 +4,21 @@
 # if /var/lib/osm is not writable.
 data_dir: /var/lib/osm
 
-# --- Review (GitLab / Azure). Empty tokens leave webhooks unauthed. ---
-# gitlab_url: https://gitlab.com
-# gitlab_token: ""
-# webhook_secret: ""
-# azure_url: ""
-# azure_token: ""
-# azure_webhook_user: ""
-# azure_webhook_password: ""
-# skip_draft_mrs: true
-# review_mention: ""
-# review_model: opencode/big-pickle
-# review_timeout_seconds: 1800
-# review_retry_count: 2
-# review_agent: code-reviewer
-# max_concurrent_reviews: 2
+gitlab_url: https://gitlab.com
+gitlab_token: ""
+webhook_secret: ""
+azure_url: ""
+azure_token: ""
+azure_webhook_user: ""
+azure_webhook_password: ""
+skip_draft_mrs: true
+review_mention: ""
+review_model: opencode/big-pickle
+review_timeout_seconds: 1800
+review_retry_count: 2
+review_agent: code-reviewer
+max_concurrent_reviews: 2
 
-# --- Dashboard / n8n auth. Empty = no login. ---
-# dashboard_user: ""
-# dashboard_password: ""
-# dashboard_token: ""
+dashboard_user: ""
+dashboard_password: ""
+dashboard_token: ""

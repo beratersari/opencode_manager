@@ -86,6 +86,9 @@ class Settings:
     review_agent: str = "code-reviewer"
     review_serve_health_timeout: int = 60
     max_concurrent_reviews: int = 2
+    dashboard_user: str = ""
+    dashboard_password: str = ""
+    dashboard_token: str = ""
 
     def __post_init__(self) -> None:
         self.apply_layout()
@@ -211,4 +214,9 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     s.max_concurrent_reviews = max(
         1, int(data.get("max_concurrent_reviews", data.get("max_concurrent_jobs", s.max_concurrent_reviews)))
     )
+    s.dashboard_user = str(data.get("dashboard_user", s.dashboard_user) or "").strip()
+    s.dashboard_password = str(data.get("dashboard_password", s.dashboard_password) or "").strip()
+    s.dashboard_token = str(
+        data.get("dashboard_token") or data.get("api_token") or s.dashboard_token or ""
+    ).strip()
     return s

@@ -47,3 +47,7 @@ retry_backoff_cap_seconds: 30
 # review_retry_count: 2
 # review_agent: code-reviewer
 # max_concurrent_reviews: 2
+# --- Dashboard / n8n auth (Creasy-style). Empty = no login. ---
+# dashboard_user: ""
+# dashboard_password: ""
+# dashboard_token: ""   # n8n: Authorization Bearer <token> or X-Amir-Mini-Token

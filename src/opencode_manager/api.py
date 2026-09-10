@@ -12,8 +12,23 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from opencode_manager import __version__
 from opencode_manager.brand import APP_NAME
+from opencode_manager.dashboard.auth import (
+    SESSION_COOKIE,
+    SESSION_MAX_AGE,
+    credentials_ok,
+    dashboard_auth_required,
+    has_username,
+    make_session,
+    request_authenticated,
+)
 from opencode_manager.dashboard.chat import job_chat_payload
 from opencode_manager.dashboard.report import build_report_context
+from opencode_manager.dashboard.runtime_settings import (
+    SettingsError,
+    save_runtime_settings,
+    suggested_agents,
+    suggested_models,
+)
 from opencode_manager.log import get_logger, read_job_log_lines, redact
 from opencode_manager.manager import Manager
 from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
@@ -26,8 +41,77 @@ def _mgr(request: Request) -> Manager:
     return request.app.state.manager
 
 
+def _settings(request: Request):
+    return request.app.state.settings
+
+
+def _cookie_secure(request: Request) -> bool:
+    return request.url.scheme == "https"
+
+
+def _require_auth(request: Request) -> None:
+    settings = _settings(request)
+    if request_authenticated(
+        settings,
+        cookie=request.cookies.get(SESSION_COOKIE) or "",
+        headers=request.headers,
+    ):
+        return
+    raise HTTPException(status_code=401, detail="authentication required")
+
+
+@router.get("/api/auth")
+def api_auth(request: Request) -> dict:
+    settings = _settings(request)
+    return {
+        "required": dashboard_auth_required(settings),
+        "authenticated": request_authenticated(
+            settings,
+            cookie=request.cookies.get(SESSION_COOKIE) or "",
+            headers=request.headers,
+        ),
+        "has_username": has_username(settings),
+    }
+
+
+@router.post("/api/login")
+async def api_login(request: Request) -> JSONResponse:
+    settings = _settings(request)
+    if not dashboard_auth_required(settings):
+        return JSONResponse({"ok": True, "required": False})
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    username = str(body.get("username") or "")
+    password = str(body.get("password") or "")
+    if not credentials_ok(settings, username, password):
+        raise HTTPException(status_code=401, detail="invalid username or password")
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        SESSION_COOKIE,
+        value=make_session(settings),
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+        max_age=SESSION_MAX_AGE,
+        path="/",
+    )
+    return response
+
+
+@router.post("/api/logout")
+def api_logout() -> JSONResponse:
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
 @router.post("/jobs")
 async def post_jobs(request: Request) -> JSONResponse:
+    _require_auth(request)
     manager = _mgr(request)
     try:
         body = await request.json()
@@ -68,12 +152,14 @@ async def post_jobs(request: Request) -> JSONResponse:
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, request: Request) -> JSONResponse:
     """n8n poller: same envelope as the callback, plus live/status."""
+    _require_auth(request)
     status, payload = _mgr(request).poll_job(job_id)
     return JSONResponse(payload, status_code=status)
 
 
 @router.delete("/sessions")
 async def delete_sessions(request: Request) -> JSONResponse:
+    _require_auth(request)
     manager = _mgr(request)
     try:
         body = await request.json()
@@ -107,7 +193,8 @@ async def delete_sessions(request: Request) -> JSONResponse:
 
 
 @router.get("/api/meta")
-def api_meta() -> Dict[str, Any]:
+def api_meta(request: Request) -> Dict[str, Any]:
+    _require_auth(request)
     return {
         "version": __version__,
         "server_time": utc_now(),
@@ -123,6 +210,7 @@ def api_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ) -> Dict[str, Any]:
+    _require_auth(request)
     try:
         jobs = _mgr(request).store.list_all()
     except Exception:  # noqa: BLE001
@@ -151,6 +239,7 @@ def api_jobs(
 
 @router.get("/api/jobs/{job_id}")
 def api_job(job_id: str, request: Request) -> Dict[str, Any]:
+    _require_auth(request)
     manager = _mgr(request)
     job = manager.store.get(job_id)
     if not job:
@@ -163,6 +252,7 @@ def api_job(job_id: str, request: Request) -> Dict[str, Any]:
 
 @router.get("/api/jobs/{job_id}/prompts")
 def api_prompts(job_id: str, request: Request) -> Dict[str, Any]:
+    _require_auth(request)
     job = _mgr(request).store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
@@ -175,6 +265,7 @@ def api_prompts(job_id: str, request: Request) -> Dict[str, Any]:
 
 @router.get("/api/jobs/{job_id}/chat")
 def api_chat(job_id: str, request: Request) -> Dict[str, Any]:
+    _require_auth(request)
     job = _mgr(request).store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
@@ -189,6 +280,7 @@ def api_logs(
     request: Request,
     limit: int = Query(default=2000, ge=0),
 ) -> Dict[str, Any]:
+    _require_auth(request)
     manager = _mgr(request)
     job = manager.store.get(job_id)
     if not job:
@@ -206,6 +298,7 @@ def api_logs(
 @router.get("/api/jobs/{job_id}/serve-log")
 def api_serve_log(job_id: str, request: Request) -> Dict[str, Any]:
     """OpenCode serve stdout/stderr for this job. GET-only; used by report zip."""
+    _require_auth(request)
     manager = _mgr(request)
     job = manager.store.get(job_id)
     if not job:
@@ -222,6 +315,7 @@ def api_serve_log(job_id: str, request: Request) -> Dict[str, Any]:
 
 @router.get("/api/queue")
 def api_queue(request: Request, jira_id: Optional[str] = None) -> Dict[str, Any]:
+    _require_auth(request)
     items = _mgr(request).queue.public_items(jira_id=jira_id)
     return {
         "items": items,
@@ -233,7 +327,54 @@ def api_queue(request: Request, jira_id: Optional[str] = None) -> Dict[str, Any]
 @router.get("/api/report-context")
 def api_report_context(request: Request) -> Dict[str, Any]:
     """Process extras for the client-built issue zip. GET-only; note is not stored."""
+    _require_auth(request)
     return build_report_context(_mgr(request))
+
+
+def _review_settings_payload(request: Request) -> Dict[str, Any]:
+    cfg = request.app.state.config
+    extras: list[str] = []
+    agent_extras: list[str] = []
+    manager = getattr(request.app.state, "manager", None)
+    if manager is not None:
+        extras = [str(job.model or "") for job in manager.store.list_all()]
+        agent_extras = [str(getattr(job, "agent", "") or job.agent_mode or "") for job in manager.store.list_all()]
+    return {
+        "review_model": cfg.opencode_model,
+        "review_timeout_seconds": cfg.opencode_timeout,
+        "review_agent": cfg.opencode_agent,
+        "env_model": (cfg.opencode_model_env or cfg.opencode_model or "").strip(),
+        "env_timeout": int(cfg.opencode_timeout_env or cfg.opencode_timeout or 1800),
+        "env_agent": (cfg.opencode_agent_env or cfg.opencode_agent or "").strip(),
+        "models": suggested_models(cfg, extras),
+        "agents": suggested_agents(cfg, agent_extras),
+    }
+
+
+@router.get("/api/settings")
+def api_settings(request: Request) -> Dict[str, Any]:
+    _require_auth(request)
+    return _review_settings_payload(request)
+
+
+@router.put("/api/settings")
+async def api_put_settings(request: Request) -> Dict[str, Any]:
+    _require_auth(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    cfg = request.app.state.config
+    model = body.get("review_model", body.get("opencode_model", cfg.opencode_model))
+    timeout = body.get("review_timeout_seconds", body.get("opencode_timeout", cfg.opencode_timeout))
+    agent = body.get("review_agent", body.get("opencode_agent", cfg.opencode_agent))
+    try:
+        save_runtime_settings(cfg, model=model, timeout=timeout, agent=agent)
+    except SettingsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _review_settings_payload(request)
 
 
 @router.api_route("/api/{full_path:path}", methods=["POST", "PATCH", "PUT", "DELETE"])

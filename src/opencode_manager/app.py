@@ -47,6 +47,9 @@ def create_app(
         get_logger().exception("crash logging disabled")
     manager = Manager(settings, runner=runner)
     review_cfg = review_config_from_settings(settings)
+    from opencode_manager.dashboard.runtime_settings import apply_runtime_settings
+
+    apply_runtime_settings(review_cfg)
     gitlab = GitLabClient(review_cfg.gitlab_url, review_cfg.gitlab_token)
     azure = (
         AzureClient(
@@ -104,6 +107,15 @@ def create_app(
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        from opencode_manager.dashboard.auth import SESSION_COOKIE, request_authenticated
+
+        if not request_authenticated(
+            settings,
+            cookie=ws.cookies.get(SESSION_COOKIE) or "",
+            headers=ws.headers,
+        ):
+            await ws.close(code=4401)
+            return
         await ws.accept()
         try:
             while True:

@@ -101,6 +101,9 @@ def public_settings(settings: Settings) -> Dict[str, Any]:
         "review_retry_count": settings.review_retry_count,
         "review_agent": settings.review_agent,
         "max_concurrent_reviews": settings.max_concurrent_reviews,
+        "dashboard_user": settings.dashboard_user,
+        "dashboard_password_set": bool(settings.dashboard_password),
+        "dashboard_token_set": bool(settings.dashboard_token),
     }
 
 

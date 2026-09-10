@@ -228,6 +228,8 @@ def run_pipeline(
         persist_job(store, job)
         logger.info("pipeline start log_file=%s clone_root=%s", job.log_file, settings.work_dir)
         terminal = runner.run(job, should_stop=should_stop)
+        if should_stop() and terminal.status_code == 200:
+            terminal = Terminal(500, "manager shutting down")
         logger.info("pipeline runner returned %s", terminal.status_code)
         finish_job(job, terminal, settings=settings, store=store, send_callback=send_callback)
         logger.info("pipeline end")

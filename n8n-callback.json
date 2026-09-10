@@ -48,6 +48,12 @@
               "name": "session_id",
               "value": "={{ $('When Executed by Another Workflow').item.json.session_id }}",
               "type": "string"
+            },
+            {
+              "id": "e1f2a3b4-c5d6-4789-a012-dashboardtoken01",
+              "name": "token",
+              "value": "",
+              "type": "string"
             }
           ]
         },
@@ -61,7 +67,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run."
+      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run. token = dashboard_token (Authorization Bearer)."
     },
     {
       "parameters": {
@@ -107,6 +113,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('remoteComputerInfo1').item.json.token }}"
             }
           ]
         },
@@ -539,6 +549,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('remoteComputerInfo1').item.json.token }}"
             }
           ]
         },

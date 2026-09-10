@@ -160,6 +160,25 @@ def test_ack_non_202_goes_to_return_ack_fail(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
+def test_osm_http_nodes_send_bearer_token(path: Path) -> None:
+    data = _flow(path)
+    info = next(n for n in data["nodes"] if n["name"] == "remoteComputerInfo1")
+    names = [a.get("name") for a in info["parameters"]["assignments"]["assignments"]]
+    assert "token" in names
+    for name in ("sendRequestToAI1", "deleteSession1"):
+        node = next(n for n in data["nodes"] if n["name"] == name)
+        headers = node["parameters"]["headerParameters"]["parameters"]
+        auth = next(h for h in headers if h.get("name") == "Authorization")
+        assert "Bearer" in str(auth.get("value") or "")
+        assert "token" in str(auth.get("value") or "")
+    if path.name == "n8n-poller.json":
+        poll = next(n for n in data["nodes"] if n["name"] == "pollJobStatus")
+        headers = poll["parameters"]["headerParameters"]["parameters"]
+        auth = next(h for h in headers if h.get("name") == "Authorization")
+        assert "Bearer" in str(auth.get("value") or "")
+
+
+@pytest.mark.parametrize("path", FLOWS, ids=lambda p: p.name)
 def test_session_delete_branch_targets_osm_sessions(path: Path) -> None:
     data = _flow(path)
     names = {str(n["name"]) for n in data["nodes"]}

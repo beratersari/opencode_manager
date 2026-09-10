@@ -35,6 +35,9 @@ class ReviewConfig:
     job_dir: Path = Path(".")
     log_dir: Path = Path(".")
     serve_dir: Path = Path(".")
+    opencode_model_env: str = ""
+    opencode_timeout_env: int = 0
+    opencode_agent_env: str = ""
 
     @property
     def azure_enabled(self) -> bool:
@@ -77,6 +80,9 @@ def review_config_from_settings(settings: Settings) -> ReviewConfig:
         job_dir=Path(settings.job_store_dir or (data_dir / "jobs")),
         log_dir=Path(settings.job_log_dir or (data_dir / "logs")),
         serve_dir=Path(settings.serve_dir or (data_dir / ".serve")),
+        opencode_model_env=(settings.review_model or "opencode/big-pickle").strip(),
+        opencode_timeout_env=max(1, int(settings.review_timeout_seconds)),
+        opencode_agent_env=(settings.review_agent or "code-reviewer").strip() or "code-reviewer",
     )
     cfg.ensure_dirs()
     return cfg

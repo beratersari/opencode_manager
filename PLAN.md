@@ -8,8 +8,11 @@ calls a target API with the result.
 This is a smaller slice of [virtual_developer](https://github.com/beratersari/virtual_developer)
 (Yaver). Copy clone helper-off env, force-kill, hard delete, the OpenCode
 serve control loop, and the **jobs-tab dashboard look** (GET-only). Do
-**not** copy Jira polling, GitLab MRs, Codex, or dashboard write
-actions (cancel, delete, settings, schedules).
+**not** copy Jira polling, Codex, or dashboard write
+actions (cancel, delete, settings, schedules). GitLab/Azure **review**
+is a separate inbound path (`POST /amirmini/webhook/gitlab` and
+`POST /amirmini/webhook/azure`), copied from Creasy. It does not
+replace `POST /jobs`.
 
 The n8n JSON in this repo is only a fragment of the old poll loop
 (`prompt_async` → wait 60s → `GET /sessions`). That loop becomes **internal**.
@@ -1496,9 +1499,11 @@ Windows).
 - Cards: `jira_id`, `job_id`, status badge, live dot, `agent_mode`,
   `model`, elapsed (`started_at`/`accepted_at` → now while live or
   queued; → `completed_at` when terminal), started_at, error preview.
-- Filters: All / In flight / Queue / Error / Completed. No Cancelled
+  Review cards also show `source` (GitLab path or Azure `project/repo`)
+  and a Review chip.
+- Filters: All / In flight / Queue / Review / Error / Completed. No Cancelled
   tab (shutdown/boot leftovers are Error). No bulk-select, no Delete,
-  no queue Cancel.
+  no queue Cancel. Review is `job_kind=review`.
 - Search by `jira_id`. Paginate like VD (page size 25).
 - Queue filter is GET-only: `jira_id`, position, accepted_at. No PAT.
 
@@ -1514,6 +1519,20 @@ Windows).
 No Stop / Delete. Refresh + live WS only. **Report issue** is in
 the sidebar (select a job or general) and on job detail. Client-built
 zip from GET data. The note is not persisted. No POST.
+
+### 17.4 Review path (Creasy)
+
+GitLab `POST /amirmini/webhook/gitlab` and Azure
+`POST /amirmini/webhook/azure` enqueue review jobs on the same
+history store. Comment policy matches Creasy 0.9.7: `@mention /ask`
+(thread reply only), `@mention /review` (full or thread-focused),
+mention without a command posts a usage note. n8n `POST /jobs` is
+unchanged (`planner` / `orchestrator` only). Review clones live in
+`{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
+Review FIFO is `{data_dir}/review_queue.json`. Tokens are settings
+fields, never inbound job JSON. Dashboard stays GET-only. Exe zips
+ship `install-review-agent.*` plus `opencoderman/agents` and
+`opencoderman/skills` (no `.git`).
 Job zip: note, meta, runtime, safe settings, queue, `app.log`,
 `crash.log`, `wrapper-exit.log`, recent OpenCode CLI logs, job
 record / parameters / attempts, prompts, chat (`json` + `md`), OSM

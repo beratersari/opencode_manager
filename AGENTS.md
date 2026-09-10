@@ -4,9 +4,10 @@ This file is binding for anyone implementing or changing this repo.
 The long rationale lives in [PLAN.md](PLAN.md). If this file and the
 plan disagree, **fix the plan** — do not silently pick a third design.
 
-This is a small Windows/Linux worker between **n8n** and **OpenCode**.
-It is not Yaver / virtual_developer. No Jira poller, no GitLab MR, no
-Codex. The dashboard is **jobs-tab visualization only** (no writes).
+This is a small Windows/Linux worker between **n8n** and **OpenCode**,
+plus an optional Creasy-style GitLab/Azure **review** path.
+It is not Yaver / virtual_developer. No Jira poller, no Codex. The
+dashboard is **jobs-tab visualization only** (no writes).
 
 ## Intentional product choices
 
@@ -17,8 +18,11 @@ These look like bugs. They are not.
    `ses_*` still has the previous job's `finish=stop`; that is not
    this turn and must not be shipped as success. No git push, no MR,
    no returning a branch.
-2. **Always delete the clone** when the job ends, success or fail.
-   Next job for the same ticket re-clones to the **same path**.
+2. **Ticket jobs always delete the clone** when the job ends, success
+   or fail. Next n8n job for the same ticket re-clones to the **same
+   path**. **Review jobs keep the clone** under `{data_dir}/workspaces/{mr_key}`
+   until the MR/PR is closed, merged, or abandoned. That is the
+   Creasy rule so `/ask` can resume `ses_*` on the same tree.
 3. **Chat vs disk drift is expected.** After delete, the tree is a
    clean remote checkout. Session history may talk about edits that
    are gone. Do not keep the workspace to make files match the
@@ -64,10 +68,12 @@ These look like bugs. They are not.
 
 ### API and jobs
 
-- Inbound writes are `POST /jobs` and `DELETE /sessions`. Dashboard
-  `/api/*` stays GET-only. n8n may use `n8n-callback.json` (one
+- Inbound writes are `POST /jobs`, `DELETE /sessions`,
+  `POST /amirmini/webhook/gitlab`, and `POST /amirmini/webhook/azure`.
+  Dashboard `/api/*` stays GET-only. n8n may use `n8n-callback.json` (one
   terminal POST to `callback_url`) or `n8n-poller.json` (omit
   `callback_url`, poll `GET /jobs/{job_id}`). Same OSM process.
+  Webhooks never use `POST /jobs` and never send n8n callbacks.
 - `POST /jobs` is only an ack (`202` / `409` / `400` / `503`). Never hold
   that socket for clone or OpenCode. `503` means the process is not
   accepting (`boot` not finished, shutting down, or the capacity-full
@@ -236,11 +242,12 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - Scope requests with `x-opencode-directory: <clone>`.
 - Request `model` (`provider/id`) is required. Send it on every
   user message as `{ providerID, modelID }`. No settings default.
-- Only two OpenCode agents on `agent_mode`: `planner` and
+- Only two OpenCode agents on `POST /jobs` `agent_mode`: `planner` and
   `orchestrator`. n8n maps `working_mode` itself (`Plan` / `plan`
   → `planner`, `build` / `Build` → `orchestrator`, case-insensitive)
   and does not send `working_mode` to OSM. Anything else → inbound
-  **400**.
+  **400**. Review jobs use `code-reviewer` (`review_agent` in settings).
+  That agent is not accepted on `POST /jobs`.
 - OpenCode only. No Codex.
 
 ### Session id — two moments
@@ -347,6 +354,50 @@ Never POST a user message while the session is `busy` / compacting.
   **`504`**.
 - None left after hang / serve death / incomplete / other: delete
   clone, callback **`500`**. `504` is only the attempt clock.
+
+### Review (GitLab / Azure)
+
+Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
+
+- Webhooks: `POST /amirmini/webhook/gitlab` (`X-Gitlab-Token` vs
+  `webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
+  `azure_webhook_user` / `azure_webhook_password`). Ack immediately.
+  Empty Azure URL/PAT → Azure off. Outbound TLS is `verify=False`.
+  Azure review with no resolvable collection (`azure_url` is only the
+  host **and** the hook/PR has no `/tfs/<Collection>`) is HTTP **400**
+  `azure collection missing`. No job. Cleanup still runs.
+- Full review starts when the token user (or `review_mention` alias)
+  is assigned or re-requested as reviewer. Open without that reviewer
+  is ignored. New commits / reopen do not enqueue.
+- Comments: `@mention` **and** `/ask` or `/review` in the same note.
+  `@name /ask` replies on that thread only (no new finding threads).
+  `@name /review` is a full or thread-focused review. Empty `/ask` is
+  ignored. Empty `/review` still runs. Mention without those commands
+  posts a usage note (no OpenCode). A command alone is ignored.
+  `/ask` text that explicitly asks for another review is treated as
+  `/review`. After a successful GitLab review, mark the token user
+  `reviewed` (not approved) so Re-request appears. Jobs never assign
+  the bot as reviewer.
+- Draft MRs: skip auto open when `skip_draft_mrs` is true. Explicit
+  `/ask` and reviewer assign still run.
+- Identity is `{project_id}-{mr_iid}` (`mr_key`). FIFO per MR. Auto
+  open is skipped if that MR is already busy. Explicit `/ask` /
+  assign queues. Dedup `jira_id` 409 applies to **ticket** jobs only.
+- Product is one Overview note (or request-thread reply) plus one
+  diff thread per finding. Failed thread does not fail the job. No
+  push. Prompt is merge-base + `git diff --stat` + paths — never the
+  unified diff. Live `git merge-base`, not a cached `base_sha`.
+- Clone lives with the MR under `{data_dir}/workspaces/{mr_key}`.
+  Job-end kills **this** serve and **keeps** the clone. Close / merge
+  / abandon cancels jobs and deletes the clone. Review queue is
+  `{data_dir}/review_queue.json` — never n8n `queue.json`.
+- Agent is `code-reviewer` from the `opencoderman` submodule. Install
+  with `install-review-agent.*` (agents + skills only). Tokens live
+  in `settings.yaml` / `settings.local.yaml`, never on `POST /jobs`,
+  never in `public_dict` or report zips.
+- Dashboard shows review jobs on the **Review** tab and prints
+  `source` (GitLab `path_with_namespace` or Azure `project/repo`).
+  Dashboard still does not start or cancel work.
 
 ### Kill and cleanup
 
@@ -539,9 +590,10 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   reuse the same `ses_*` / clone path). Filling missing tool
   `output` on snapshot message ids is ok; never append later turns.
   Navigating to an unknown id must not keep the previous job on screen.
-- Jobs list filters (All / In flight / Error / Completed) run on
+- Jobs list filters (All / In flight / Error / Completed / Review) run on
   the server (`GET /api/jobs?filter=` + `jira_id` + page) so page
   25 is the filtered set. Queue is `GET /api/queue?jira_id=`.
+  `filter=review` is `job_kind=review`.
 
 ## Do not copy from virtual_developer
 

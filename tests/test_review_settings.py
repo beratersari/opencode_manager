@@ -100,3 +100,5 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
             assert f"\n{key}:" in text or text.startswith(f"{key}:"), f"{name} comments out {key}"
         assert "dashboard_password: amir-mini" in text
         assert "dashboard_token: amir-mini-n8n" in text
+        assert "azure_webhook_user" not in text
+        assert "azure_webhook_password" not in text

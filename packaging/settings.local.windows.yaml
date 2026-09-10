@@ -7,8 +7,6 @@ gitlab_token: ""
 webhook_secret: ""
 azure_url: ""
 azure_token: ""
-azure_webhook_user: ""
-azure_webhook_password: ""
 skip_draft_mrs: true
 review_mention: ""
 review_model: opencode/big-pickle

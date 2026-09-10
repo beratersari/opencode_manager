@@ -47,7 +47,8 @@ retry_backoff_cap_seconds: 30
 # review_retry_count: 2
 # review_agent: code-reviewer
 # max_concurrent_reviews: 2
-# --- Dashboard / n8n auth (Creasy-style). Empty = no login. ---
+# --- Dashboard / n8n auth (Creasy-style). Empty password and token = no login. ---
+# Shipped settings.local.yaml sets these so :5173 and n8n work together.
 # dashboard_user: ""
-# dashboard_password: ""
-# dashboard_token: ""   # n8n: Authorization Bearer <token> or X-Amir-Mini-Token
+# dashboard_password: amir-mini
+# dashboard_token: amir-mini-n8n   # n8n: Authorization Bearer <token> or X-Amir-Mini-Token

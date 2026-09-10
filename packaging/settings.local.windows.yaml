@@ -18,5 +18,5 @@ review_agent: code-reviewer
 max_concurrent_reviews: 2
 
 dashboard_user: ""
-dashboard_password: ""
-dashboard_token: ""
+dashboard_password: amir-mini
+dashboard_token: amir-mini-n8n

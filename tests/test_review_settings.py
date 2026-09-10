@@ -94,6 +94,9 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
             "gitlab_token",
             "azure_url",
             "dashboard_token",
+            "dashboard_password",
         ):
             assert key in text, f"{name} missing {key}"
             assert f"\n{key}:" in text or text.startswith(f"{key}:"), f"{name} comments out {key}"
+        assert "dashboard_password: amir-mini" in text
+        assert "dashboard_token: amir-mini-n8n" in text

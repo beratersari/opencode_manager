@@ -163,8 +163,9 @@ def test_ack_non_202_goes_to_return_ack_fail(path: Path) -> None:
 def test_osm_http_nodes_send_bearer_token(path: Path) -> None:
     data = _flow(path)
     info = next(n for n in data["nodes"] if n["name"] == "remoteComputerInfo1")
-    names = [a.get("name") for a in info["parameters"]["assignments"]["assignments"]]
-    assert "token" in names
+    assigns = {a.get("name"): a.get("value") for a in info["parameters"]["assignments"]["assignments"]}
+    assert "token" in assigns
+    assert assigns["token"] == "amir-mini-n8n"
     for name in ("sendRequestToAI1", "deleteSession1"):
         node = next(n for n in data["nodes"] if n["name"] == name)
         headers = node["parameters"]["headerParameters"]["parameters"]

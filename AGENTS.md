@@ -75,8 +75,10 @@ These look like bugs. They are not.
   timeout). Auth is Creasy-style: `dashboard_user` /
   `dashboard_password` (session cookie) and `dashboard_token`
   (`Authorization: Bearer` or `X-Amir-Mini-Token`). Empty password
-  and token = no login. n8n `POST /jobs`, `GET /jobs/{id}`, and
-  `DELETE /sessions` use the Bearer token. Webhooks keep their own
+  and token = no login. Shipped `settings.local.yaml` sets
+  `dashboard_password: amir-mini` and `dashboard_token: amir-mini-n8n`
+  so the dashboard and n8n share a default. n8n `POST /jobs`,
+  `GET /jobs/{id}`, and `DELETE /sessions` use the Bearer token. Webhooks keep their own
   secrets. n8n may use `n8n-callback.json` (one
   terminal POST to `callback_url`) or `n8n-poller.json` (omit
   `callback_url`, poll `GET /jobs/{job_id}`). Same OSM process.

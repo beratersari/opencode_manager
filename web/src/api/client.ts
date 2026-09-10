@@ -1,4 +1,5 @@
-import type { JobChatPayload, JobItem, JobsPayload, LogLine, PromptRow, ReportContext } from './types'
+import { notifyAuthChanged } from './auth'
+import type { JobChatPayload, JobItem, JobsPayload, LogLine, PromptRow, ReportContext, ReviewSettings } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -11,6 +12,7 @@ export class ApiError extends Error {
 async function request<T>(path: string): Promise<T> {
   const res = await fetch(path)
   const body = await res.json().catch(() => ({}))
+  if (res.status === 401) notifyAuthChanged()
   if (!res.ok) {
     throw new ApiError((body as { detail?: string }).detail || `HTTP ${res.status}`, res.status)
   }
@@ -65,6 +67,28 @@ export function fetchMeta() {
 
 export function fetchReportContext() {
   return request<ReportContext>('/api/report-context')
+}
+
+export function fetchSettings() {
+  return request<ReviewSettings>('/api/settings')
+}
+
+export async function saveSettings(body: {
+  review_model: string
+  review_timeout_seconds: number
+  review_agent: string
+}): Promise<ReviewSettings> {
+  const res = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const payload = await res.json().catch(() => ({}))
+  if (res.status === 401) notifyAuthChanged()
+  if (!res.ok) {
+    throw new ApiError((payload as { detail?: string }).detail || `HTTP ${res.status}`, res.status)
+  }
+  return payload as ReviewSettings
 }
 
 export function dashboardWsUrl(): string {

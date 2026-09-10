@@ -95,6 +95,17 @@ export type ReportLogBlob = {
   name?: string
 }
 
+export type ReviewSettings = {
+  review_model: string
+  review_timeout_seconds: number
+  review_agent: string
+  env_model: string
+  env_timeout: number
+  env_agent: string
+  models: string[]
+  agents: string[]
+}
+
 export type ReportContext = {
   meta?: { app_name?: string; version?: string; server_time?: string }
   runtime?: Record<string, unknown>

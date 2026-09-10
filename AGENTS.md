@@ -70,7 +70,14 @@ These look like bugs. They are not.
 
 - Inbound writes are `POST /jobs`, `DELETE /sessions`,
   `POST /amirmini/webhook/gitlab`, and `POST /amirmini/webhook/azure`.
-  Dashboard `/api/*` stays GET-only. n8n may use `n8n-callback.json` (one
+  Dashboard `/api/*` stays GET-only except `POST /api/login`,
+  `POST /api/logout`, and `PUT /api/settings` (review agent / model /
+  timeout). Auth is Creasy-style: `dashboard_user` /
+  `dashboard_password` (session cookie) and `dashboard_token`
+  (`Authorization: Bearer` or `X-Amir-Mini-Token`). Empty password
+  and token = no login. n8n `POST /jobs`, `GET /jobs/{id}`, and
+  `DELETE /sessions` use the Bearer token. Webhooks keep their own
+  secrets. n8n may use `n8n-callback.json` (one
   terminal POST to `callback_url`) or `n8n-poller.json` (omit
   `callback_url`, poll `GET /jobs/{job_id}`). Same OSM process.
   Webhooks never use `POST /jobs` and never send n8n callbacks.

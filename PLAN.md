@@ -1516,6 +1516,8 @@ Windows).
 | **Transcript** | Chat UI from VD `JobChatTab` (user / assistant / tool / compact). Live job: this job’s serve, and only if `session_id` is `ses_*` (empty / `-1` / other placeholders are no session — do not GET `/session/-1/message`). After serve is dead: **this job’s** persisted snapshot (never replace from global `opencode.db` by shared `session_id` — later tickets reuse the same `ses_*`). Missing tool output on existing snapshot ids may be filled from the db. Never require the clone to still exist. No Codex path. |
 | **Logs** | OSM job log `{job_log_dir}/{jira_id}_{job_id}_{YYYYMMDD}_{HHMMSS}.log`, then OpenCode serve stdout/stderr `GET /api/jobs/{id}/serve-log`. |
 
+Dashboard login is Creasy-style (`dashboard_user` /
+`dashboard_password` cookie, `dashboard_token` for n8n Bearer).
 No Stop / Delete. Refresh + live WS only. **Report issue** is in
 the sidebar (select a job or general) and on job detail. Client-built
 zip from GET data. The note is not persisted. No POST.

@@ -352,6 +352,10 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "WinSW.exe" in text
     assert "name: Single-file exe" in text
     assert "packaging/build_exe.py" in text
+    assert "name: Pytest" in text
+    assert "submodules: true" in text
+    assert "install-review-agent.bat" in text
+    assert "opencoderman/agents/code-reviewer.md" in text
     attach = text.split("attach-exe-release:")[-1]
     assert "settings.local.windows.yaml" not in attach
     assert "settings.local.linux.yaml" not in attach
@@ -401,6 +405,20 @@ def test_write_service_kit_has_windows_files(tmp_path: Path) -> None:
     readme = zipfile.ZipFile(dest).read("README.txt").decode("utf-8")
     assert "install-service.bat" in readme
     assert r"C:\osm" in readme
+
+
+def test_opencoderman_zip_entries_are_agents_and_skills_only() -> None:
+    mod = _load_build_exe()
+    entries = mod.opencoderman_zip_entries(ROOT / "opencoderman")
+    names = [arc for _src, arc in entries]
+    assert "opencoderman/agents/code-reviewer.md" in names
+    assert any(n.startswith("opencoderman/skills/") and n.endswith("/SKILL.md") for n in names)
+    assert not any(".git" in n for n in names)
+    scripts = mod.review_agent_script_entries(ROOT / "scripts")
+    assert {arc for _src, arc in scripts} == {
+        "install-review-agent.bat",
+        "install-review-agent.sh",
+    }
 
 
 def test_write_exe_kit_has_binary_and_config(tmp_path: Path) -> None:

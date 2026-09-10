@@ -591,6 +591,36 @@ def stage_app(root: Path, payload: Path) -> None:
         if src.is_file():
             shutil.copy2(src, payload / launcher)
             print(f"  + {launcher} (zip root)")
+    for launcher in ("install-review-agent.bat", "install-review-agent.sh"):
+        src = scripts / launcher
+        if src.is_file():
+            shutil.copy2(src, payload / launcher)
+            print(f"  + {launcher} (zip root)")
+    _stage_opencoderman_pack(root, payload)
+
+
+def _stage_opencoderman_pack(root: Path, payload: Path) -> None:
+    src = root / "opencoderman"
+    agent = src / "agents" / "code-reviewer.md"
+    if not agent.is_file():
+        print("  skip opencoderman pack (submodule missing)")
+        return
+    dest_agents = payload / "opencoderman" / "agents"
+    dest_agents.mkdir(parents=True, exist_ok=True)
+    for path in sorted(p for p in (src / "agents").glob("*.md") if p.is_file()):
+        shutil.copy2(path, dest_agents / path.name)
+    skills = src / "skills"
+    count = 0
+    if skills.is_dir():
+        for skill_dir in sorted(p for p in skills.iterdir() if p.is_dir()):
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            dest = payload / "opencoderman" / "skills" / skill_dir.name
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill_md, dest / "SKILL.md")
+            count += 1
+    print(f"  + opencoderman/agents + {count} skills")
 
 
 def settings_local_templates(root: Path) -> tuple[Path, Path]:

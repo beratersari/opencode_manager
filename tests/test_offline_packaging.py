@@ -122,6 +122,7 @@ def test_zip_does_not_stage_agents_folder() -> None:
     mod = _load()
     assert "agents" not in mod.COPY_DIRS
     assert "agents" in mod.SKIP_DIR_NAMES
+    assert hasattr(mod, "_stage_opencoderman_pack")
 
 
 def test_reqs_for_wheel_platform_strips_uvloop_on_windows() -> None:

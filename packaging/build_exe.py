@@ -194,6 +194,49 @@ def ensure_winsw(root: Path) -> Path:
     return target
 
 
+REVIEW_AGENT_SCRIPTS = (
+    "install-review-agent.bat",
+    "install-review-agent.sh",
+)
+
+
+def opencoderman_zip_entries(opencoderman: Path) -> list[tuple[Path, str]]:
+    """Only agents/*.md and skills/*/SKILL.md. Never .git or the rest."""
+    src = Path(opencoderman)
+    agent = src / "agents" / "code-reviewer.md"
+    if not agent.is_file():
+        raise SystemExit(
+            "opencoderman/agents/code-reviewer.md missing. "
+            "git submodule update --init --recursive"
+        )
+    skills = src / "skills"
+    if not skills.is_dir():
+        raise SystemExit("opencoderman/skills missing")
+    entries: list[tuple[Path, str]] = []
+    for path in sorted(p for p in (src / "agents").glob("*.md") if p.is_file()):
+        entries.append((path, f"opencoderman/agents/{path.name}"))
+    skill_count = 0
+    for skill_dir in sorted(p for p in skills.iterdir() if p.is_dir()):
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        entries.append((skill_md, f"opencoderman/skills/{skill_dir.name}/SKILL.md"))
+        skill_count += 1
+    if skill_count == 0:
+        raise SystemExit("no skills with SKILL.md under opencoderman/skills")
+    return entries
+
+
+def review_agent_script_entries(scripts_dir: Path) -> list[tuple[Path, str]]:
+    entries: list[tuple[Path, str]] = []
+    for name in REVIEW_AGENT_SCRIPTS:
+        path = Path(scripts_dir) / name
+        if not path.is_file():
+            raise SystemExit(f"missing {path}")
+        entries.append((path, name))
+    return entries
+
+
 def write_zip_kit(zip_path: Path, files: list[tuple[Path, str]], readme: str) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -223,6 +266,11 @@ def exe_kit_readme(*, windows: bool) -> str:
             "A second console is the frontend proxy (:5173).\n"
             "\n"
             "Git and OpenCode stay on PATH.\n"
+            "\n"
+            "Review webhooks: POST /amirmini/webhook/gitlab and\n"
+            "POST /amirmini/webhook/azure. Set gitlab_token / azure_token\n"
+            "in settings.local.yaml. Run install-review-agent.bat once to\n"
+            "copy opencoderman agents and skills into %USERPROFILE%\\.opencode.\n"
         )
     return (
         "aMIR-mini — two-window binary\n"
@@ -238,6 +286,11 @@ def exe_kit_readme(*, windows: bool) -> str:
         "Git and OpenCode stay on PATH.\n"
         "If /var/lib/osm is not writable, the binary falls back to\n"
         "$XDG_DATA_HOME/osm or ~/.local/share/osm.\n"
+        "\n"
+        "Review webhooks: POST /amirmini/webhook/gitlab and\n"
+        "POST /amirmini/webhook/azure. Set gitlab_token / azure_token\n"
+        "in settings.local.yaml. Run ./install-review-agent.sh once to\n"
+        "copy opencoderman agents and skills into ~/.opencode.\n"
     )
 
 
@@ -368,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
     kit_files: list[tuple[Path, str]] = [
         (final, dest_name),
         (overlay_dest, "settings.local.yaml"),
+        *review_agent_script_entries(root / "scripts"),
+        *opencoderman_zip_entries(root / "opencoderman"),
     ]
     if suffix.startswith("windows"):
         for launcher in ("install-service.bat", "uninstall-service.bat"):
@@ -398,7 +453,12 @@ def main(argv: list[str] | None = None) -> int:
     exe_zip_path = out_dir / exe_zip_name
     write_zip_kit(
         exe_zip_path,
-        [(final, dest_name), (overlay_dest, "settings.local.yaml")],
+        [
+            (final, dest_name),
+            (overlay_dest, "settings.local.yaml"),
+            *review_agent_script_entries(root / "scripts"),
+            *opencoderman_zip_entries(root / "opencoderman"),
+        ],
         exe_kit_readme(windows=suffix.startswith("windows")),
     )
     size_mb = final.stat().st_size / (1024 * 1024)

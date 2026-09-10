@@ -67,7 +67,11 @@ class Manager:
         try:
             leftover_pids: list[Optional[int]] = []
             try:
-                leftover_jobs = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
+                leftover_jobs = [
+                j
+                for j in self.store.list_all()
+                if j.status in {"queued", "running"} and getattr(j, "job_kind", "ticket") != "review"
+            ]
             except Exception:  # noqa: BLE001
                 logger.exception("boot list leftover jobs failed")
                 leftover_jobs = []
@@ -140,7 +144,11 @@ class Manager:
                 logger.exception("shutdown queue clear failed")
                 queued = []
             try:
-                live = [j for j in self.store.list_all() if j.status in {"queued", "running"}]
+                live = [
+                    j
+                    for j in self.store.list_all()
+                    if j.status in {"queued", "running"} and getattr(j, "job_kind", "ticket") != "review"
+                ]
             except Exception:  # noqa: BLE001
                 logger.exception("shutdown list live jobs failed")
                 live = []
@@ -413,6 +421,14 @@ class Manager:
         except Exception:  # noqa: BLE001
             logger.exception("live_counts queue peek failed")
             queued = 0
+        reviews = getattr(self, "reviews", None)
+        if reviews is not None:
+            try:
+                extra_run, extra_q = reviews.live_counts()
+                running += int(extra_run)
+                queued += int(extra_q)
+            except Exception:  # noqa: BLE001
+                logger.exception("live_counts review counters failed")
         return running, queued
 
     def job_public(self, job_id: str) -> Optional[Dict[str, Any]]:

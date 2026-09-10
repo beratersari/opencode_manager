@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # n8n maps working_mode itself. OSM only accepts these two agent ids.
 KNOWN_AGENTS = frozenset({"planner", "orchestrator"})
@@ -34,7 +34,7 @@ _MODEL_RE = re.compile(r"^[^/\s]+/[^/\s].*$")
 _JIRA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 LIVE_STATUSES = frozenset({"queued", "running"})
 ERROR_STATUSES = frozenset({"error", "timeout", "not_found"})
-LIST_FILTERS = frozenset({"all", "active", "error", "completed"})
+LIST_FILTERS = frozenset({"all", "active", "error", "completed", "review"})
 
 
 def utc_now() -> str:
@@ -188,7 +188,7 @@ class PromptRow(BaseModel):
 
 class JobRecord(BaseModel):
     job_id: str
-    jira_id: str
+    jira_id: str = ""
     status: str = "queued"
     live: bool = True
     agent_mode: str = ""
@@ -196,6 +196,7 @@ class JobRecord(BaseModel):
     session_id: str = ""
     repo_url: str = ""
     source_branch: str = ""
+    target_branch: str = ""
     clone_path: str = ""
     serve_pid: Optional[int] = None
     serve_port: Optional[int] = None
@@ -219,17 +220,61 @@ class JobRecord(BaseModel):
     chat_snapshot: List[Dict[str, Any]] = Field(default_factory=list)
     extra_pids: List[int] = Field(default_factory=list)
     log_file: str = ""
+    job_kind: str = "ticket"
+    source: str = ""
+    provider: str = ""
+    mr_key: str = ""
+    project_id: int = 0
+    mr_iid: int = 0
+    trigger: str = ""
+    explicit: bool = False
+    comment_text: str = ""
+    mr_title: str = ""
+    web_url: str = ""
+    sha: str = ""
+    base_sha: str = ""
+    merge_base: str = ""
+    azure_project: str = ""
+    azure_repo: str = ""
+    azure_collection: str = ""
+    discussion_id: str = ""
+    parent_comment_id: int = 0
+    comment_path: str = ""
+    comment_side: str = ""
+    comment_start_line: int = 0
+    comment_end_line: int = 0
+    parent_comment_text: str = ""
+    diff_stat: str = ""
+    changed_paths: List[str] = Field(default_factory=list)
+    diagnostics: Dict[str, Any] = Field(default_factory=dict)
+    agent: str = ""
 
     @field_validator("session_id")
     @classmethod
     def _live_session(cls, value: Optional[str]) -> str:
         return usable_session_id(value) or ""
 
+    @model_validator(mode="after")
+    def _jira_from_review_key(self) -> "JobRecord":
+        if not (self.jira_id or "").strip() and (self.mr_key or "").strip():
+            self.jira_id = self.mr_key
+        if (self.mr_key or self.trigger) and not (self.provider or "").strip():
+            self.provider = "gitlab"
+        if (self.mr_key or self.trigger) and (self.job_kind or "ticket") == "ticket":
+            self.job_kind = "review"
+        return self
+
     def public_dict(self) -> Dict[str, Any]:
         data = self.model_dump()
         data.pop("callback_url", None)
         data.pop("prompt", None)
         data.pop("extra_pids", None)
+        if not data.get("agent_mode") and data.get("agent"):
+            data["agent_mode"] = data.get("agent") or ""
+        if not data.get("repo_url") and data.get("web_url"):
+            data["repo_url"] = data.get("web_url") or ""
+        if not data.get("source"):
+            data["source"] = data.get("mr_title") or data.get("web_url") or data.get("mr_key") or ""
         return data
 
 
@@ -312,6 +357,8 @@ def job_matches_list_filter(job: "JobRecord", filt: str) -> bool:
         return status in ERROR_STATUSES
     if key == "completed":
         return status == "success"
+    if key == "review":
+        return (job.job_kind or "") == "review"
     return True
 
 

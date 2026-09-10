@@ -113,7 +113,19 @@ class JobStore:
 
     def live_for_jira(self, jira_id: str) -> Optional[JobRecord]:
         for job in self.list_all():
+            if getattr(job, "job_kind", "ticket") == "review":
+                continue
             if job.jira_id == jira_id and job.status in {"queued", "running"}:
+                return job
+        return None
+
+    def running_for_mr(self, mr_key: str) -> Optional[JobRecord]:
+        for job in self.list_all():
+            if (
+                getattr(job, "job_kind", "") == "review"
+                and job.mr_key == mr_key
+                and job.status == "running"
+            ):
                 return job
         return None
 

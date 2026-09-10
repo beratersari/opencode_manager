@@ -1,0 +1,1 @@
+"""Azure DevOps Server provider. Isolated from opencode_manager.gitlab."""

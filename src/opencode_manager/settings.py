@@ -70,6 +70,22 @@ class Settings:
     retry_backoff_seconds: float = 2.0
     retry_backoff_cap_seconds: float = 30.0
     project_root: Path = field(default_factory=resource_root)
+    gitlab_url: str = "https://gitlab.com"
+    gitlab_token: str = ""
+    webhook_secret: str = ""
+    azure_url: str = ""
+    azure_token: str = ""
+    azure_api_version: str = "7.1"
+    azure_webhook_user: str = ""
+    azure_webhook_password: str = ""
+    skip_draft_mrs: bool = True
+    review_mention: str = ""
+    review_model: str = "opencode/big-pickle"
+    review_timeout_seconds: int = 1800
+    review_retry_count: int = 2
+    review_agent: str = "code-reviewer"
+    review_serve_health_timeout: int = 60
+    max_concurrent_reviews: int = 2
 
     def __post_init__(self) -> None:
         self.apply_layout()
@@ -166,5 +182,33 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     s.retry_backoff_seconds = float(data.get("retry_backoff_seconds", s.retry_backoff_seconds))
     s.retry_backoff_cap_seconds = float(
         data.get("retry_backoff_cap_seconds", s.retry_backoff_cap_seconds)
+    )
+    s.gitlab_url = str(data.get("gitlab_url", s.gitlab_url) or s.gitlab_url).rstrip("/")
+    s.gitlab_token = str(data.get("gitlab_token", s.gitlab_token) or "").strip()
+    s.webhook_secret = str(data.get("webhook_secret", s.webhook_secret) or "").strip()
+    s.azure_url = str(data.get("azure_url", s.azure_url) or "").strip().rstrip("/")
+    s.azure_token = str(
+        data.get("azure_token") or data.get("azure_devops_pat") or s.azure_token or ""
+    ).strip()
+    s.azure_api_version = str(data.get("azure_api_version", s.azure_api_version) or "7.1").strip() or "7.1"
+    s.azure_webhook_user = str(data.get("azure_webhook_user", s.azure_webhook_user) or "").strip()
+    s.azure_webhook_password = str(
+        data.get("azure_webhook_password", s.azure_webhook_password) or ""
+    ).strip()
+    raw_skip = data.get("skip_draft_mrs", s.skip_draft_mrs)
+    if isinstance(raw_skip, str):
+        s.skip_draft_mrs = raw_skip.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        s.skip_draft_mrs = bool(raw_skip)
+    s.review_mention = str(data.get("review_mention", s.review_mention) or "").strip()
+    s.review_model = str(data.get("review_model", s.review_model) or s.review_model).strip()
+    s.review_timeout_seconds = max(1, int(data.get("review_timeout_seconds", s.review_timeout_seconds)))
+    s.review_retry_count = max(1, int(data.get("review_retry_count", s.review_retry_count)))
+    s.review_agent = str(data.get("review_agent", s.review_agent) or "code-reviewer").strip() or "code-reviewer"
+    s.review_serve_health_timeout = max(
+        5, int(data.get("review_serve_health_timeout", s.review_serve_health_timeout))
+    )
+    s.max_concurrent_reviews = max(
+        1, int(data.get("max_concurrent_reviews", data.get("max_concurrent_jobs", s.max_concurrent_reviews)))
     )
     return s

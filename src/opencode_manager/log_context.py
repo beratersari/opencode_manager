@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Optional
+from typing import Iterator, Optional
 
 _job_id: ContextVar[Optional[str]] = ContextVar("osm_job_id", default=None)
 _jira_id: ContextVar[Optional[str]] = ContextVar("osm_jira_id", default=None)
@@ -38,16 +39,36 @@ def bind(
     job_id: Optional[str] = None,
     jira_id: Optional[str] = None,
     log_file: Optional[str] = None,
+    mr_key: Optional[str] = None,
 ) -> None:
     if job_id is not None:
         set_job_id(job_id)
-    if jira_id is not None:
-        set_jira_id(jira_id)
+    key = jira_id if jira_id is not None else mr_key
+    if key is not None:
+        set_jira_id(key)
     if log_file is not None:
         set_log_file(log_file)
+
+
+def get_mr_key() -> Optional[str]:
+    return get_jira_id()
 
 
 def clear() -> None:
     _job_id.set(None)
     _jira_id.set(None)
     _log_file.set(None)
+
+
+@contextmanager
+def bound(
+    job_id: Optional[str] = None,
+    mr_key: Optional[str] = None,
+    log_file: Optional[str] = None,
+) -> Iterator[None]:
+    """Review-path bind that always clears on exit."""
+    bind(job_id=job_id, jira_id=mr_key, log_file=log_file)
+    try:
+        yield
+    finally:
+        clear()

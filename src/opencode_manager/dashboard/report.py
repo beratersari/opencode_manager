@@ -87,6 +87,20 @@ def public_settings(settings: Settings) -> Dict[str, Any]:
         "git_clone_timeout_seconds": settings.git_clone_timeout_seconds,
         "retry_backoff_seconds": settings.retry_backoff_seconds,
         "retry_backoff_cap_seconds": settings.retry_backoff_cap_seconds,
+        "gitlab_url": settings.gitlab_url,
+        "gitlab_token_set": bool(settings.gitlab_token),
+        "webhook_secret_set": bool(settings.webhook_secret),
+        "azure_url": settings.azure_url,
+        "azure_token_set": bool(settings.azure_token),
+        "azure_webhook_user": settings.azure_webhook_user,
+        "azure_webhook_password_set": bool(settings.azure_webhook_password),
+        "skip_draft_mrs": settings.skip_draft_mrs,
+        "review_mention": settings.review_mention,
+        "review_model": settings.review_model,
+        "review_timeout_seconds": settings.review_timeout_seconds,
+        "review_retry_count": settings.review_retry_count,
+        "review_agent": settings.review_agent,
+        "max_concurrent_reviews": settings.max_concurrent_reviews,
     }
 
 

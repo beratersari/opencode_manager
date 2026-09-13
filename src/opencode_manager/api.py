@@ -382,6 +382,20 @@ async def api_writes_blocked(full_path: str) -> JSONResponse:
     return JSONResponse({"detail": "dashboard is GET-only"}, status_code=405)
 
 
+def spa_file_for(dist: Path, full_path: str) -> Path:
+    """Serve only a strict child of ``dist``. Escape → ``index.html``."""
+    index = dist / "index.html"
+    try:
+        root = dist.resolve()
+        candidate = (dist / (full_path or "")).resolve()
+        candidate.relative_to(root)
+    except (OSError, ValueError):
+        return index
+    if candidate.is_file():
+        return candidate
+    return index
+
+
 def attach_spa(app: FastAPI, dist: Path) -> None:
     if not dist.is_dir():
         return
@@ -395,7 +409,4 @@ def attach_spa(app: FastAPI, dist: Path) -> None:
 
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str) -> FileResponse:
-        candidate = dist / full_path
-        if candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(dist / "index.html")
+        return FileResponse(spa_file_for(dist, full_path))

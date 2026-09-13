@@ -90,6 +90,14 @@ class JobQueue:
             self._persist()
             return jobs
 
+    def clear(self) -> dict[str, list[str]]:
+        """Drop every bucket. Memory is emptied even if the disk write fails."""
+        with self._lock:
+            old = {key: list(bucket) for key, bucket in self._rows.items()}
+            self._rows = {}
+            self._persist()
+            return old
+
     def queued_ids(self, mr_key: str | None = None) -> list[str]:
         with self._lock:
             if mr_key is not None:

@@ -9,7 +9,7 @@ from opencode_manager.review_config import ReviewConfig
 from opencode_manager.gitlab.events import CleanupTrigger, ReviewTrigger
 from opencode_manager.models import JobRecord, mint_job_id, utc_now
 from opencode_manager.review_fifo import JobQueue
-from opencode_manager.dashboard.store import JobStore
+from opencode_manager.dashboard.store import JobStore, persist_job, remember_unsaved_terminal
 from opencode_manager.review_worker import JobRunner, RunResult
 from opencode_manager.cleanup.end import delete_clone_path, protect_pids, stop_job_holders
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
@@ -63,23 +63,21 @@ class ReviewManager:
         except Exception:  # noqa: BLE001
             logger.exception("boot reap_work_dir failed")
         for job in leftover:
-            if job.status == "running":
-                with bound(job.job_id, job.mr_key, job.log_file):
+            with bound(job.job_id, job.mr_key, job.log_file):
+                try:
                     self._finish(
                         job,
                         RunResult(error="process restarted; leftover job was not resumed"),
                         status="error",
                     )
-        leftover_queued = [j for j in leftover if j.status == "queued"]
-        leftover_queued.sort(key=lambda item: (item.accepted_at or "", item.job_id))
-        for job in leftover_queued:
-            self.queue.enqueue(job.mr_key, job.job_id)
-        # queued leftovers stay in the persisted queue and will dispatch
+                except Exception:  # noqa: BLE001
+                    logger.exception("boot leftover finish failed job=%s", job.job_id)
+        try:
+            self.queue.clear()
+        except Exception:  # noqa: BLE001
+            logger.exception("boot review queue clear failed")
         self.ready = True
-        failed = len([j for j in leftover if j.status == "running"])
-        queued = len([j for j in leftover if j.status == "queued"])
-        log_ok(logger, "manager boot", leftover_running_failed=failed, leftover_queued=queued)
-        self._dispatch()
+        log_ok(logger, "manager boot", leftover_failed=len(leftover))
 
     def shutdown(self) -> None:
         self.stopping = True
@@ -355,27 +353,36 @@ class ReviewManager:
         if not job:
             self._after_job(None)
             return
-        with bound(job.job_id, job.mr_key, job.log_file):
-            log_ok(logger, "pipeline start", job=job.job_id, mr=job.mr_key, trigger=job.trigger, provider=job.provider or "gitlab")
-            try:
-                result = self.runner.run(job, event.is_set)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("runner crashed job=%s", job_id)
-                log_fail(logger, "pipeline crash", job=job_id, err=exc)
-                result = RunResult(error=f"worker crashed: {exc}")
-            job = self.store.get(job_id) or job
-            if event.is_set() or result.cancelled:
-                status = "cancelled"
-            elif result.timeout:
-                status = "timeout"
-            elif result.error or not result.posted:
-                if not result.error:
-                    result.error = "overview note was not posted"
-                status = "error"
-            else:
-                status = "success"
-            self._finish(job, result, status=status)
-        self._after_job(job.mr_key)
+        mr_key_value = job.mr_key
+        try:
+            with bound(job.job_id, job.mr_key, job.log_file):
+                log_ok(logger, "pipeline start", job=job.job_id, mr=job.mr_key, trigger=job.trigger, provider=job.provider or "gitlab")
+                try:
+                    result = self.runner.run(job, event.is_set)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("runner crashed job=%s", job_id)
+                    log_fail(logger, "pipeline crash", job=job_id, err=exc)
+                    result = RunResult(error=f"worker crashed: {exc}")
+                job = self.store.get(job_id) or job
+                if event.is_set() or result.cancelled:
+                    status = "cancelled"
+                elif result.timeout:
+                    status = "timeout"
+                elif result.error or not result.posted:
+                    if not result.error:
+                        result.error = "overview note was not posted"
+                    status = "error"
+                else:
+                    status = "success"
+                try:
+                    self._finish(job, result, status=status)
+                except Exception:  # noqa: BLE001
+                    logger.exception("review finish failed job=%s", job_id)
+                    job.status = status  # type: ignore[assignment]
+                    job.live = False
+                    remember_unsaved_terminal(job)
+        finally:
+            self._after_job(mr_key_value)
 
     def _after_job(self, mr_key_value: Optional[str]) -> None:
         with self._lock:
@@ -430,7 +437,13 @@ class ReviewManager:
             error=job.error_message or "",
             provider=job.provider or "gitlab",
         )
-        self.store.save(job)
+        if not persist_job(self.store, job):
+            remember_unsaved_terminal(job)
+            logger.error(
+                "review terminal history write failed job=%s status=%s; overlay keeps the MR slot free",
+                job.job_id,
+                status,
+            )
         self._cancel.pop(job.job_id, None)
         if status == "success":
             log_ok(logger, "job finished", job=job.job_id, status=status, posted=result.posted)

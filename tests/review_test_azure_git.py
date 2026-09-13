@@ -31,6 +31,29 @@ def test_inject_token_encodes_pat_special_chars():
     assert "pat:ab%2Bc%2Fd%3D@" in got
 
 
+def test_azure_git_run_does_not_put_basic_on_argv(tmp_path, monkeypatch):
+    from opencode_manager.workspace import gitops as gitops_mod
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    env = isolated_git_env("secret-pat", auth_scheme="azure")
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        captured.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(gitops_mod.subprocess, "run", fake_run)
+    gitops_mod._run_git(["status"], env=env, timeout=1.0)
+    assert captured
+    joined = " ".join(captured[0])
+    assert "extraHeader" not in joined
+    assert "Authorization" not in joined
+    assert "secret-pat" not in joined
+    blob = azure_basic_auth("secret-pat").split()[-1]
+    assert blob not in joined
+
+
 def test_azure_git_env_sends_basic_header_and_askpass(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))

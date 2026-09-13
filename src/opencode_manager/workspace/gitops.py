@@ -153,15 +153,8 @@ def _run_git(
         "-c",
         "core.longpaths=true",
     ]
-    if env.get("CREASY_AZURE_GIT") == "1" and env.get("CREASY_GIT_TOKEN"):
-        cmd.extend(
-            [
-                "-c",
-                f"http.extraHeader=Authorization: {azure_basic_auth(env['CREASY_GIT_TOKEN'])}",
-                "-c",
-                f"core.askPass={env.get('GIT_ASKPASS') or ''}",
-            ]
-        )
+    # Azure Basic lives in GIT_CONFIG_VALUE_0 (isolated_git_env). Never
+    # put http.extraHeader / the PAT on argv — leftover reap logs argv.
     cmd.extend(args)
     log_command(logger, args, cwd=cwd or ".", timeout=timeout)
     if env.get("CREASY_AZURE_GIT") == "1":

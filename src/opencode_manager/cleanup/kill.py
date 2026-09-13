@@ -645,10 +645,10 @@ def reap_path(root: Path, *, protect: Optional[Iterable[int]] = None) -> int:
                 continue
             if process_belongs(proc, base):
                 logger.info(
-                    "reap leftover pid=%s cwd=%s argv=%s root=%s",
+                    "reap leftover pid=%s cwd=%s argv_stem=%s root=%s",
                     proc.pid,
                     proc.cwd,
-                    (proc.argv or "")[:200],
+                    _image_stem(proc.argv or ""),
                     base,
                 )
                 kill_pid(proc.pid)

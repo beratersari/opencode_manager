@@ -16,6 +16,10 @@ from opencode_manager import log_context
 _SECRET_USERINFO = re.compile(r"(://)([^/\s:@]+):([^@/\s]+)@")
 _SECRET_PASS_ONLY = re.compile(r"(://):([^@/\s]+)@")
 _SECRET_USER_ONLY = re.compile(r"(://)([^/\s:@]+)@")
+_SECRET_AUTH = re.compile(
+    r"(?i)(\bAuthorization\s*[:=]\s*(?:Basic|Bearer)\s+)(\S+)"
+)
+_SECRET_PRIVATE_TOKEN = re.compile(r"(?i)(\bPRIVATE-TOKEN\s*[:=]\s*)(\S+)")
 _LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -31,7 +35,9 @@ def redact(text: str) -> str:
     # user:pass@ first, then :pass@, then Azure-style user@ (PAT as username).
     text = _SECRET_USERINFO.sub(r"\1***:***@", text)
     text = _SECRET_PASS_ONLY.sub(r"\1:***@", text)
-    return _SECRET_USER_ONLY.sub(r"\1***@", text)
+    text = _SECRET_USER_ONLY.sub(r"\1***@", text)
+    text = _SECRET_AUTH.sub(r"\1***", text)
+    return _SECRET_PRIVATE_TOKEN.sub(r"\1***", text)
 
 
 def clip(text: Any, limit: int = 800) -> str:

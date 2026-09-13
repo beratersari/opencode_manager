@@ -137,8 +137,13 @@ These look like bugs. They are not.
   (including `callback_url`) so a **running** process can dequeue
   after a slot frees. If that persist fails, do not leave a live
   `queued` row: finish it **ERROR**, return inbound **503**, no
-  callback. A process restart does **not** auto-run leftover work
-  — see Boot and shutdown.
+  callback. If **dequeue** persist fails, finish that queued head
+  **ERROR** (one terminal callback if it had `callback_url`) so the
+  `jira_id` is not `409`, then drop it and start the next row.
+  `_on_done` must skip a dequeued id whose store status is not
+  `queued` or that is already finished — never rewrite a boot-ERROR
+  leftover back to `running`. A process restart does **not**
+  auto-run leftover work — see Boot and shutdown.
 
 ### Boot and shutdown
 
@@ -156,7 +161,12 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   rows **ERROR** in the job-history store so the dashboard can show
   them. They are not live, so those `jira_id`s are not `409`. Do
   **not** “handle” those jobs (no OpenCode, no terminal callback,
-  no re-enqueue).
+  no re-enqueue). Review leftovers follow the same rule: leftover
+  **queued and running** review rows become **ERROR**,
+  `review_queue.json` is drained, and boot does **not** `_dispatch`
+  them. If `queue.json` / `review_queue.json` cannot be wiped, still
+  ERROR the leftover rows (overlay if the history write fails) so
+  a later `_on_done` cannot resurrect them.
 - **While shutting down:** stop accepting `POST /jobs` and
   `DELETE /sessions`. Force-kill
   every job’s process tree (git, **that** job’s serve, tool
@@ -400,6 +410,9 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   Job-end kills **this** serve and **keeps** the clone. Close / merge
   / abandon cancels jobs and deletes the clone. Review queue is
   `{data_dir}/review_queue.json` — never n8n `queue.json`.
+  Process restart does not resume leftover review work. A failed
+  review terminal history write must overlay the finished row and
+  still run `_after_job` so the MR FIFO is not frozen.
 - Agent is `code-reviewer` from the `opencoderman` submodule. Install
   with `install-review-agent.*` (agents + skills only). Tokens live
   in `settings.yaml` / `settings.local.yaml`, never on `POST /jobs`,
@@ -470,8 +483,12 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - Tag every line with `job_id` and `jira_id` (contextvars).
 - Never log a URL that still has userinfo. Redact
   `user:pass@`, Azure-style `user@`, and `:pass@`.
-  Inbound `POST /jobs` logs the redacted `repo_url` only. A leftover
-  `PAT` key is not logged.
+  Also redact `Authorization: Basic|Bearer` and `PRIVATE-TOKEN`
+  so an argv / serve tail cannot persist a PAT. Inbound `POST /jobs`
+  logs the redacted `repo_url` only. A leftover `PAT` key is not
+  logged. Azure review Basic lives in `GIT_CONFIG_VALUE_*` only —
+  never on git argv. Linux leftover reap logs `argv_stem` (image
+  name), never raw argv.
 - Create `{data_dir}` layout on startup if missing: `.temp`,
   `.serve`, `logs`, `jobs`, `queue.json`.
 
@@ -567,6 +584,9 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 
 - Jobs tab only (`/jobs`, `/jobs/:jobId`). Same tech stack and look
   as virtual_developer `web/` (React + Vite + Tailwind + Geist).
+  `attach_spa` on `listen_port` must not serve a file outside
+  `web/dist` (`resolve` + `relative_to`; escape → `index.html`).
+  The :5173 proxy already has that guard.
 - Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
   No cancel, delete, settings, schedules, or storage actions.
   **Report issue** is in the sidebar (pick a job or general) and

@@ -468,13 +468,19 @@ n8n  --POST /jobs-->  manager
   not** auto-run leftover queued or running work.
 - When a running job hits a terminal state, dequeue the next FIFO item
   and run the same pipeline. Do **not** send an `in_progress` callback.
+  If that dequeue persist fails, finish the queued head **ERROR**
+  (callback if it had `callback_url`) so the ticket is not `409`.
+  Never start a dequeued row whose store status is not `queued`.
 - Same `jira_id` already running **or** queued → 409. Do not stack.
 
 **Boot:** do not start any job. Do not listen for `POST /jobs` until
 boot is finished. Reap orphan processes on `work_dir`. Leftover
 running/queued rows become history **ERROR** (no callback, no
 OpenCode). They stay visible on the dashboard. They are not live, so
-that `jira_id` is not `409`.
+that `jira_id` is not `409`. Review leftovers (queued and running)
+are the same: ERROR, drain `review_queue.json`, do not dispatch.
+If the queue file cannot be wiped, still ERROR the leftover rows
+so a later slot-free cannot resurrect them.
 
 **Shutdown:** stop accepting `/jobs`. Kill every job process tree.
 Mark every running and queued job ERROR. Terminal callback `500` for
@@ -802,7 +808,10 @@ For every git child of a job:
 - after clone, origin URL scrubbed of any userinfo. The source of
   truth is stored `remote.origin.url`, not `git remote get-url`
 - userinfo redacted from every log and every callback
-  (`user:pass@`, `user@`, `:pass@`)
+  (`user:pass@`, `user@`, `:pass@`). Also `Authorization:
+  Basic|Bearer` and `PRIVATE-TOKEN`. Azure review Basic is
+  `GIT_CONFIG_VALUE_*` only (never on argv). Leftover reap logs
+  the image stem, not raw argv.
 
 SSH (`git@`, `ssh://`) is rejected at the API.
 
@@ -1532,7 +1541,11 @@ mention without a command posts a usage note. n8n `POST /jobs` is
 unchanged (`planner` / `orchestrator` only). Review clones live in
 `{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
 Review FIFO is `{data_dir}/review_queue.json`. Tokens are settings
-fields, never inbound job JSON. Dashboard stays GET-only. Exe zips
+fields, never inbound job JSON. Boot does not resume leftover
+queued or running reviews (ERROR + drain the FIFO). A failed
+review terminal save overlays the finished row and still frees
+the MR slot. Dashboard stays GET-only. `attach_spa` must not
+serve a file outside `web/dist`. Exe zips
 ship `install-review-agent.*` plus `opencoderman/agents` and
 `opencoderman/skills` (no `.git`).
 Job zip: note, meta, runtime, safe settings, queue, `app.log`,

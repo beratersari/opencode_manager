@@ -62,6 +62,10 @@ case-insensitive disk (macOS). This folder is `agents/`.
 | Hang does not fire if list_messages fails after an assistant | `test_hang_does_not_fire_when_list_fails_after_assistant` |
 | Queue JSON replace retries Access Denied | `test_queue_survives_replace_access_denied` |
 | Failed queue persist does not leave the ticket live / 409 | `test_enqueue_failure_does_not_lock_jira_id` |
+| Failed dequeue persist does not leave the ticket 409 | `test_dequeue_persist_fail_does_not_409` |
+| Dequeue persist fail with a later row still starts the later row | `test_dequeue_persist_fail_starts_next_row` |
+| Boot `queue.clear` fail does not resurrect a leftover | `test_boot_queue_clear_fail_does_not_resurrect_leftover` |
+| `_on_done` skips a finished leftover still sitting in `queue.json` | `test_on_done_skips_finished_queue_row` |
 | Atomic tmp write retries; total lock still raises | `test_atomic_retries_tmp_write`, `test_atomic_raises_when_replace_and_inplace_fail` |
 | Hang still fires if never answered and list_messages is down | `test_hang_still_fires_when_never_answered_and_list_fails` |
 | close_serve abort/stop/save explosions do not escape | `test_close_serve_explosions_do_not_escape` |
@@ -155,6 +159,12 @@ case-insensitive disk (macOS). This folder is `agents/`.
 |---|---|
 | Azure `https://PAT@host/…` is not written to `app.log` | `test_azure_username_pat_url_is_redacted_in_app_log` |
 | `oauth2:PAT@` and `:PAT@` userinfo are redacted in `app.log` | `test_gitlab_oauth2_and_colon_userinfo_redacted_in_app_log` |
+| `Authorization: Basic\|Bearer` and `PRIVATE-TOKEN` are redacted | `tests/test_secret_redact.py` |
+| Azure review git does not put Basic on argv | `test_azure_git_argv_has_no_extraheader` |
+| Linux leftover reap logs image stem, not raw argv | `test_reap_leftover_log_is_stem_not_argv` |
+| `attach_spa` does not serve files outside `web/dist` | `tests/test_spa_path_traversal.py` |
+| Review boot does not resume leftover queued or running jobs | `test_review_boot_does_not_resume_leftover_queued`, `test_review_boot_does_not_resume_leftover_running` |
+| Review `_finish` save failure still frees the MR FIFO | `test_review_finish_save_failure_does_not_freeze_fifo` |
 
 ## Job-end kill + delete (every terminal path)
 

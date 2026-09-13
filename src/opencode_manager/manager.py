@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from opencode_manager.callback import post_callback
 from opencode_manager.cleanup.end import delete_clone_path, protect_pids, stop_job_holders
 from opencode_manager.cleanup.kill import kill_job_tree, reap_work_dir
-from opencode_manager.dashboard.store import JobStore, persist_job
+from opencode_manager.dashboard.store import JobStore, persist_job, remember_unsaved_terminal
 from opencode_manager.git.clone import GitError, clone_path_for
 from opencode_manager.log import get_logger, job_log_filename
 from opencode_manager.log_context import bind, clear
@@ -32,7 +32,14 @@ from opencode_manager.opencode.serve import serve_log_path, start_serve, stop_se
 from opencode_manager.opencode.session import OpenCodeClient
 from opencode_manager.queue import JobQueue
 from opencode_manager.settings import Settings
-from opencode_manager.worker import JobRunner, OpenCodeRunner, Terminal, finish_job, run_pipeline
+from opencode_manager.worker import (
+    JobRunner,
+    OpenCodeRunner,
+    Terminal,
+    finish_job,
+    job_already_finished,
+    run_pipeline,
+)
 
 logger = get_logger()
 
@@ -107,7 +114,11 @@ class Manager:
                 leftovers = self.queue.clear()
             except Exception:  # noqa: BLE001
                 logger.exception("boot queue clear failed")
-                leftovers = []
+                try:
+                    leftovers = self.queue.peek_all()
+                except Exception:  # noqa: BLE001
+                    logger.exception("boot queue peek after clear fail")
+                    leftovers = []
             logger.info("boot dropped %s leftover queue rows", len(leftovers))
             for row in leftovers:
                 job_id = str(row.get("job_id") or "")
@@ -127,6 +138,10 @@ class Manager:
                         )
                     except Exception:  # noqa: BLE001
                         logger.exception("boot leftover queue finish failed job=%s", job_id)
+            try:
+                self.queue.clear()
+            except Exception:  # noqa: BLE001
+                logger.exception("boot queue wipe retry failed")
         except Exception:  # noqa: BLE001
             logger.exception("boot failed; still accepting new jobs")
         finally:
@@ -391,6 +406,58 @@ class Manager:
         self._threads.append(thread)
         thread.start()
 
+    def _finish_queued_row(self, job_id: str, text: str) -> None:
+        if not job_id:
+            return
+        try:
+            job = self.store.get(job_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("queue-fail get failed job=%s", job_id)
+            return
+        if not job or job.status != "queued" or job_already_finished(job.job_id):
+            return
+        try:
+            finish_job(
+                job,
+                Terminal(500, text),
+                settings=self.settings,
+                store=self.store,
+                send_callback=bool(job.callback_url),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("queue-fail finish_job failed job=%s", job_id)
+            job.live = False
+            job.status = "error"
+            persist_job(self.store, job)
+            remember_unsaved_terminal(job)
+
+    def _fail_stuck_queue_head(self, exc: BaseException) -> bool:
+        """Dequeue persist failed. Finish the head so it is not 409. True if dropped."""
+        try:
+            rows = self.queue.peek_all()
+        except Exception:  # noqa: BLE001
+            logger.exception("queue peek after dequeue persist fail")
+            return False
+        if not rows:
+            return False
+        job_id = str(rows[0].get("job_id") or "")
+        self._finish_queued_row(job_id, f"could not persist dequeue: {exc}")
+        try:
+            if job_id and self.queue.drop(job_id):
+                return True
+        except Exception:  # noqa: BLE001
+            logger.exception("could not drop stuck queue head job=%s", job_id)
+        for row in rows:
+            self._finish_queued_row(
+                str(row.get("job_id") or ""),
+                f"could not persist dequeue: {exc}",
+            )
+        try:
+            self.queue.clear()
+        except Exception:  # noqa: BLE001
+            logger.exception("queue clear after dequeue persist fail")
+        return False
+
     def _on_done(self) -> None:
         with self._lock:
             self._running = max(0, self._running - 1)
@@ -399,13 +466,26 @@ class Manager:
             if self._running >= self.settings.max_concurrent_jobs:
                 return
             while True:
-                nxt = self.queue.dequeue()
+                try:
+                    nxt = self.queue.dequeue()
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("dequeue persist failed")
+                    if not self._fail_stuck_queue_head(exc):
+                        return
+                    continue
                 if not nxt:
                     logger.info("slot free; queue empty running=%s", self._running)
                     return
                 job = self.store.get(str(nxt.get("job_id") or ""))
                 if not job:
                     logger.warning("dequeued missing job record %s; trying next", nxt.get("job_id"))
+                    continue
+                if job.status != "queued" or job_already_finished(job.job_id):
+                    logger.warning(
+                        "skip dequeued non-live job %s status=%s",
+                        job.job_id,
+                        job.status,
+                    )
                     continue
                 self._running += 1
                 logger.info("dequeue %s jira_id=%s running=%s", job.job_id, job.jira_id, self._running)

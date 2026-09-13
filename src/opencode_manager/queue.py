@@ -39,9 +39,22 @@ class JobQueue:
             rows = self._load()
             if not rows:
                 return None
-            first = rows.pop(0)
-            self._save(rows)
+            first = rows[0]
+            self._save(rows[1:])
             return first
+
+    def drop(self, job_id: str) -> bool:
+        """Remove ``job_id`` wherever it sits. False if it was not on disk."""
+        key = str(job_id or "")
+        if not key:
+            return False
+        with self._lock:
+            rows = self._load()
+            kept = [row for row in rows if str(row.get("job_id") or "") != key]
+            if len(kept) == len(rows):
+                return False
+            self._save(kept)
+            return True
 
     def peek_all(self) -> List[Dict[str, Any]]:
         with self._lock:

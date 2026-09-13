@@ -25,6 +25,14 @@ _finished_ids: set[str] = set()
 _TERMINAL_PERSIST_TRIES = 3
 
 
+def job_already_finished(job_id: str) -> bool:
+    """True after finish_job recorded this id (including boot leftover ERROR)."""
+    if not job_id:
+        return False
+    with _finish_lock:
+        return job_id in _finished_ids
+
+
 @dataclass
 class Terminal:
     status_code: int

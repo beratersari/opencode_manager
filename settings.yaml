@@ -2,7 +2,8 @@
 listen_host: 0.0.0.0
 # Inbound HTTP port (POST /jobs, dashboard, /api).
 listen_port: 4096
-# How many OpenCode jobs may run at once. Extra tickets queue.
+# How many n8n POST /jobs may run at once. Extra tickets queue.
+# Overlay key max_concurrent_n8n_jobs overrides this.
 max_concurrent_jobs: 2
 # Seconds to wait for one callback HTTP POST.
 callback_timeout_seconds: 15
@@ -44,9 +45,12 @@ retry_backoff_cap_seconds: 30
 # review_timeout_seconds: 1800
 # review_retry_count: 2
 # review_agent: code-reviewer
+# max_concurrent_n8n_jobs: 2
 # max_concurrent_reviews: 2
+# webhook_gitlab_url: http://127.0.0.1:4096/amirmini/webhook/gitlab
+# webhook_azure_url: http://127.0.0.1:4096/amirmini/webhook/azure
 # --- Dashboard / n8n auth (Creasy-style). Empty password and token = no login. ---
 # Shipped settings.local.yaml sets these so :5173 and n8n work together.
-# dashboard_user: ""
-# dashboard_password: amir-mini
-# dashboard_token: amir-mini-n8n   # n8n: Authorization Bearer <token> or X-Amir-Mini-Token
+# dashboard_user: admin
+# dashboard_password: admin
+# dashboard_token: change_me   # n8n: Authorization Bearer <token> or X-Amir-Mini-Token

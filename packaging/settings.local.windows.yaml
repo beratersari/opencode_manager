@@ -2,6 +2,11 @@
 # Windows default data root: clones, logs, and job history.
 data_dir: C:\osm
 
+# n8n POST /jobs cap. Extra tickets wait in queue.json.
+max_concurrent_n8n_jobs: 2
+# GitLab/Azure review cap. Extra reviews wait in review_queue.json.
+max_concurrent_reviews: 2
+
 gitlab_url: https://gitlab.com
 gitlab_token: ""
 webhook_secret: ""
@@ -13,8 +18,11 @@ review_model: opencode/big-pickle
 review_timeout_seconds: 1800
 review_retry_count: 2
 review_agent: code-reviewer
-max_concurrent_reviews: 2
 
-dashboard_user: ""
-dashboard_password: amir-mini
-dashboard_token: amir-mini-n8n
+# Info only — OSM does not read these. Point GitLab / Azure hooks here.
+webhook_gitlab_url: http://127.0.0.1:4096/amirmini/webhook/gitlab
+webhook_azure_url: http://127.0.0.1:4096/amirmini/webhook/azure
+
+dashboard_user: admin
+dashboard_password: admin
+dashboard_token: change_me

@@ -165,7 +165,7 @@ def test_osm_http_nodes_send_bearer_token(path: Path) -> None:
     info = next(n for n in data["nodes"] if n["name"] == "remoteComputerInfo1")
     assigns = {a.get("name"): a.get("value") for a in info["parameters"]["assignments"]["assignments"]}
     assert "token" in assigns
-    assert assigns["token"] == "amir-mini-n8n"
+    assert assigns["token"] == "change_me"
     for name in ("sendRequestToAI1", "deleteSession1"):
         node = next(n for n in data["nodes"] if n["name"] == name)
         headers = node["parameters"]["headerParameters"]["parameters"]

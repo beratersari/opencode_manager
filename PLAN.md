@@ -108,7 +108,7 @@ If each job has its own serve, the end of a job is simple and isolated:
 
 No other job is affected. That is the whole point of per-job serve.
 
-`max_concurrent_jobs` is the cap on how many of these serves exist at
+`max_concurrent_n8n_jobs` (overlay; alias `max_concurrent_jobs`) is the cap on how many of these serves exist at
 once. That is how we pay for isolation without unbounded RAM.
 
 #### Ports — there is no conflict

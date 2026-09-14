@@ -10,6 +10,17 @@ def test_git_clone_timeout_default_is_1800() -> None:
     assert Settings().git_clone_timeout_seconds == 1800.0
 
 
+def test_overlay_n8n_jobs_key_does_not_change_review_cap(tmp_path: Path) -> None:
+    yaml = tmp_path / "settings.yaml"
+    yaml.write_text(
+        "max_concurrent_n8n_jobs: 4\nmax_concurrent_reviews: 1\n",
+        encoding="utf-8",
+    )
+    s = load_settings(yaml)
+    assert s.max_concurrent_jobs == 4
+    assert s.max_concurrent_reviews == 1
+
+
 def test_yaml_data_dir_derives_all_paths(tmp_path: Path) -> None:
     yaml = tmp_path / "settings.yaml"
     root = tmp_path / "osm"

@@ -162,7 +162,15 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     s.project_root = root
     s.listen_host = str(data.get("listen_host", s.listen_host))
     s.listen_port = int(data.get("listen_port", s.listen_port))
-    s.max_concurrent_jobs = int(data.get("max_concurrent_jobs", s.max_concurrent_jobs))
+    s.max_concurrent_jobs = max(
+        1,
+        int(
+            data.get(
+                "max_concurrent_n8n_jobs",
+                data.get("max_concurrent_jobs", s.max_concurrent_jobs),
+            )
+        ),
+    )
     s.callback_timeout_seconds = float(
         data.get("callback_timeout_seconds", s.callback_timeout_seconds)
     )
@@ -212,7 +220,7 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         5, int(data.get("review_serve_health_timeout", s.review_serve_health_timeout))
     )
     s.max_concurrent_reviews = max(
-        1, int(data.get("max_concurrent_reviews", data.get("max_concurrent_jobs", s.max_concurrent_reviews)))
+        1, int(data.get("max_concurrent_reviews", s.max_concurrent_reviews))
     )
     s.dashboard_user = str(data.get("dashboard_user", s.dashboard_user) or "").strip()
     s.dashboard_password = str(data.get("dashboard_password", s.dashboard_password) or "").strip()

@@ -225,7 +225,7 @@ function Overview({ job, elapsed }: { job: JobItem; elapsed: string }) {
         <MetaCard label="Timeout" value={`${job.timeout_in_seconds}s`} />
         <MetaCard label="Started" mono value={job.started_at || '—'} />
         <MetaCard label="Completed" mono value={job.completed_at || '—'} />
-        <MetaCard label="Callback" value={job.callback_status_code ? String(job.callback_status_code) : '—'} />
+        <MetaCard label="Result code" value={job.callback_status_code ? String(job.callback_status_code) : '—'} />
       </div>
       {job.error_message && (
         <pre className="vd-pre text-danger-text">{job.error_message}</pre>

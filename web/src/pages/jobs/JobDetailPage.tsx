@@ -13,6 +13,7 @@ import { Tabs } from '../../ui/Tabs'
 import { reportNoteReady } from '../../util/jobReport'
 import { useJobElapsed } from '../../util/time'
 import { JobChatTab } from './JobChatTab'
+import { jobChannelLabel } from './filters'
 
 type Tab = 'overview' | 'prompt' | 'chat' | 'logs'
 
@@ -114,6 +115,11 @@ export function JobDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           {job?.jira_id && <span className="font-mono text-lg font-semibold">{job.jira_id}</span>}
           {job && <StatusBadge status={job.status} />}
+          {job && (
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+              {jobChannelLabel(job)}
+            </span>
+          )}
           {job?.live && <LiveDot />}
         </div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{job?.job_id || 'Job'}</h1>

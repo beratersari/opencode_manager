@@ -7,7 +7,7 @@ import { LiveDot } from '../../ui/LiveDot'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge, statusToneClass } from '../../ui/StatusBadge'
 import { formatJobElapsed, jobElapsedWindow, useNow } from '../../util/time'
-import { JOB_FILTERS, type JobListFilter } from './filters'
+import { JOB_FILTERS, jobChannelLabel, type JobListFilter } from './filters'
 
 export function JobsPage() {
   const navigate = useNavigate()
@@ -153,19 +153,12 @@ export function JobsPage() {
                   <span className="font-mono text-sm font-semibold">{j.jira_id}</span>
                   {j.live && <LiveDot />}
                   <StatusBadge status={j.status} size="sm" />
-                  {j.job_kind === 'review' ? (
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
-                      Review
-                    </span>
-                  ) : null}
+                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                    {jobChannelLabel(j)}
+                  </span>
                 </div>
                 {j.source || j.mr_title ? (
-                  <div className="mt-1 truncate text-xs text-text">
-                    {j.source || j.mr_title}
-                    {j.provider ? (
-                      <span className="ml-2 font-mono text-[11px] text-text-muted">{j.provider}</span>
-                    ) : null}
-                  </div>
+                  <div className="mt-1 truncate text-xs text-text">{j.source || j.mr_title}</div>
                 ) : null}
                 <div className="mt-1 font-mono text-[11px] text-text-muted">
                   {j.job_id} · {j.agent_mode} · {j.model} · {formatJobElapsed(j, now)}

@@ -9,6 +9,13 @@ export const JOB_FILTERS = [
 
 export type JobListFilter = (typeof JOB_FILTERS)[number]['id']
 
+export function jobChannelLabel(job: { job_kind?: string; provider?: string }): string {
+  if ((job.job_kind || '') === 'review') {
+    return (job.provider || '').toLowerCase() === 'azure' ? 'azure-review' : 'gitlab-review'
+  }
+  return 'n8n'
+}
+
 export function jobMatchesFilter(
   job: { status?: string; live?: boolean; job_kind?: string },
   filter: JobListFilter,

@@ -9,7 +9,7 @@ from opencode_manager.azure.client import AzureClient, AzureError
 from opencode_manager.azure.threads import azure_thread_context, parse_azure_threads
 from opencode_manager.review_config import ReviewConfig
 from opencode_manager.gitlab.client import GitLabClient, GitLabError, MergeRequest
-from opencode_manager.models import JobRecord
+from opencode_manager.models import JobRecord, PromptRow, utc_now
 from opencode_manager.cleanup.end import stop_job_holders
 from opencode_manager.diag import log_diag, merge_job_diag
 from opencode_manager.review_log import get_logger, log_fail, log_ok, redact_userinfo
@@ -320,12 +320,17 @@ class OpenCodeRunner:
                         if got.status_code != 200:
                             raise OpenCodeError(f"resume rejected: HTTP {got.status_code}")
                     turn = prompt if not original_posted else hang_resume_prompt()
+                    prompt_id = "ORIGINAL" if not original_posted else "HANG_RESUME"
                     client.post_message(
                         session_id,
                         turn,
                         model=job.model or self.config.opencode_model,
                         agent=self.config.opencode_agent,
                     )
+                    job.prompts.append(PromptRow(id=prompt_id, text=turn, posted_at=utc_now()))
+                    if prompt_id == "ORIGINAL":
+                        job.original_posted = True
+                    self._persist_job(job, "posted prompt")
                     original_posted = True
                     text = client.wait_idle(
                         session_id,

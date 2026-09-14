@@ -150,17 +150,23 @@ export function JobsPage() {
               <div className={`vd-job-bar ${statusToneClass(j.status)}`} />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm font-semibold">{j.jira_id}</span>
+                  <span
+                    className={
+                      (j.mr_title || '').trim()
+                        ? 'min-w-0 truncate text-sm font-semibold'
+                        : 'font-mono text-sm font-semibold'
+                    }
+                  >
+                    {(j.mr_title || '').trim() || j.jira_id}
+                  </span>
                   {j.live && <LiveDot />}
                   <StatusBadge status={j.status} size="sm" />
                   <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
                     {jobChannelLabel(j)}
                   </span>
                 </div>
-                {j.source || j.mr_title ? (
-                  <div className="mt-1 truncate text-xs text-text">{j.source || j.mr_title}</div>
-                ) : null}
                 <div className="mt-1 font-mono text-[11px] text-text-muted">
+                  {(j.mr_title || '').trim() ? `${j.jira_id} · ` : ''}
                   {j.job_id} · {j.agent_mode} · {j.model} · {formatJobElapsed(j, now)}
                   {j.started_at || j.accepted_at
                     ? ` · ${j.started_at || j.accepted_at}`

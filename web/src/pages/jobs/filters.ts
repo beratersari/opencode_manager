@@ -21,7 +21,7 @@ export function jobMatchesFilter(
   filter: JobListFilter,
 ): boolean {
   const s = (job.status || '').toLowerCase()
-  if (filter === 'all') return true
+  if (filter === 'all') return s !== 'queued'
   if (filter === 'active') return s === 'running' || Boolean(job.live && s !== 'queued')
   if (filter === 'queue') return s === 'queued'
   if (filter === 'review') return (job.job_kind || '') === 'review'

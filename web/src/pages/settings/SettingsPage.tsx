@@ -83,7 +83,7 @@ export function SettingsPage() {
       <PageHeader
         kicker="Review"
         title="Settings"
-        description="Change the review agent, OpenCode model, and turn timeout without restarting. Queued and running jobs keep the values they already have."
+        description="Change the review agent, OpenCode model, and turn timeout without restarting. Webhook URLs below are for GitLab and Azure hooks. Queued and running jobs keep the values they already have."
       />
 
       <form className="vd-panel max-w-xl space-y-4 p-5" onSubmit={(event) => void onSubmit(event)}>
@@ -196,6 +196,46 @@ export function SettingsPage() {
           </button>
         </div>
       </form>
+
+      {loaded?.webhook_gitlab_url || loaded?.webhook_azure_url ? (
+        <div className="vd-panel max-w-xl space-y-3 p-5">
+          <div>
+            <h2 className="text-sm font-semibold text-text">Webhook URLs</h2>
+            <p className="mt-1 text-[11px] text-text-muted">
+              Copy these into GitLab and Azure service hooks. They are not saved from this page.
+            </p>
+          </div>
+          <WebhookUrlField label="GitLab" value={loaded.webhook_gitlab_url || ''} />
+          <WebhookUrlField label="Azure" value={loaded.webhook_azure_url || ''} />
+        </div>
+      ) : null}
     </section>
+  )
+}
+
+function WebhookUrlField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function onCopy() {
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <label className="block text-xs text-text-muted">
+      {label}
+      <div className="mt-1 flex gap-2">
+        <input className="vd-input min-w-0 flex-1 font-mono" value={value} readOnly />
+        <button type="button" className="vd-btn vd-btn-secondary shrink-0 px-3" onClick={() => void onCopy()} disabled={!value}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </label>
   )
 }

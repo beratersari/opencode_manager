@@ -192,6 +192,17 @@ class PromptRow(BaseModel):
     posted_at: str
 
 
+def posted_prompt_rows(job: "JobRecord") -> List["PromptRow"]:
+    """Rows for the Prompts tab. Review jobs used to set ``prompt`` only."""
+    if job.prompts:
+        return list(job.prompts)
+    text = (job.prompt or "").strip()
+    if not text:
+        return []
+    when = job.started_at or job.accepted_at or ""
+    return [PromptRow(id="ORIGINAL", text=text, posted_at=when)]
+
+
 class JobRecord(BaseModel):
     job_id: str
     jira_id: str = ""
@@ -356,7 +367,7 @@ def job_matches_list_filter(job: "JobRecord", filt: str) -> bool:
     key = (filt or "all").strip().lower()
     status = (job.status or "").lower()
     if key in {"", "all"}:
-        return True
+        return status != "queued"
     if key == "active":
         return status == "running" or bool(job.live and status != "queued")
     if key == "error":

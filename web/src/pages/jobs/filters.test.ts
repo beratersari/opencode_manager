@@ -6,6 +6,8 @@ describe('jobMatchesFilter', () => {
     expect(jobMatchesFilter({ status: 'running', live: true }, 'active')).toBe(true)
     expect(jobMatchesFilter({ status: 'queued', live: true }, 'active')).toBe(false)
     expect(jobMatchesFilter({ status: 'queued', live: true }, 'queue')).toBe(true)
+    expect(jobMatchesFilter({ status: 'queued', live: true }, 'all')).toBe(false)
+    expect(jobMatchesFilter({ status: 'running', live: true }, 'all')).toBe(true)
   })
 
   it('labels ticket jobs n8n and review jobs by provider', () => {

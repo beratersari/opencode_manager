@@ -104,6 +104,8 @@ export type ReviewSettings = {
   env_agent: string
   models: string[]
   agents: string[]
+  webhook_gitlab_url?: string
+  webhook_azure_url?: string
 }
 
 export type ReportContext = {

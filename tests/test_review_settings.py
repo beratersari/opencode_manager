@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from opencode_manager.api import webhook_info_urls
 from opencode_manager.app import create_app
 from opencode_manager.settings import Settings
 from opencode_manager.worker import Terminal
+
+
+def test_webhook_info_urls_use_loopback_when_bound_all() -> None:
+    got = webhook_info_urls(listen_host="0.0.0.0", listen_port=4096)
+    assert got["webhook_gitlab_url"] == "http://127.0.0.1:4096/amirmini/webhook/gitlab"
+    assert got["webhook_azure_url"] == "http://127.0.0.1:4096/amirmini/webhook/azure"
 
 
 class N8nRunner:
@@ -24,6 +31,8 @@ def test_get_and_put_review_settings(tmp_settings: Settings) -> None:
         assert "/" in body["review_model"]
         assert body["review_timeout_seconds"] >= 1
         assert "code-reviewer" in body["agents"]
+        assert body["webhook_gitlab_url"].endswith("/amirmini/webhook/gitlab")
+        assert body["webhook_azure_url"].endswith("/amirmini/webhook/azure")
         saved = client.put(
             "/api/settings",
             json={
@@ -34,6 +43,7 @@ def test_get_and_put_review_settings(tmp_settings: Settings) -> None:
         )
         assert saved.status_code == 200
         assert saved.json()["review_timeout_seconds"] == 900
+        assert saved.json()["webhook_gitlab_url"].endswith("/amirmini/webhook/gitlab")
         again = client.get("/api/settings")
         assert again.json()["review_timeout_seconds"] == 900
         disk = tmp_settings.data_dir / "settings.json"

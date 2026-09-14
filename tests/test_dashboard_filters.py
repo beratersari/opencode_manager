@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from opencode_manager.app import create_app
 from opencode_manager.dashboard.store import JobStore
-from opencode_manager.models import JobRecord, job_matches_list_filter, utc_now
+from opencode_manager.models import JobRecord, job_matches_list_filter, posted_prompt_rows, utc_now
 from opencode_manager.settings import Settings
 from opencode_manager.worker import Terminal
 
@@ -14,6 +14,16 @@ from opencode_manager.worker import Terminal
 class FakeRunner:
     def run(self, job, *, should_stop):  # noqa: ANN001, ARG002
         return Terminal(200, "ok")
+
+
+def test_posted_prompt_rows_falls_back_to_job_prompt() -> None:
+    empty = JobRecord(job_id="j0", prompt="")
+    assert posted_prompt_rows(empty) == []
+    job = JobRecord(job_id="j1", prompt="review this MR", started_at="2026-09-14T00:00:00.000Z")
+    rows = posted_prompt_rows(job)
+    assert len(rows) == 1
+    assert rows[0].id == "ORIGINAL"
+    assert rows[0].text == "review this MR"
 
 
 def test_job_matches_list_filter() -> None:
@@ -24,6 +34,8 @@ def test_job_matches_list_filter() -> None:
     ok = JobRecord(job_id="j5", jira_id="A", status="success", live=False)
     assert job_matches_list_filter(running, "active")
     assert not job_matches_list_filter(queued, "active")
+    assert job_matches_list_filter(running, "all")
+    assert not job_matches_list_filter(queued, "all")
     assert job_matches_list_filter(err, "error")
     assert job_matches_list_filter(tout, "error")
     assert job_matches_list_filter(ok, "completed")
@@ -144,6 +156,28 @@ def test_usage_jobs_are_hidden_from_dashboard(tmp_settings: Settings) -> None:
         assert "job_usage" not in ids
         assert client.get("/api/jobs/job_usage").status_code == 404
         assert client.get("/api/jobs/job_ask").status_code == 200
+
+
+def test_review_job_prompt_tab_uses_stored_prompt(tmp_settings: Settings) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    store.save(
+        JobRecord(
+            job_id="job_rev",
+            jira_id="42-7",
+            job_kind="review",
+            trigger="review",
+            status="success",
+            live=False,
+            prompt="Review this merge request.",
+            accepted_at=utc_now(),
+        )
+    )
+    app = create_app(tmp_settings, runner=FakeRunner())
+    with TestClient(app) as client:
+        body = client.get("/api/jobs/job_rev/prompts").json()
+        assert len(body["prompts"]) == 1
+        assert body["prompts"][0]["id"] == "ORIGINAL"
+        assert "merge request" in body["prompts"][0]["text"]
 
 
 def test_queue_jira_filter(tmp_settings: Settings) -> None:

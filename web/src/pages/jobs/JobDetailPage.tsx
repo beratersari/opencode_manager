@@ -122,9 +122,14 @@ export function JobDetailPage() {
           )}
           {job?.live && <LiveDot />}
         </div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{job?.job_id || 'Job'}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+          {(job?.mr_title || '').trim() || job?.job_id || 'Job'}
+        </h1>
         <p className="mt-1 font-mono text-xs text-text-muted">
-          {job?.agent_mode} · {job?.model} · attempt {job?.attempt}/{job?.retry_count}
+          {job?.job_id ? `${job.job_id}` : ''}
+          {job?.agent_mode ? ` · ${job.agent_mode}` : ''}
+          {job?.model ? ` · ${job.model}` : ''}
+          {job?.attempt != null ? ` · attempt ${job.attempt}/${job.retry_count}` : ''}
           {elapsed !== '—' ? ` · ${elapsed}` : ''}
         </p>
       </div>

@@ -36,6 +36,7 @@ from opencode_manager.models import (
     LIST_FILTERS,
     dashboard_visible,
     job_matches_list_filter,
+    posted_prompt_rows,
     utc_now,
 )
 from opencode_manager.opencode.serve import read_serve_log, serve_log_path
@@ -229,8 +230,7 @@ def api_jobs(
     filt = (filter or "all").strip().lower()
     if filt not in LIST_FILTERS:
         filt = "all"
-    if filt != "all":
-        jobs = [j for j in jobs if job_matches_list_filter(j, filt)]
+    jobs = [j for j in jobs if job_matches_list_filter(j, filt)]
     total = len(jobs)
     start = (page - 1) * page_size
     slice_ = jobs[start : start + page_size]
@@ -265,7 +265,7 @@ def api_prompts(job_id: str, request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
     return {
         "job_id": job.job_id,
-        "prompts": [p.model_dump() for p in job.prompts],
+        "prompts": [p.model_dump() for p in posted_prompt_rows(job)],
         "server_time": utc_now(),
     }
 
@@ -338,6 +338,22 @@ def api_report_context(request: Request) -> Dict[str, Any]:
     return build_report_context(_mgr(request))
 
 
+def _public_listen_host(host: str) -> str:
+    text = (host or "").strip() or "127.0.0.1"
+    if text in {"0.0.0.0", "::", "[::]"}:
+        return "127.0.0.1"
+    return text.strip("[]")
+
+
+def webhook_info_urls(*, listen_host: str, listen_port: int) -> Dict[str, str]:
+    """Copy-paste hook URLs for the Settings page. Not stored."""
+    base = f"http://{_public_listen_host(listen_host)}:{int(listen_port)}"
+    return {
+        "webhook_gitlab_url": f"{base}/amirmini/webhook/gitlab",
+        "webhook_azure_url": f"{base}/amirmini/webhook/azure",
+    }
+
+
 def _review_settings_payload(request: Request) -> Dict[str, Any]:
     cfg = request.app.state.config
     extras: list[str] = []
@@ -346,6 +362,9 @@ def _review_settings_payload(request: Request) -> Dict[str, Any]:
     if manager is not None:
         extras = [str(job.model or "") for job in manager.store.list_all()]
         agent_extras = [str(getattr(job, "agent", "") or job.agent_mode or "") for job in manager.store.list_all()]
+    settings = getattr(request.app.state, "settings", None)
+    host = getattr(settings, "listen_host", "127.0.0.1")
+    port = int(getattr(settings, "listen_port", 4096) or 4096)
     return {
         "review_model": cfg.opencode_model,
         "review_timeout_seconds": cfg.opencode_timeout,
@@ -355,6 +374,7 @@ def _review_settings_payload(request: Request) -> Dict[str, Any]:
         "env_agent": (cfg.opencode_agent_env or cfg.opencode_agent or "").strip(),
         "models": suggested_models(cfg, extras),
         "agents": suggested_agents(cfg, agent_extras),
+        **webhook_info_urls(listen_host=str(host or ""), listen_port=port),
     }
 
 

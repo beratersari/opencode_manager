@@ -4,6 +4,8 @@ import json
 import threading
 from pathlib import Path
 
+from opencode_manager.atomic import write_text_atomic
+
 
 class JobQueue:
     """Per-MR FIFO of job ids waiting to run."""
@@ -30,7 +32,7 @@ class JobQueue:
         return out
 
     def _persist(self) -> None:
-        self.path.write_text(json.dumps(self._rows, indent=2), encoding="utf-8")
+        write_text_atomic(self.path, json.dumps(self._rows, indent=2))
 
     def enqueue(self, mr_key: str, job_id: str) -> None:
         with self._lock:

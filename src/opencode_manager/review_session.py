@@ -352,7 +352,16 @@ class OpenCodeClient:
                     return True
         if session_id in status and isinstance(status[session_id], dict):
             kind = str(status[session_id].get("type") or status[session_id].get("status") or "").lower()
-            return kind in {"busy", "retry", "running", "in_progress"}
+            if kind in {"busy", "retry", "running", "in_progress", "compacting", "busy_compacting"}:
+                return True
+        try:
+            response = self.get_session(session_id)
+            data = response.json() if response.status_code == 200 else {}
+            clock = data.get("time") if isinstance(data, dict) else {}
+            if isinstance(clock, dict) and clock.get("compacting"):
+                return True
+        except Exception:
+            pass
         return False
 
     def post_message(self, session_id: str, text: str, *, model: str, agent: str) -> None:

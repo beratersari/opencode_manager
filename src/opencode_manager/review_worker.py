@@ -278,6 +278,13 @@ class OpenCodeRunner:
             result.serve_port = handle.port
             self._note_diag(job, "serve", serve_pid=handle.pid, serve_port=handle.port)
             client = OpenCodeClient(handle.base_url, str(clone))
+            log_ok(
+                logger,
+                "instance wait",
+                timeout=self.config.opencode_timeout,
+                hang=self.config.hang_timeout,
+                directory=clone,
+            )
             client.wait_directory(
                 timeout=float(self.config.opencode_timeout),
                 should_stop=should_stop,
@@ -321,6 +328,16 @@ class OpenCodeRunner:
                             raise OpenCodeError(f"resume rejected: HTTP {got.status_code}")
                     turn = prompt if not original_posted else hang_resume_prompt()
                     prompt_id = "ORIGINAL" if not original_posted else "HANG_RESUME"
+                    log_ok(
+                        logger,
+                        "opencode post",
+                        attempt=attempt,
+                        prompt=prompt_id,
+                        chars=len(turn),
+                        session=session_id,
+                        model=job.model or self.config.opencode_model,
+                        agent=self.config.opencode_agent,
+                    )
                     client.post_message(
                         session_id,
                         turn,
@@ -332,6 +349,14 @@ class OpenCodeRunner:
                         job.original_posted = True
                     self._persist_job(job, "posted prompt")
                     original_posted = True
+                    log_ok(
+                        logger,
+                        "opencode wait",
+                        attempt=attempt,
+                        timeout=self.config.opencode_timeout,
+                        hang=self.config.hang_timeout,
+                        session=session_id,
+                    )
                     text = client.wait_idle(
                         session_id,
                         timeout=self.config.opencode_timeout,
@@ -363,6 +388,10 @@ class OpenCodeRunner:
                 workspace.last_job_id = job.job_id
                 self.workspaces.save(workspace)
                 log_fail(logger, "opencode turn exhausted", session=session_id, err=last_error)
+                self._append_job_log(
+                    job,
+                    f"SUMMARY fail session={session_id} attempts={self.config.opencode_retry_count} err={last_error}",
+                )
                 self._post_note(job, result)
                 return result
             result.text = turn_assistant_text(messages, prefer_review=job.trigger != "ask") or text

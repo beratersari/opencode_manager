@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -668,7 +669,12 @@ class OpenCodeClient:
                 fail.append(str(exc))
                 log_http(logger, "POST", f"/session/{session_id}/message", err=exc, ok=False)
 
-        thread = threading.Thread(target=_send, name="osm-message", daemon=True)
+        thread = threading.Thread(
+            target=contextvars.copy_context().run,
+            args=(_send,),
+            name="osm-message",
+            daemon=True,
+        )
         thread.start()
         deadline = time.time() + 45.0
         while time.time() < deadline:

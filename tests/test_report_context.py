@@ -39,6 +39,17 @@ def test_report_context_is_safe_and_includes_logs(tmp_settings: Settings) -> Non
         assert body["runtime"]["osm_version"]
         assert "python" in body["runtime"]
         assert "live" in body
+        assert "n8n_running" in body["live"]
+        assert "review_running" in body["live"]
+        assert body["manager"]["ready"] is True
+        assert "n8n_running" in body["manager"]
+        assert "data_dir" in body["layout"]
+        assert "total" in body["jobs_summary"]
+        assert isinstance(body["review_queue"]["items"], list)
+        assert isinstance(body["serve_logs"], list)
+        assert isinstance(body["log_files_present"], list)
+        assert isinstance(body["service_logs"], list)
+        assert "review_serve_health_timeout" in body["settings"]
         assert client.post("/api/report-context", json={"note": "x"}).status_code == 405
 
 
@@ -82,6 +93,36 @@ def test_report_context_queue_omits_callback_url(tmp_settings: Settings) -> None
         assert "callback_url" not in dumped
         assert "secret-wait.example" not in dumped
         assert "callback_url" not in ctx["settings"]
+
+
+def test_report_context_jobs_summary_omits_chat_and_callback(tmp_settings: Settings) -> None:
+    from opencode_manager.dashboard.store import JobStore
+
+    store = JobStore(tmp_settings.job_store_dir)
+    store.save(
+        JobRecord(
+            job_id="job_sum1",
+            jira_id="SUM-1",
+            status="error",
+            live=False,
+            text="assistant product",
+            chat_snapshot=[{"id": "m1", "role": "assistant", "parts": []}],
+            callback_url="http://secret-wait.example/wait",
+        )
+    )
+    app = create_app(tmp_settings, runner=FakeRunner())
+    with TestClient(app) as client:
+        ctx = client.get("/api/report-context").json()
+        dumped = json.dumps(ctx["jobs_summary"])
+        assert ctx["jobs_summary"]["total"] >= 1
+        assert "secret-wait.example" not in dumped
+        assert "callback_url" not in dumped
+        assert "chat_snapshot" not in dumped
+        recent = ctx["jobs_summary"]["recent"]
+        assert any(row.get("job_id") == "job_sum1" for row in recent)
+        hit = next(row for row in recent if row.get("job_id") == "job_sum1")
+        assert hit.get("result_chars") == len("assistant product")
+        assert "text" not in hit
 
 
 def test_job_history_still_has_no_callback_in_record(tmp_settings: Settings) -> None:

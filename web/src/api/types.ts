@@ -113,16 +113,38 @@ export type ReviewSettings = {
   webhook_azure_url?: string
 }
 
+export type ReportJobSummary = {
+  total?: number
+  by_status?: Record<string, number>
+  by_kind?: Record<string, number>
+  live?: Array<Record<string, unknown>>
+  recent?: Array<Record<string, unknown>>
+}
+
 export type ReportContext = {
   meta?: { app_name?: string; version?: string; server_time?: string }
   runtime?: Record<string, unknown>
   settings?: Record<string, unknown>
   queue?: { items: JobItem[]; queued_count: number }
-  live?: { running: number; queued: number }
+  review_queue?: { items: Array<Record<string, unknown>>; queued_count: number }
+  live?: {
+    running: number
+    queued: number
+    n8n_running?: number
+    n8n_queued?: number
+    review_running?: number
+    review_queued?: number
+  }
+  manager?: Record<string, unknown>
+  layout?: Record<string, unknown>
+  jobs_summary?: ReportJobSummary
   app_log?: ReportLogBlob
   crash_log?: ReportLogBlob
   wrapper_exit_log?: ReportLogBlob
   opencode_logs?: ReportLogBlob[]
+  service_logs?: ReportLogBlob[]
+  log_files_present?: string[]
   serve_logs_present?: string[]
+  serve_logs?: Array<{ name: string; bytes?: number; mtime?: number }>
   server_time?: string
 }

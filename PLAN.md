@@ -1556,14 +1556,19 @@ overlays the finished row and still frees the MR slot. Dashboard
 stays GET-only. `attach_spa` must not serve a file outside
 `web/dist`. Exe zips ship `install-review-agent.*` plus
 `opencoderman/agents` and `opencoderman/skills` (no `.git`).
-Job zip: note, meta, runtime, safe settings, queue, `app.log`,
-`crash.log`, `wrapper-exit.log`, recent OpenCode CLI logs, job
-record / parameters / attempts, prompts, chat (`json` + `md`), OSM
-job log (`GET /api/jobs/{id}/logs?limit=0`), this job's serve log
+Job zip: note, meta, runtime, safe settings, n8n + review queues,
+history summary, manager/layout/live JSON, `app.log`, `crash.log`,
+`wrapper-exit.log`, service logs, recent OpenCode CLI logs, job
+record / parameters / attempts, prompts, chat (`json` + `md` +
+stats), timeline, app.log excerpt for this `job_id`, OSM job log
+(`GET /api/jobs/{id}/logs?limit=0`), this job's serve log
 (`GET /api/jobs/{id}/serve-log`), clone/git explanation (no live
 `git` in the deleted tree). Process extras come from
-`GET /api/report-context` (redacted, capped). General zip is the
-process extras + note only.
+`GET /api/report-context` (redacted, capped; includes jobs
+summary, layout, manager ready/stopping, review queue). The
+sidebar can select several jobs; one zip then has
+`jobs/<ticket>_<job_id>/` for each (serve log, chat, prompts).
+General zip is process extras + recent dashboard job rows + note.
 
 **Do not show:** PAT, URLs with userinfo, MR / commit / feature branch /
 delivery, Codex, Jira description, workflow_type, worker backend
@@ -1585,7 +1590,7 @@ not under `/api`.
 | GET | `/api/jobs/{job_id}/logs` | job-log lines for this id. `limit` (default 2000, last N). `limit=0` = whole file (report zip). |
 | GET | `/api/jobs/{job_id}/serve-log` | this job's `opencode serve` stdout/stderr (`{data_dir}/.serve/{job_id}.log`, redacted). `{ text, missing }`. |
 | GET | `/api/queue` | queued rows, optional `jira_id`. No PAT, no `callback_url` secrets required on the card |
-| GET | `/api/report-context` | process extras for the issue zip: safe settings, runtime, queue, capped `app.log` / `crash.log` / wrapper-exit / recent OpenCode CLI logs. No note, no write. |
+| GET | `/api/report-context` | process extras for the issue zip: safe settings, runtime, n8n + review queues, jobs summary, layout, manager ready/stopping, capped `app.log` / `crash.log` / wrapper-exit / service / recent OpenCode CLI logs. No note, no write. |
 | WS | `/ws` | live snapshot: running count, queue count, generation. No settings/poll payload. |
 
 404 if the id is unknown. Never put PAT in a response.

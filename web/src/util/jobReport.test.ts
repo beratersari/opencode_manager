@@ -25,6 +25,20 @@ describe('job report zip', () => {
     wrapper_exit_log: { text: 'exit 1\n', missing: false },
     opencode_logs: [{ name: 'dev.log', text: 'opencode boot\n', missing: false }],
     serve_logs_present: ['job_aaa.log'],
+    serve_logs: [{ name: 'job_aaa.log', bytes: 12, mtime: 1 }],
+    review_queue: { items: [], queued_count: 0 },
+    manager: { ready: true, stopping: false, n8n_running: 0, n8n_queued: 1, review_running: 0, review_queued: 0 },
+    layout: { data_dir: { path: 'C:/osm', exists: true } },
+    live: { running: 0, queued: 1, n8n_running: 0, n8n_queued: 1, review_running: 0, review_queued: 0 },
+    jobs_summary: {
+      total: 1,
+      by_status: { error: 1 },
+      by_kind: { ticket: 1 },
+      live: [],
+      recent: [{ job_id: 'job_aaa', jira_id: 'PROJ-1', status: 'error' }],
+    },
+    log_files_present: ['app.log'],
+    service_logs: [],
   }
 
   it('redacts tokens stuffed into the posted prompt', () => {
@@ -63,6 +77,12 @@ describe('job report zip', () => {
       'osm-report-A_B-job_x-20260102-030405.zip',
     )
     expect(reportZipName(null, '2026-08-30T12:00:00.000Z')).toBe('osm-report-general-20260830-120000.zip')
+    expect(
+      reportZipName(null, '2026-08-30T12:00:00.000Z', [
+        { jira_id: 'A-1', job_id: 'job_a' },
+        { jira_id: 'B-2', job_id: 'job_b' },
+      ]),
+    ).toBe('osm-report-multi-2-20260830-120000.zip')
   })
 
   it('puts the note, job records, and process extras in the bundle', () => {
@@ -112,6 +132,13 @@ describe('job report zip', () => {
     expect(files['system/wrapper-exit.log']).toContain('exit 1')
     expect(files['system/opencode-logs/dev.log']).toContain('opencode boot')
     expect(files['README.txt']).toContain('job/opencode-serve.log')
+    expect(files['job/chat-stats.json']).toContain('assistant')
+    expect(files['job/timeline.txt']).toContain('line one')
+    expect(files['job/log-stats.json']).toContain('job_log_lines')
+    expect(files['job/app-log-excerpt.txt']).toContain('no app.log lines')
+    expect(files['review-queue.json']).toContain('items')
+    expect(files['system/manager.json']).toBeTruthy()
+    expect(files['system/layout.json']).toBeTruthy()
   })
 
   it('puts error and fail lines in SUMMARY and job/error.txt', () => {
@@ -148,6 +175,10 @@ describe('job report zip', () => {
     expect(files['system/app.log']).toContain('app started')
     expect(files['job/record.json']).toBeUndefined()
     expect(files['job.json']).toBeUndefined()
+    expect(files['SUMMARY.txt']).toContain('History snapshot')
+    expect(files['jobs/recent.json']).toBeTruthy()
+    expect(files['review-queue.json']).toBeTruthy()
+    expect(files['system/live.json']).toBeTruthy()
   })
 
   it('notes a missing serve log instead of omitting the file', () => {
@@ -163,6 +194,50 @@ describe('job report zip', () => {
     })
     expect(files['opencode-serve.log']).toContain('no serve log')
     expect(files['job/opencode-serve.log']).toContain('no serve log')
+  })
+
+  it('puts each selected job in its own folder', () => {
+    const other = {
+      ...job,
+      job_id: 'job_bbb',
+      jira_id: 'PROJ-2',
+      status: 'success',
+      text: 'second product',
+    }
+    const files = buildJobReportFiles({
+      bundles: [
+        {
+          job,
+          prompts: [{ id: 'ORIGINAL', text: 'first', posted_at: 't' }],
+          messages: [],
+          logs: [{ timestamp: 'ts', message: 'log a' }],
+          serveLog: 'serve a\n',
+          serveLogMissing: false,
+        },
+        {
+          job: other,
+          prompts: [],
+          messages: [],
+          logs: [{ timestamp: 'ts', message: 'log b' }],
+          serveLog: 'serve b\n',
+          serveLogMissing: false,
+        },
+      ],
+      context,
+      note: 'compare two failed runs together',
+      exportedAt: '2026-08-30T12:00:00.000Z',
+    })
+    expect(files['SUMMARY.txt']).toContain('kind: jobs')
+    expect(files['SUMMARY.txt']).toContain('job_aaa')
+    expect(files['SUMMARY.txt']).toContain('job_bbb')
+    expect(files['jobs/selected.json']).toContain('job_bbb')
+    expect(files['jobs/PROJ-1_job_aaa/system.log']).toBe('log a\n')
+    expect(files['jobs/PROJ-1_job_aaa/opencode-serve.log']).toBe('serve a\n')
+    expect(files['jobs/PROJ-1_job_aaa/prompts/ORIGINAL.txt']).toContain('first')
+    expect(files['jobs/PROJ-2_job_bbb/system.log']).toBe('log b\n')
+    expect(files['jobs/PROJ-2_job_bbb/result.txt']).toContain('second product')
+    expect(files['job/record.json']).toBeUndefined()
+    expect(files['job.json']).toBeUndefined()
   })
 
   it('writes a zip that contains each file name', () => {

@@ -3,9 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { ApiError, fetchJob, fetchJobs } from '../api/client'
 import type { JobItem } from '../api/types'
 import { downloadIssueReport } from '../util/downloadReport'
-import { REPORT_NOTE_MIN, reportNoteReady } from '../util/jobReport'
-
-type Target = { kind: 'general' } | { kind: 'job'; job: JobItem }
+import { REPORT_JOB_MAX, REPORT_NOTE_MIN, reportNoteReady } from '../util/jobReport'
 
 function jobLabel(job: JobItem): string {
   const ticket = (job.jira_id || '').trim()
@@ -24,7 +22,7 @@ export function ReportIssue() {
   const [jobs, setJobs] = useState<JobItem[]>([])
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [query, setQuery] = useState('')
-  const [target, setTarget] = useState<Target | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,12 +64,12 @@ export function ReportIssue() {
         }
         setJobs(list)
         const match = fromPath ? list.find((j) => j.job_id === fromPath) : null
-        setTarget(match ? { kind: 'job', job: match } : { kind: 'general' })
+        setSelectedIds(match ? [match.job_id] : [])
       })
       .catch((err: unknown) => {
         if (cancelled) return
         setJobs([])
-        setTarget({ kind: 'general' })
+        setSelectedIds([])
         setError(err instanceof Error ? err.message : 'Could not load jobs')
       })
       .finally(() => {
@@ -108,18 +106,26 @@ export function ReportIssue() {
     return jobs.filter((j) => jobLabel(j).toLowerCase().includes(q))
   }, [jobs, query])
 
-  const canSubmit = Boolean(target && reportNoteReady(note) && !busy)
+  const canSubmit = Boolean(reportNoteReady(note) && !busy)
+
+  function toggleJob(jobId: string) {
+    setSelectedIds((prev) => {
+      if (prev.includes(jobId)) return prev.filter((id) => id !== jobId)
+      if (prev.length >= REPORT_JOB_MAX) return prev
+      return [...prev, jobId]
+    })
+  }
 
   async function submit() {
-    if (!target || !reportNoteReady(note)) return
+    if (!reportNoteReady(note)) return
     setBusy(true)
     setError(null)
     setDone(null)
     try {
       const filename = await downloadIssueReport({
-        kind: target.kind,
+        kind: selectedIds.length ? (selectedIds.length > 1 ? 'jobs' : 'job') : 'general',
         note: note.trim(),
-        jobId: target.kind === 'job' ? target.job.job_id : undefined,
+        jobIds: selectedIds.length ? selectedIds : undefined,
       })
       setDone(filename)
       setNote('')
@@ -154,6 +160,9 @@ export function ReportIssue() {
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-text-muted">
             What is this about?
           </div>
+          <p className="mb-2 text-[11px] text-text-muted">
+            Select one or more jobs. None selected = general process report.
+          </p>
           <input
             className="vd-input mb-2 py-1.5 text-xs"
             type="search"
@@ -162,17 +171,56 @@ export function ReportIssue() {
             onChange={(e) => setQuery(e.target.value)}
             disabled={loadingJobs}
           />
-          <div className="vd-report-list" role="listbox" aria-label="Issue target">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-text-muted">
+              {selectedIds.length
+                ? `${selectedIds.length} job${selectedIds.length === 1 ? '' : 's'} selected`
+                : 'General report'}
+              {selectedIds.length >= REPORT_JOB_MAX ? ` (max ${REPORT_JOB_MAX})` : ''}
+            </span>
+            <button
+              type="button"
+              className="vd-btn vd-btn-secondary px-2 py-0.5 text-[11px]"
+              disabled={loadingJobs || !filtered.length}
+              onClick={() => {
+                setSelectedIds((prev) => {
+                  const next = [...prev]
+                  for (const job of filtered) {
+                    if (next.includes(job.job_id)) continue
+                    if (next.length >= REPORT_JOB_MAX) break
+                    next.push(job.job_id)
+                  }
+                  return next
+                })
+              }}
+            >
+              Select visible
+            </button>
+            <button
+              type="button"
+              className="vd-btn vd-btn-secondary px-2 py-0.5 text-[11px]"
+              disabled={!selectedIds.length}
+              onClick={() => setSelectedIds([])}
+            >
+              Clear
+            </button>
+          </div>
+          <div
+            className="vd-report-list"
+            role="listbox"
+            aria-multiselectable="true"
+            aria-label="Issue target"
+          >
             <button
               type="button"
               role="option"
-              aria-selected={target?.kind === 'general'}
-              className={target?.kind === 'general' ? 'vd-report-option is-selected' : 'vd-report-option'}
-              onClick={() => setTarget({ kind: 'general' })}
+              aria-selected={selectedIds.length === 0}
+              className={selectedIds.length === 0 ? 'vd-report-option is-selected' : 'vd-report-option'}
+              onClick={() => setSelectedIds([])}
             >
               <span className="font-medium text-text">General issue</span>
               <span className="block text-[11px] text-text-muted">
-                Settings, queue, app/crash logs, and your note
+                Process logs, queue, recent jobs, layout, and your note
               </span>
             </button>
             {loadingJobs && (
@@ -180,18 +228,23 @@ export function ReportIssue() {
             )}
             {!loadingJobs &&
               filtered.map((job) => {
-                const selected = target?.kind === 'job' && target.job.job_id === job.job_id
+                const selected = selectedIds.includes(job.job_id)
+                const atCap = !selected && selectedIds.length >= REPORT_JOB_MAX
                 return (
                   <button
                     key={job.job_id}
                     type="button"
                     role="option"
                     aria-selected={selected}
+                    disabled={atCap}
                     className={selected ? 'vd-report-option is-selected' : 'vd-report-option'}
-                    onClick={() => setTarget({ kind: 'job', job })}
-                    title={jobLabel(job)}
+                    onClick={() => toggleJob(job.job_id)}
+                    title={atCap ? `At most ${REPORT_JOB_MAX} jobs` : jobLabel(job)}
                   >
-                    <span className="font-mono text-[11px] text-text-secondary">{job.job_id}</span>
+                    <span className="font-mono text-[11px] text-text-secondary">
+                      {selected ? '☑ ' : '☐ '}
+                      {job.job_id}
+                    </span>
                     <span className="block truncate text-xs text-text">
                       {(job.jira_id || '—') + (job.status ? ` · ${job.status}` : '')}
                     </span>

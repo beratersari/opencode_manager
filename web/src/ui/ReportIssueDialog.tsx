@@ -41,7 +41,8 @@ export function ReportIssueDialog({ title, busy, error, onClose, onDownload }: P
         </h2>
         <p className="mt-1 text-sm text-text-muted">
           {title}. A note is required (at least {REPORT_NOTE_MIN} characters). Then download a zip
-          of this job (details, prompts, chat, logs). The note is only in the zip — nothing is POSTed.
+          with job details, prompts, chat, OSM + OpenCode serve logs, process app/crash logs, queue,
+          and recent history. The note is only in the zip — nothing is POSTed.
         </p>
         <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-text-muted">
           Note <span className="text-danger-text">*</span>

@@ -610,14 +610,19 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   The :5173 proxy already has that guard.
 - Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
   No cancel, delete, settings, schedules, or storage actions.
-  **Report issue** is in the sidebar (pick a job or general) and
-  on job detail. Client-built zip from GET data. The note is not
-  stored. Job zip: note, meta, runtime, safe settings, queue,
-  app.log, crash.log, wrapper-exit.log, recent OpenCode CLI logs,
-  job record, parameters, attempts, prompts, chat (json+md), OSM
-  job log, this job's OpenCode serve log, clone/git explanation
-  (no live clone scan — the tree is deleted at job end).
-  `GET /api/report-context` is process extras (redacted, capped).
+  **Report issue** is in the sidebar (pick one or more jobs, or
+  general) and on job detail. Client-built zip from GET data. The
+  note is not
+  stored. Job zip: note, meta, runtime, safe settings, n8n +
+  review queues, history summary, manager/layout/live JSON,
+  app.log, crash.log, wrapper-exit.log, service logs, recent
+  OpenCode CLI logs, job record, parameters, attempts, prompts,
+  chat (json+md+stats), timeline, app.log excerpt for this
+  job_id, OSM job log, this job's OpenCode serve log, clone/git
+  explanation (no live clone scan — the tree is deleted at job
+  end). General zip is the same process extras plus recent job
+  rows (no chat). `GET /api/report-context` is process extras
+  (redacted, capped).
   `GET /api/jobs/:id/logs?limit=0` is the whole manager log;
   `GET /api/jobs/:id/serve-log` is `{data_dir}/.serve/{job_id}.log`
   (redacted). Default logs `limit=2000` stays for the Logs tab.

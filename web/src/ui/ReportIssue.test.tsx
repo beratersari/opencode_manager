@@ -44,14 +44,28 @@ const jobA = {
   live: false,
 }
 
+const jobB = {
+  job_id: 'job_bbb',
+  jira_id: 'BBB-2',
+  status: 'success',
+  live: false,
+}
+
 describe('ReportIssue', () => {
   beforeEach(() => {
-    fetchJobs.mockResolvedValue({ jobs: [jobA], total: 1, page: 1, page_size: 100 })
-    fetchJob.mockResolvedValue({ job: jobA, system_logs: [] })
+    fetchJobs.mockResolvedValue({ jobs: [jobA, jobB], total: 2, page: 1, page_size: 100 })
+    fetchJob.mockImplementation(async (id: string) => ({
+      job: id === 'job_bbb' ? jobB : jobA,
+      system_logs: [],
+    }))
     fetchPrompts.mockResolvedValue({ prompts: [] })
     fetchChat.mockResolvedValue({ messages: [] })
     fetchLogs.mockResolvedValue({ lines: [] })
-    fetchServeLog.mockResolvedValue({ job_id: 'job_aaa', missing: true, text: '' })
+    fetchServeLog.mockImplementation(async (id: string) => ({
+      job_id: id,
+      missing: true,
+      text: '',
+    }))
     fetchReportContext.mockResolvedValue({
       meta: { app_name: 'aMIR-mini' },
       runtime: {},
@@ -94,6 +108,30 @@ describe('ReportIssue', () => {
       expect(fetchLogs).toHaveBeenCalledWith('job_aaa', { limit: 0 })
       expect(fetchServeLog).toHaveBeenCalledWith('job_aaa')
       expect(fetchReportContext).toHaveBeenCalled()
+    })
+  })
+
+  it('lets the operator select two jobs in one zip', async () => {
+    renderAt('/jobs')
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }))
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /job_aaa/ })).toBeTruthy()
+      expect(screen.getByRole('option', { name: /job_bbb/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('option', { name: /job_aaa/ }))
+    fireEvent.click(screen.getByRole('option', { name: /job_bbb/ }))
+    expect(screen.getByRole('option', { name: /job_aaa/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('option', { name: /job_bbb/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('2 jobs selected')).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('What went wrong? What did you expect?'), {
+      target: { value: 'both runs failed the same way after hang' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Download zip' }))
+    await waitFor(() => {
+      expect(fetchLogs).toHaveBeenCalledWith('job_aaa', { limit: 0 })
+      expect(fetchLogs).toHaveBeenCalledWith('job_bbb', { limit: 0 })
+      expect(fetchServeLog).toHaveBeenCalledWith('job_aaa')
+      expect(fetchServeLog).toHaveBeenCalledWith('job_bbb')
     })
   })
 

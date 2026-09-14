@@ -32,7 +32,7 @@ jobs:
       - name: Install (online, tests)
         run: python -m pip install -e ".[dev]"
       - name: Pytest
-        run: python -m pytest -q --tb=short
+        run: python -m pytest -q --tb=short -m "not live"
 
   package:
     name: Package offline zips

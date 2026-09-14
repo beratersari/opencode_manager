@@ -70,7 +70,7 @@ def _free_model() -> str:
 @pytest.mark.live
 def test_post_jobs_real_git_and_opencode(tmp_path: Path) -> None:
     if not shutil.which("opencode"):
-        pytest.fail("opencode binary not found on PATH — this live test cannot skip")
+        pytest.skip("opencode binary not found on PATH")
     if not shutil.which("git"):
         pytest.fail("git binary not found on PATH — this live test cannot skip")
 

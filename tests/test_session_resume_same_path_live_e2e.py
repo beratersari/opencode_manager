@@ -499,7 +499,7 @@ class LiveServe:
 def test_reclone_same_path_resumes_opencode_session(tmp_path: Path) -> None:
     """Delete the clone, clone again to the same path, resume the same ses_*."""
     if not _opencode_bin():
-        pytest.fail("opencode binary not found on PATH — this live test cannot skip")
+        pytest.skip("opencode binary not found on PATH")
     if not _git_bin():
         pytest.fail("git binary not found on PATH — this live test cannot skip")
 

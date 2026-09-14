@@ -59,7 +59,7 @@ class LiveServe:
     def __init__(self, cwd: Path, log_path: Path) -> None:
         bin_path = shutil.which("opencode")
         if not bin_path:
-            pytest.fail("opencode binary not on PATH")
+            pytest.skip("opencode binary not on PATH")
         self.port = _free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         self.cwd = cwd

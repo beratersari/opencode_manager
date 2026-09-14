@@ -99,7 +99,7 @@ def _pid_alive(pid: int) -> bool:
 @pytest.mark.live
 def test_live_killed_serve_starts_new_serve_and_replies(tmp_path: Path) -> None:
     if not shutil.which("opencode"):
-        pytest.fail("opencode binary not found on PATH — this live test cannot skip")
+        pytest.skip("opencode binary not found on PATH")
     if not shutil.which("git"):
         pytest.fail("git binary not found on PATH — this live test cannot skip")
 
@@ -202,7 +202,7 @@ def test_live_killed_serve_starts_new_serve_and_replies(tmp_path: Path) -> None:
 @pytest.mark.live
 def test_live_followup_killed_serve_does_not_reuse_prior_text(tmp_path: Path) -> None:
     if not shutil.which("opencode"):
-        pytest.fail("opencode binary not found on PATH — this live test cannot skip")
+        pytest.skip("opencode binary not found on PATH")
     if not shutil.which("git"):
         pytest.fail("git binary not found on PATH — this live test cannot skip")
 

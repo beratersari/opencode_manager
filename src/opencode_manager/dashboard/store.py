@@ -55,23 +55,69 @@ class JobStore:
         self._cache = None
         self._cache_ts = 0.0
 
-    def _load_record(self, path: Path) -> Optional[JobRecord]:
+    def _read_json_bytes(self, path: Path) -> Optional[bytes]:
+        """Retry transient Windows Access Denied from AV / indexer readers."""
+        last: Optional[BaseException] = None
+        for attempt in range(1, 6):
+            try:
+                return path.read_bytes()
+            except OSError as exc:
+                last = exc
+                time.sleep(0.05 * attempt)
+        if last is not None:
+            logger.warning("job json read failed path=%s err=%s", path, last)
+        return None
+
+    def _load_record(self, path: Path, *, ignore_size: bool = False) -> Optional[JobRecord]:
         """json.loads(bytes) + model_validate. Do not use model_validate_json."""
         try:
             size = path.stat().st_size
         except OSError:
             return None
-        if size > MAX_JSON_SIZE:
+        if not ignore_size and size > MAX_JSON_SIZE:
             logger.warning("skip oversized job json path=%s bytes=%s", path, size)
             return None
+        raw = self._read_json_bytes(path)
+        if raw is None:
+            return None
         try:
-            data = json.loads(path.read_bytes())
+            data = json.loads(raw)
         except (OSError, ValueError, TypeError):
             return None
         if not isinstance(data, dict):
             return None
         try:
             return JobRecord.model_validate(data)
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def _peek_live_ticket(self, path: Path, jira_id: str) -> Optional[JobRecord]:
+        """Live ticket row even when the JSON is too big for list_all."""
+        raw = self._read_json_bytes(path)
+        if raw is None:
+            return None
+        try:
+            data = json.loads(raw)
+        except (OSError, ValueError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        if str(data.get("jira_id") or "") != jira_id:
+            return None
+        if str(data.get("job_kind") or "ticket") == "review":
+            return None
+        if str(data.get("status") or "") not in {"queued", "running"}:
+            return None
+        try:
+            return JobRecord.model_validate(
+                {
+                    "job_id": data.get("job_id") or "",
+                    "jira_id": data.get("jira_id") or "",
+                    "status": data.get("status") or "",
+                    "session_id": data.get("session_id") or "",
+                    "live": data.get("live", True),
+                }
+            )
         except (OSError, ValueError, TypeError):
             return None
 
@@ -90,7 +136,7 @@ class JobStore:
     def get(self, job_id: str) -> Optional[JobRecord]:
         path = self._path(job_id)
         with self._lock:
-            rec = self._load_record(path) if path.is_file() else None
+            rec = self._load_record(path, ignore_size=True) if path.is_file() else None
         with _overlay_lock:
             if job_id in _terminal_overlay:
                 return _terminal_overlay[job_id]
@@ -112,11 +158,19 @@ class JobStore:
             return _overlay_rows(rows)
 
     def live_for_jira(self, jira_id: str) -> Optional[JobRecord]:
-        for job in self.list_all():
-            if getattr(job, "job_kind", "ticket") == "review":
+        """One live ticket job. Do not use list_all — oversized rows are skipped there."""
+        key = (jira_id or "").strip()
+        if not key:
+            return None
+        for path in self.root.glob("*.json"):
+            rec = self._peek_live_ticket(path, key)
+            if rec is None:
                 continue
-            if job.jira_id == jira_id and job.status in {"queued", "running"}:
-                return job
+            with _overlay_lock:
+                over = _terminal_overlay.get(rec.job_id)
+            if over is not None and over.status not in {"queued", "running"}:
+                continue
+            return rec
         return None
 
     def running_for_mr(self, mr_key: str) -> Optional[JobRecord]:

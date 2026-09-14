@@ -234,8 +234,14 @@ def api_jobs(
     total = len(jobs)
     start = (page - 1) * page_size
     slice_ = jobs[start : start + page_size]
+    listed = []
+    for job in slice_:
+        row = job.public_dict()
+        row.pop("chat_snapshot", None)
+        row.pop("prompts", None)
+        listed.append(row)
     return {
-        "jobs": [j.public_dict() for j in slice_],
+        "jobs": listed,
         "total": total,
         "page": page,
         "page_size": page_size,

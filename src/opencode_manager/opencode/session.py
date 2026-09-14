@@ -353,24 +353,73 @@ def compact_marker_count(messages: List[Dict[str, Any]]) -> int:
     return count
 
 
+def _is_synthetic_compact_continue(message: Dict[str, Any]) -> bool:
+    """OpenCode auto-continue after compact. Not an OSM-posted prompt."""
+    info = _info(message)
+    role = str(info.get("role") or message.get("role") or "")
+    if role != "user":
+        return False
+    parts = message.get("parts") or info.get("parts") or []
+    if not isinstance(parts, list):
+        return False
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        meta = part.get("metadata") if isinstance(part.get("metadata"), dict) else {}
+        if meta.get("compaction_continue") is True:
+            return True
+        if part.get("synthetic") is True and "compaction_continue" in str(meta).lower():
+            return True
+    return False
+
+
+def _is_compact_summary_assistant(message: Dict[str, Any]) -> bool:
+    """Auto-compact recap. ``finish=stop`` here is not this job succeeding."""
+    info = _info(message)
+    role = str(info.get("role") or message.get("role") or "")
+    if role != "assistant":
+        return False
+    if info.get("summary") is True or message.get("summary") is True:
+        return True
+    if str(info.get("mode") or message.get("mode") or "").lower() == "compaction":
+        return True
+    parts = message.get("parts") or info.get("parts") or []
+    if not isinstance(parts, list):
+        return False
+    for part in parts:
+        if isinstance(part, dict) and str(part.get("type") or "").lower() in {
+            "compact",
+            "compaction",
+        }:
+            return True
+    return False
+
+
 def assess_idle(
     messages: List[Dict[str, Any]],
     *,
     baseline_assistant_id: str = "",
 ) -> str:
-    """Return success | question | incomplete | compact_leftover.
+    """Return success | question | incomplete | compact_leftover | pending.
 
     ``baseline_assistant_id`` is the last assistant already in the
     session when this job's user message was POSTed. A resumed
     ``ses_*`` still has the previous job's ``finish=stop``; that is
     not this turn.
+
+    ``pending`` means OpenCode just compacted (summary ``stop``) or
+    inserted its synthetic Continue — wait; do not succeed or nudge.
     """
     turn = messages_after_id(messages, baseline_assistant_id)
     if not turn:
         return "incomplete"
+    last = turn[-1]
+    if _is_synthetic_compact_continue(last):
+        return "pending"
+    if _is_compact_summary_assistant(last):
+        return "pending"
     role, finish = _last_finish(turn)
     text = last_assistant_text(turn)
-    last = turn[-1]
     blob = str(last).lower()
     if "compact" in blob and role != "assistant":
         return "compact_leftover"

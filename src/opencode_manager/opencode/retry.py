@@ -21,6 +21,7 @@ from opencode_manager.opencode.session import (
     last_assistant_text,
     last_assistant_text_since,
     assistant_turn_is_substantive,
+    _is_compact_summary_assistant,
     messages_after_id,
     model_is_known,
     turn_has_new_assistant,
@@ -569,7 +570,9 @@ def _inner_loop(
             new_assistant = True
             substantive = True
         if substantive and text:
-            job.text = text
+            last_msg = messages[-1] if messages else {}
+            if not _is_compact_summary_assistant(last_msg):
+                job.text = text
         _save(store, job)
 
         msg_n = len(messages)
@@ -677,6 +680,12 @@ def _inner_loop(
             finish or "(none)",
             last_assistant_id(messages) or "(none)",
         )
+        if verdict == "pending":
+            awaiting_turn = True
+            last_progress = time.time()
+            hang_started = None
+            time.sleep(0.4)
+            continue
         if new_compacts >= _COMPACT_LOOP_NEW and verdict != "success" and not compact_nudged:
             client.abort(job.session_id)
             wait_idle = time.time() + 60

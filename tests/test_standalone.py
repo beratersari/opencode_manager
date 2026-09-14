@@ -305,6 +305,10 @@ def test_build_exe_names_and_does_not_touch_start_scripts() -> None:
     mod = _load_build_exe()
     assert mod.artifact_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64.exe"
     assert mod.artifact_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64"
+    assert (
+        mod.exe_kit_filename("1.2.3", "linux-ubuntu-22.04-x64")
+        == "amir-mini-1.2.3-linux-ubuntu-22.04-x64-exe.zip"
+    )
     assert mod.exe_kit_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64-exe.zip"
     assert mod.exe_kit_filename("1.2.3", "linux-x64") == "amir-mini-1.2.3-linux-x64-exe.zip"
     assert mod.service_kit_filename("1.2.3", "windows-x64") == "amir-mini-1.2.3-windows-x64-service.zip"
@@ -347,6 +351,10 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "Single-file exe" in text
     assert "windows-latest" in text
     assert "ubuntu-latest" in text
+    assert "linux_exe_in_docker.sh" in text
+    assert "linux-ubuntu-" in text
+    assert '"18.04"' in text
+    assert '"24.04"' in text
     assert "-exe.zip" in text
     assert "-service.zip" in text
     assert "WinSW.exe" in text

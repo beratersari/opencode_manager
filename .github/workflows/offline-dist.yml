@@ -277,9 +277,6 @@ jobs:
           - os: windows-latest
             suffix: windows-x64
             ext: .exe
-          - os: ubuntu-latest
-            suffix: linux-x64
-            ext: ""
 
     steps:
       - name: Checkout
@@ -394,10 +391,97 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  exe-linux:
+    name: Single-file exe (linux-ubuntu-${{ matrix.ubuntu }}-x64)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["18.04", "20.04", "22.04", "24.04"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Product version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            v="${{ github.ref_name }}"
+            v="${v#v}"
+          else
+            v="$(tr -d '[:space:]' < VERSION)-g${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "dist_name=amir-mini-$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build exe in Ubuntu ${{ matrix.ubuntu }}
+        env:
+          OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: bash packaging/linux_exe_in_docker.sh ${{ matrix.ubuntu }}
+
+      - name: Alias Ubuntu 22.04 as linux-x64
+        if: matrix.ubuntu == '22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="${{ steps.ver.outputs.dist_name }}"
+          cp "dist/${prefix}-linux-ubuntu-22.04-x64-exe.zip" "dist/${prefix}-linux-x64-exe.zip"
+          cp "dist/${prefix}-linux-ubuntu-22.04-x64-service.zip" "dist/${prefix}-linux-x64-service.zip"
+
+      - name: Assert Ubuntu exe and service zips
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="${{ steps.ver.outputs.dist_name }}"
+          suffix="linux-ubuntu-${{ matrix.ubuntu }}-x64"
+          exe_zip="dist/${prefix}-${suffix}-exe.zip"
+          kit="dist/${prefix}-${suffix}-service.zip"
+          test -f "$exe_zip"
+          test -f "$kit"
+          if [ "${{ matrix.ubuntu }}" = "22.04" ]; then
+            test -f "dist/${prefix}-linux-x64-exe.zip"
+            test -f "dist/${prefix}-linux-x64-service.zip"
+          fi
+
+      - name: Upload Ubuntu executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-exe
+          path: |
+            dist/${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-exe.zip
+            dist/${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-service.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload linux-x64 alias
+        if: matrix.ubuntu == '22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.dist_name }}-linux-x64-exe
+          path: |
+            dist/${{ steps.ver.outputs.dist_name }}-linux-x64-exe.zip
+            dist/${{ steps.ver.outputs.dist_name }}-linux-x64-service.zip
+          if-no-files-found: error
+          retention-days: 30
+
   attach-exe-release:
     name: Attach exes to GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [exe]
+    needs: [exe, exe-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write

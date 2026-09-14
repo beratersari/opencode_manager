@@ -20,8 +20,17 @@ _AUTH_NEEDLES = (
     "http basic",
     "authorization required",
     "access denied",
-    "401",
     "403 unauthorized",
+)
+# Bare "401" matches ticket folders (KAN-401) in clone stderr. Require an HTTP status.
+_AUTH_HTTP_401 = (
+    "error: 401",
+    "error 401",
+    "http 401",
+    "status 401",
+    "returned error: 401",
+    "401 unauthorized",
+    "401 authentication",
 )
 
 _job_creds: Dict[str, Tuple[str, str]] = {}
@@ -48,7 +57,9 @@ def is_git_auth_error(message: str) -> bool:
     text = (message or "").lower()
     if "could not resolve host" in text or "timed out" in text:
         return False
-    return any(needle in text for needle in _AUTH_NEEDLES)
+    if any(needle in text for needle in _AUTH_NEEDLES):
+        return True
+    return any(needle in text for needle in _AUTH_HTTP_401)
 
 
 def remember_job_creds(job_id: str, username: str, password: str) -> None:

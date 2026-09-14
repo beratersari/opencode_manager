@@ -278,6 +278,10 @@ class OpenCodeRunner:
             result.serve_port = handle.port
             self._note_diag(job, "serve", serve_pid=handle.pid, serve_port=handle.port)
             client = OpenCodeClient(handle.base_url, str(clone))
+            client.wait_directory(
+                timeout=float(self.config.opencode_timeout),
+                should_stop=should_stop,
+            )
             session_id, created_new = client.resume_or_create(
                 workspace.session_id or None,
                 title=f"amir-mini {job.mr_key}",

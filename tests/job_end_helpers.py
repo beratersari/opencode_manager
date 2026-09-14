@@ -139,6 +139,9 @@ class ScriptedClient:
             return False
         return self.health_ok
 
+    def wait_directory(self, timeout: float = 1.0, should_stop=None) -> None:  # noqa: ANN001, ARG002
+        return None
+
     def resume_or_create(self, inbound, title):  # noqa: ANN001, ARG002
         if self.resume_error:
             raise self.resume_error

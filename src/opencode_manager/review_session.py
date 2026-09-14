@@ -201,6 +201,9 @@ def fetch_live_chat(base_url: str, directory: str, session_id: str) -> list[dict
         client.close()
 
 
+_INSTANCE_PROBE_TIMEOUT_S = 120.0
+
+
 class OpenCodeClient:
     def __init__(self, base_url: str, directory: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -217,6 +220,45 @@ class OpenCodeClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    def wait_directory(
+        self,
+        timeout: float,
+        *,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> None:
+        """Block until the clone-scoped instance answers GET /session.
+
+        ``GET /global/health`` is process-level. The first
+        ``x-opencode-directory`` request creates the instance and can
+        block while OpenCode bootstraps the clone. Do not POST
+        ``/session`` until that answers.
+        """
+        deadline = time.time() + max(0.1, float(timeout))
+        last: Optional[str] = None
+        log_ok(logger, "instance wait", timeout=timeout, directory=self.directory)
+        while time.time() < deadline:
+            if should_stop and should_stop():
+                raise OpenCodeError("cancelled")
+            remain = max(0.2, deadline - time.time())
+            try:
+                response = self.http.get(
+                    "/session",
+                    headers=self.headers,
+                    timeout=min(remain, _INSTANCE_PROBE_TIMEOUT_S),
+                )
+            except Exception as exc:  # noqa: BLE001
+                last = str(exc)
+                if not self.health():
+                    raise OpenCodeError(f"serve-dead during directory wait last={last}") from exc
+                time.sleep(0.4)
+                continue
+            if response.status_code < 500:
+                log_ok(logger, "instance ready", http=response.status_code)
+                return
+            last = f"HTTP {response.status_code}"
+            time.sleep(0.4)
+        raise OpenCodeError(f"opencode directory instance not ready last={last}", timeout=True)
 
     def get_session(self, session_id: str) -> httpx.Response:
         return self.http.get(f"/session/{session_id}", headers=self.headers, timeout=15.0)

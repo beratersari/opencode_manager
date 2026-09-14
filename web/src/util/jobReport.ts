@@ -38,8 +38,19 @@ export function reportZipName(job?: Pick<JobItem, 'jira_id' | 'job_id'> | null, 
   return `osm-report-${ticket}-${id}-${stamp}.zip`
 }
 
+function redactSecrets(text: string): string {
+  let out = text || ''
+  out = out.replace(/(:\/\/)([^@\s]+):([^@\s]+)@/g, '$1***:***@')
+  out = out.replace(/(:\/\/):([^@\s]+)@/g, '$1:***@')
+  out = out.replace(/(:\/\/)([^@\s]+)@/g, '$1***@')
+  out = out.replace(/([?&](?:private_token|access_token|token|api[_-]?key)=)([^&\s"']+)/gi, '$1***')
+  out = out.replace(/\b((?:OPENAI|ANTHROPIC|OPENROUTER)?[_-]?API[_-]?KEY\s*[=:]\s*)(\S+)/gi, '$1***')
+  out = out.replace(/\bsk-(?:ant-|or-v1-|live-)?[A-Za-z0-9_-]{8,}/gi, 'sk-***')
+  return out
+}
+
 function jsonFile(payload: unknown): string {
-  return `${JSON.stringify(payload, null, 2)}\n`
+  return `${redactSecrets(JSON.stringify(payload, null, 2))}\n`
 }
 
 function logText(blob: ReportLogBlob | undefined, missingNote: string): string {
@@ -49,17 +60,30 @@ function logText(blob: ReportLogBlob | undefined, missingNote: string): string {
   return text.endsWith('\n') ? text : `${text}\n`
 }
 
+function jobAsRecord(job: JobItem): Record<string, unknown> {
+  return job as unknown as Record<string, unknown>
+}
+
 function jobParameters(job: JobItem) {
+  const extra = jobAsRecord(job)
   return {
     job_id: job.job_id,
     jira_id: job.jira_id,
     status: job.status,
     live: job.live,
+    job_kind: job.job_kind || '',
+    provider: job.provider || '',
+    trigger: job.trigger || '',
+    source: job.source || '',
+    mr_title: job.mr_title || '',
+    mr_key: job.mr_key || '',
+    web_url: job.web_url || '',
     agent_mode: job.agent_mode || '',
     model: job.model || '',
     session_id: job.session_id || '',
     repo_url: job.repo_url || '',
     source_branch: job.source_branch || '',
+    target_branch: extra.target_branch || '',
     clone_path: job.clone_path || '',
     serve_pid: job.serve_pid ?? null,
     serve_port: job.serve_port ?? null,
@@ -72,8 +96,113 @@ function jobParameters(job: JobItem) {
     error_message: job.error_message || null,
     callback_status_code: job.callback_status_code ?? null,
     original_posted: job.original_posted ?? false,
+    sha: extra.sha || '',
+    merge_base: extra.merge_base || '',
     retry_attempts: job.attempts || [],
   }
+}
+
+function looksLikeProblem(line: string): boolean {
+  return /fail|error|timed out|timeout|traceback|exception|readtimeout|serve-dead|hang|pipeline failed/i.test(
+    line,
+  )
+}
+
+function lastProblemLines(text: string, limit = 25): string[] {
+  const rows = (text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line && looksLikeProblem(line))
+  return rows.slice(-limit)
+}
+
+export function buildIssueSummary(input: JobReportInput): string {
+  const job = input.job
+  const extra = job ? jobAsRecord(job) : {}
+  const ctx = input.context
+  const settings = (ctx?.settings || {}) as Record<string, unknown>
+  const runtime = (ctx?.runtime || {}) as Record<string, unknown>
+  const logs = (input.logs || []).map((line) => line.message).join('\n')
+  const serve = input.serveLog || ''
+  const appLog = ctx?.app_log?.text || ''
+  const lines: string[] = [
+    'START HERE — aMIR-mini issue summary',
+    '',
+    `kind: ${job ? 'job' : 'general'}`,
+    `exported_at: ${input.exportedAt}`,
+    `app: ${ctx?.meta?.app_name || 'aMIR-mini'} ${ctx?.meta?.version || runtime.osm_version || ''}`,
+    `platform: ${runtime.platform || runtime.system || '(unknown)'}`,
+    `opencode: ${JSON.stringify((runtime.cli_versions as Record<string, unknown> | undefined)?.opencode || runtime.which || '')}`,
+    '',
+  ]
+  if (job) {
+    lines.push(
+      'Job',
+      `  job_id: ${job.job_id}`,
+      `  ticket / mr: ${job.jira_id}`,
+      `  kind: ${job.job_kind || 'ticket'}  provider: ${job.provider || '-'}  trigger: ${job.trigger || '-'}`,
+      `  status: ${job.status}  live: ${job.live}`,
+      `  title: ${(job.mr_title || '').trim() || '-'}`,
+      `  error: ${job.error_message || '(none)'}`,
+      `  model: ${job.model || '-'}  agent: ${job.agent_mode || '-'}`,
+      `  session: ${job.session_id || '-'}  attempt: ${job.attempt ?? '-'} / ${job.retry_count ?? '-'}`,
+      `  serve: pid=${job.serve_pid ?? '-'} port=${job.serve_port ?? '-'}`,
+      `  timeout_in_seconds: ${job.timeout_in_seconds ?? '-'}`,
+      `  repo: ${job.repo_url || '-'}`,
+      `  branches: ${job.source_branch || '-'} -> ${extra.target_branch || '-'}`,
+      `  clone_path: ${job.clone_path || '-'}`,
+      `  started: ${job.started_at || '-'}  completed: ${job.completed_at || '-'}`,
+      `  prompts_posted: ${(input.prompts || []).map((p) => p.id).join(', ') || '(none)'}`,
+      `  chat_messages: ${(input.messages || []).length}`,
+      `  result_chars: ${(job.text || '').length}`,
+      '',
+    )
+    const attempts = job.attempts || []
+    if (attempts.length) {
+      lines.push('Attempts')
+      for (const row of attempts) {
+        lines.push(
+          `  #${row.number} ${row.kind || '-'} prompt=${row.prompt_id || '-'} session=${row.session_id || '-'} err=${row.error || '-'}`,
+        )
+      }
+      lines.push('')
+    }
+  }
+  lines.push(
+    'Timeouts (settings)',
+    `  hang_timeout_seconds: ${settings.hang_timeout_seconds ?? '-'}`,
+    `  git_clone_timeout_seconds: ${settings.git_clone_timeout_seconds ?? '-'}`,
+    `  review_timeout_seconds: ${settings.review_timeout_seconds ?? '-'}`,
+    `  max_concurrent_jobs: ${settings.max_concurrent_jobs ?? '-'}`,
+    `  max_concurrent_reviews: ${settings.max_concurrent_reviews ?? '-'}`,
+    `  live: running=${ctx?.live?.running ?? '-'} queued=${ctx?.live?.queued ?? '-'}`,
+    '',
+    'Where to look next',
+    '  1. This file (status + error + last FAIL lines)',
+    '  2. job/system.log          OSM timeline for this job_id',
+    '  3. job/opencode-serve.log  that serve stdout',
+    '  4. job/prompts/            what OSM POSTed',
+    '  5. job/chat.md             model/tool output',
+    '  6. system/app.log          other jobs around the same time',
+    '  7. system/wrapper-exit.log if the backend vanished',
+    '',
+  )
+  const problems = [
+    ...lastProblemLines(logs),
+    ...lastProblemLines(serve),
+    ...(!job ? lastProblemLines(appLog) : []),
+  ]
+  const unique = [...new Set(problems)].slice(-30)
+  lines.push('Last FAIL / ERROR / timeout lines')
+  if (!unique.length) {
+    lines.push('  (none matched in job log / serve log)')
+  } else {
+    for (const line of unique) {
+      lines.push(`  ${line}`)
+    }
+  }
+  lines.push('')
+  return `${lines.join('\n')}\n`
 }
 
 export function chatMarkdown(jobId: string, messages: ChatMessage[]): string {
@@ -184,6 +313,7 @@ function readme(kind: 'job' | 'general', job?: JobItem | null): string {
     '',
     `Kind: ${kind}`,
     '',
+    'SUMMARY.txt                   START HERE — status, error, last FAIL lines',
     'NOTE.txt                      Reporter note (not stored on the server)',
     'README.txt                    This file',
     'meta.json                     App version and report metadata',
@@ -202,6 +332,8 @@ function readme(kind: 'job' | 'general', job?: JobItem | null): string {
       `Selected job: ${job.job_id}`,
       `Ticket: ${job.jira_id}`,
       '',
+      'job/error.txt               Job error_message if the job failed',
+      'job/diagnostics.json        Stage snapshot (clone/serve/fail)',
       'job/record.json             Dashboard job record (no callback_url)',
       'job/parameters.json         Fields needed to reproduce the run',
       'job/retry_attempts.json     Outer-retry bookkeeping',
@@ -227,6 +359,7 @@ export function buildJobReportFiles(input: JobReportInput): Record<string, strin
   const messages = input.messages || []
   const logs = (input.logs || []).map((line) => line.message).join('\n')
   const files: Record<string, string> = {
+    'SUMMARY.txt': buildIssueSummary(input),
     'NOTE.txt': [
       job ? `jira_id: ${job.jira_id}` : 'kind: general',
       job ? `job_id: ${job.job_id}` : '',
@@ -243,12 +376,19 @@ export function buildJobReportFiles(input: JobReportInput): Record<string, strin
 
   if (job) {
     const jobLog = logs ? `${logs}\n` : ''
+    const extra = jobAsRecord(job)
+    if (job.error_message) {
+      files['job/error.txt'] = `${job.error_message}\n`
+    }
+    if (extra.diagnostics && typeof extra.diagnostics === 'object') {
+      files['job/diagnostics.json'] = jsonFile(extra.diagnostics)
+    }
     files['job/record.json'] = jsonFile({ exported_at: input.exportedAt, job })
     files['job/parameters.json'] = jsonFile(jobParameters(job))
     files['job/retry_attempts.json'] = jsonFile(job.attempts || [])
     files['job/prompts.json'] = jsonFile({ prompts })
     files['job/chat.json'] = jsonFile({ job_id: job.job_id, messages })
-    files['job/chat.md'] = chatMarkdown(job.job_id, messages)
+    files['job/chat.md'] = redactSecrets(chatMarkdown(job.job_id, messages))
     files['job/result.txt'] = job.text ? (job.text.endsWith('\n') ? job.text : `${job.text}\n`) : ''
     files['job/system.log'] = jobLog
     files['job/opencode-serve.log'] = serveLogText(input.serveLog, input.serveLogMissing)
@@ -258,7 +398,7 @@ export function buildJobReportFiles(input: JobReportInput): Record<string, strin
         `id: ${prompt.id}`,
         `posted_at: ${prompt.posted_at}`,
         '',
-        prompt.text || '',
+        redactSecrets(prompt.text || ''),
         '',
       ].join('\n')
     }

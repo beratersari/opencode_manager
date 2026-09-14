@@ -27,6 +27,26 @@ describe('job report zip', () => {
     serve_logs_present: ['job_aaa.log'],
   }
 
+  it('redacts tokens stuffed into the posted prompt', () => {
+    const files = buildJobReportFiles({
+      job,
+      prompts: [
+        {
+          id: 'ORIGINAL',
+          text: 'do it\nrepo_url: https://oauth2:glpat-LEAKME@gitlab.example/g/r.git',
+          posted_at: 't',
+        },
+      ],
+      messages: [],
+      logs: [],
+      note: 'need a report for this leak',
+      exportedAt: '2026-08-30T12:00:00.000Z',
+    })
+    const blob = `${files['job/prompts/ORIGINAL.txt']}${files['job/prompts.json']}`
+    expect(blob).not.toContain('glpat-LEAKME')
+    expect(blob).toContain('gitlab.example')
+  })
+
   it('requires a 20-character note', () => {
     expect(reportNoteReady('')).toBe(false)
     expect(reportNoteReady('   short   ')).toBe(false)
@@ -64,8 +84,12 @@ describe('job report zip', () => {
       note: '  hung after compact  ',
       exportedAt: '2026-08-30T12:00:00.000Z',
     })
+    expect(files['SUMMARY.txt']).toContain('START HERE')
+    expect(files['SUMMARY.txt']).toContain('job_aaa')
+    expect(files['SUMMARY.txt']).toContain('PROJ-1')
     expect(files['NOTE.txt']).toContain('hung after compact')
     expect(files['NOTE.txt']).toContain('job_aaa')
+    expect(files['README.txt']).toContain('SUMMARY.txt')
     expect(files['job.json']).toContain('"job_id": "job_aaa"')
     expect(files['job/record.json']).toContain('"job_id": "job_aaa"')
     expect(files['job/parameters.json']).toContain('gitlab.example')
@@ -88,6 +112,30 @@ describe('job report zip', () => {
     expect(files['system/wrapper-exit.log']).toContain('exit 1')
     expect(files['system/opencode-logs/dev.log']).toContain('opencode boot')
     expect(files['README.txt']).toContain('job/opencode-serve.log')
+  })
+
+  it('puts error and fail lines in SUMMARY and job/error.txt', () => {
+    const files = buildJobReportFiles({
+      job: {
+        ...job,
+        status: 'error',
+        error_message: 'pipeline failed: timed out',
+        job_kind: 'review',
+        provider: 'gitlab',
+        trigger: 'review',
+      },
+      prompts: [],
+      messages: [],
+      logs: [{ timestamp: 'ts', message: 'FAIL opencode create session err=timed out' }],
+      serveLog: '',
+      note: 'review died after health',
+      exportedAt: '2026-08-30T12:00:00.000Z',
+    })
+    expect(files['SUMMARY.txt']).toContain('pipeline failed: timed out')
+    expect(files['SUMMARY.txt']).toContain('create session')
+    expect(files['SUMMARY.txt']).toContain('gitlab')
+    expect(files['job/error.txt']).toContain('timed out')
+    expect(files['job/parameters.json']).toContain('"trigger": "review"')
   })
 
   it('builds a general report without a job folder', () => {

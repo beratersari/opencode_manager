@@ -44,6 +44,11 @@ export type JobItem = {
   mr_title?: string
   trigger?: string
   mr_key?: string
+  target_branch?: string
+  comment_text?: string
+  parent_comment_text?: string
+  error_class?: string
+  diagnostics?: Record<string, unknown>
 }
 
 export type JobsPayload = {

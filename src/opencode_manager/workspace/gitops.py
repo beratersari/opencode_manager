@@ -291,7 +291,12 @@ def clone_repo(
     if dest.exists():
         raise GitError(f"clone dest already exists: {dest}")
     env = isolated_git_env(token, auth_scheme=auth_scheme)
-    auth_url = inject_token(repo_url, token, scheme=auth_scheme)
+    # Azure PAT stays in GIT_CONFIG_VALUE_* / askpass, never on argv.
+    auth_url = (
+        public_git_url(repo_url)
+        if auth_scheme == "azure"
+        else inject_token(repo_url, token, scheme=auth_scheme)
+    )
     if auth_scheme == "azure":
         parsed = urlparse(repo_url)
         log_ok(
@@ -397,7 +402,10 @@ def fetch_and_checkout(
     env = isolated_git_env(token, auth_scheme=auth_scheme)
     git_kw = {"should_stop": should_stop, "on_pid": on_pid}
     origin = _origin_url(dest, env, timeout=min(30.0, timeout), **git_kw)
-    auth = inject_token(origin, token, scheme=auth_scheme) if token else origin
+    if token and auth_scheme == "azure":
+        auth = public_git_url(origin)
+    else:
+        auth = inject_token(origin, token, scheme=auth_scheme) if token else origin
     if token and auth != origin:
         _run_git(
             ["remote", "set-url", "origin", auth],

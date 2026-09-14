@@ -1535,19 +1535,27 @@ zip from GET data. The note is not persisted. No POST.
 
 GitLab `POST /amirmini/webhook/gitlab` and Azure
 `POST /amirmini/webhook/azure` enqueue review jobs on the same
-history store. Comment policy matches Creasy 0.9.7: `@mention /ask`
-(thread reply only), `@mention /review` (full or thread-focused),
-mention without a command posts a usage note. n8n `POST /jobs` is
-unchanged (`planner` / `orchestrator` only). Review clones live in
+history store. Review e2e matches Creasy/MIReviewer 0.9.16; only
+the webhook prefix is `/amirmini` (not `/creasy` / `/mireviewer`).
+Comment policy: `@mention /ask` (thread reply only),
+`@mention /review` (full or thread-focused), mention without a
+command posts a usage note, `@mention /yaver` is silent.
+`/ask do a review of this lock?` stays a follow-up. Azure assign
+GETs the live reviewer list; unassign never starts a review.
+Host-only `azure_url` rebases from the hook/PR collection; a missing
+collection does not 400.
+Finding threads use Turkish `**Kritik**` / `**Önemli**`. Usage-note
+jobs stay off the dashboard. n8n `POST /jobs` is unchanged
+(`planner` / `orchestrator` only). Review clones live in
 `{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
-Review FIFO is `{data_dir}/review_queue.json`. Tokens are settings
-fields, never inbound job JSON. Boot does not resume leftover
-queued or running reviews (ERROR + drain the FIFO). A failed
-review terminal save overlays the finished row and still frees
-the MR slot. Dashboard stays GET-only. `attach_spa` must not
-serve a file outside `web/dist`. Exe zips
-ship `install-review-agent.*` plus `opencoderman/agents` and
-`opencoderman/skills` (no `.git`).
+A leftover partial clone is deleted and recloned. Review FIFO is
+`{data_dir}/review_queue.json`. Tokens are settings fields, never
+inbound job JSON. Boot does not resume leftover queued or running
+reviews (ERROR + drain the FIFO). A failed review terminal save
+overlays the finished row and still frees the MR slot. Dashboard
+stays GET-only. `attach_spa` must not serve a file outside
+`web/dist`. Exe zips ship `install-review-agent.*` plus
+`opencoderman/agents` and `opencoderman/skills` (no `.git`).
 Job zip: note, meta, runtime, safe settings, queue, `app.log`,
 `crash.log`, `wrapper-exit.log`, recent OpenCode CLI logs, job
 record / parameters / attempts, prompts, chat (`json` + `md`), OSM

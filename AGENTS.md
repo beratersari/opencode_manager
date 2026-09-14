@@ -382,44 +382,58 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   `webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
   `azure_webhook_user` / `azure_webhook_password`). Ack immediately.
   Empty Azure URL/PAT → Azure off. Outbound TLS is `verify=False`.
-  Azure review with no resolvable collection (`azure_url` is only the
-  host **and** the hook/PR has no `/tfs/<Collection>`) is HTTP **400**
-  `azure collection missing`. No job. Cleanup still runs.
+  Host-only `azure_url` (`https://tfs02`) is fine: rebase onto
+  `/tfs/<Collection>` from the hook or PR URL. If those also lack a
+  collection, keep the host and still run the job (same as Creasy).
 - Full review starts when the token user (or `review_mention` alias)
   is assigned or re-requested as reviewer. Open without that reviewer
   is ignored. New commits / reopen do not enqueue.
+  Azure reviewer-list hooks GET the live list (retry 0.3s + 0.7s on
+  add) and start only when that GET still lists the bot. Unassign
+  never starts a review. TFS “changed the reviewer list” starts a
+  review when the bot newly appeared (first hook after boot: listed
+  is enough). Assign / re-request while a real review or `/ask` is
+  live is ignored; a usage-note job does not block assign.
 - Comments: `@mention` **and** `/ask` or `/review` in the same note.
   `@name /ask` replies on that thread only (no new finding threads).
   `@name /review` is a full or thread-focused review. Empty `/ask` is
   ignored. Empty `/review` still runs. Mention without those commands
-  posts a usage note (no OpenCode). A command alone is ignored.
-  `/ask` text that explicitly asks for another review is treated as
-  `/review`. After a successful GitLab review, mark the token user
-  `reviewed` (not approved) so Re-request appears. Jobs never assign
-  the bot as reviewer.
+  posts a usage note (no OpenCode). `@mention /yaver` is silent.
+  A command alone is ignored. `/ask` text that explicitly asks for
+  another review (`do a new/full review`, not `do a review of this
+  lock?`) is treated as `/review`. After a successful GitLab review,
+  mark the token user `reviewed` (not approved) so Re-request appears.
+  Jobs never assign the bot as reviewer. GitLab `/user` is resolved
+  once per process; a miss is not retried (REVIEW_MENTION still
+  matches).
 - Draft MRs: skip auto open when `skip_draft_mrs` is true. Explicit
   `/ask` and reviewer assign still run.
 - Identity is `{project_id}-{mr_iid}` (`mr_key`). FIFO per MR. Auto
   open is skipped if that MR is already busy. Explicit `/ask` /
   assign queues. Dedup `jira_id` 409 applies to **ticket** jobs only.
 - Product is one Overview note (or request-thread reply) plus one
-  diff thread per finding. Failed thread does not fail the job. No
-  push. Prompt is merge-base + `git diff --stat` + paths — never the
-  unified diff. Live `git merge-base`, not a cached `base_sha`.
+  diff thread per finding. Finding threads use Turkish severity
+  (`**Kritik**`, `**Önemli**`). Failed thread does not fail the job.
+  No push. Prompt is merge-base + `git diff --stat` + paths — never
+  the unified diff. Live `git merge-base` first for discussion
+  positions, not a stale GitLab `base_sha`. After a GitLab rebase,
+  wait until the MR `sha` moves before checkout.
 - Clone lives with the MR under `{data_dir}/workspaces/{mr_key}`.
-  Job-end kills **this** serve and **keeps** the clone. Close / merge
-  / abandon cancels jobs and deletes the clone. Review queue is
-  `{data_dir}/review_queue.json` — never n8n `queue.json`.
-  Process restart does not resume leftover review work. A failed
-  review terminal history write must overlay the finished row and
-  still run `_after_job` so the MR FIFO is not frozen.
+  Job-end kills **this** serve and **keeps** the clone. A leftover
+  partial clone (`.git` present but unusable) is deleted and cloned
+  again. Close / merge / abandon cancels jobs and deletes the clone.
+  Review queue is `{data_dir}/review_queue.json` — never n8n
+  `queue.json`. Process restart does not resume leftover review work.
+  A failed review terminal history write must overlay the finished
+  row and still run `_after_job` so the MR FIFO is not frozen.
 - Agent is `code-reviewer` from the `opencoderman` submodule. Install
   with `install-review-agent.*` (agents + skills only). Tokens live
   in `settings.yaml` / `settings.local.yaml`, never on `POST /jobs`,
   never in `public_dict` or report zips.
 - Dashboard shows review jobs on the **Review** tab and prints
   `source` (GitLab `path_with_namespace` or Azure `project/repo`).
-  Dashboard still does not start or cancel work.
+  Usage-note jobs stay off the list and job-detail API. Dashboard
+  still does not start or cancel work.
 
 ### Kill and cleanup
 

@@ -354,8 +354,27 @@ class ReviewManager:
             job.status = "running"
             job.live = True
             job.started_at = utc_now()
-            self.store.save(job)
-            thread = threading.Thread(target=self._run_job, args=(job.job_id, event), name=job.job_id, daemon=True)
+            try:
+                self.store.save(job)
+            except Exception:  # noqa: BLE001
+                logger.exception("review start save failed job=%s", job.job_id)
+                self._running = max(0, self._running - 1)
+                self._running_mr.discard(mr_key_value)
+                self._cancel.pop(job.job_id, None)
+                job.status = "queued"
+                job.live = True
+                persist_job(self.store, job)
+                try:
+                    self.queue.enqueue(mr_key_value, job.job_id)
+                except Exception:  # noqa: BLE001
+                    logger.exception("review re-enqueue after start save fail job=%s", job.job_id)
+                return False
+            thread = threading.Thread(
+                target=self._run_job,
+                args=(job.job_id, mr_key_value, event),
+                name=job.job_id,
+                daemon=True,
+            )
             self._threads.append(thread)
             thread.start()
             return True
@@ -369,12 +388,11 @@ class ReviewManager:
                     break
                 self._try_start_locked(key)
 
-    def _run_job(self, job_id: str, event: threading.Event) -> None:
+    def _run_job(self, job_id: str, mr_key_value: str, event: threading.Event) -> None:
         job = self.store.get(job_id)
         if not job:
-            self._after_job(None)
+            self._after_job(mr_key_value)
             return
-        mr_key_value = job.mr_key
         try:
             with bound(job.job_id, job.mr_key, job.log_file):
                 log_ok(logger, "pipeline start", job=job.job_id, mr=job.mr_key, trigger=job.trigger, provider=job.provider or "gitlab")

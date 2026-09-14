@@ -293,6 +293,8 @@ def _classify_reviewer_assigned(
     current_raw: Any = None
     current_rows: list[dict[str, Any]] = []
     if isinstance(blob, dict):
+        if "previous" not in blob or "current" not in blob:
+            return Ignore("action=update")
         previous_raw, current_raw = blob.get("previous"), blob.get("current")
         current_rows = [r for r in (current_raw or []) if isinstance(r, dict)]
     elif isinstance(blob, list) and len(blob) >= 2:

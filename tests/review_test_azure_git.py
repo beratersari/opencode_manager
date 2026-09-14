@@ -5,7 +5,8 @@ from pathlib import Path
 
 from opencode_manager.azure.auth import azure_basic_auth
 from opencode_manager.azure.client import _is_git_http, _is_http, _ssh_to_https
-from opencode_manager.workspace.gitops import inject_token, isolated_git_env
+from opencode_manager.review_worker import RunResult, discussion_sha_attempts
+from opencode_manager.workspace.gitops import clone_is_usable, inject_token, isolated_git_env
 
 
 def test_azure_token_uses_pat_user_not_oauth2():
@@ -102,3 +103,18 @@ def test_ssh_remote_converts_to_https():
     assert _ssh_to_https("ssh://git@ado.example/tfs/DefaultCollection/App/_git/app") == (
         "https://ado.example/tfs/DefaultCollection/App/_git/app"
     )
+
+
+def test_partial_dot_git_is_not_usable(tmp_path: Path) -> None:
+    dest = tmp_path / "ws"
+    dest.mkdir()
+    (dest / ".git").mkdir()
+    assert clone_is_usable(dest) is False
+
+
+def test_discussion_sha_attempts_prefer_merge_base() -> None:
+    pairs = discussion_sha_attempts(
+        RunResult(merge_base="livebase", base_sha="stale", start_sha="stale", sha="head")
+    )
+    assert pairs[0] == ("livebase", "livebase")
+    assert ("stale", "stale") in pairs

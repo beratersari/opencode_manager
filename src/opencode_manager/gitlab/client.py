@@ -6,6 +6,7 @@ intercept; no custom-CA path yet).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import quote
@@ -15,6 +16,11 @@ import httpx
 from opencode_manager.review_log import get_logger, log_fail, log_ok
 
 logger = get_logger("gitlab")
+
+# After GitLab's rebase API, GET can report rebase_in_progress=false while
+# sha / diff_refs are still the pre-rebase commits for one poll.
+REBASE_SETTLE_TIMEOUT = 15.0
+REBASE_SETTLE_INTERVAL = 0.25
 
 
 def _http_detail(exc: Exception) -> tuple[int, str]:
@@ -89,13 +95,18 @@ class GitLabClient:
         )
         self._user_id: Optional[int] = None
         self._user: Optional[dict[str, Any]] = None
+        self._user_resolved = False
 
     def close(self) -> None:
         self._http.close()
 
     def current_user(self) -> Optional[dict[str, Any]]:
-        if self._user is not None:
+        # Same rule as Azure: one lookup per process. A miss is not retried,
+        # so a flaky /user cannot hold later webhook acks. REVIEW_MENTION
+        # still matches after the first miss.
+        if self._user_resolved:
             return self._user
+        self._user_resolved = True
         if not self.token:
             return None
         try:
@@ -136,14 +147,43 @@ class GitLabClient:
 
     def get_merge_request(self, project_id: int, mr_iid: int) -> MergeRequest:
         path = f"/projects/{project_id}/merge_requests/{mr_iid}"
-        try:
-            response = self._http.get(path)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            status, detail = _http_detail(exc)
-            log_fail(logger, "gitlab GET MR", project=project_id, mr=mr_iid, http=status, err=exc, body=detail)
-            raise GitLabError(f"fetch MR failed: {exc}") from exc
-        data = response.json()
+        params = {"include_rebase_in_progress": "true"}
+        deadline = time.time() + max(0.0, float(REBASE_SETTLE_TIMEOUT))
+        sha_while_rebasing = ""
+        data: dict[str, Any] = {}
+        while True:
+            try:
+                response = self._http.get(path, params=params)
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                status, detail = _http_detail(exc)
+                log_fail(logger, "gitlab GET MR", project=project_id, mr=mr_iid, http=status, err=exc, body=detail)
+                raise GitLabError(f"fetch MR failed: {exc}") from exc
+            data = response.json() if response.content else {}
+            if not isinstance(data, dict):
+                data = {}
+            sha = str(data.get("sha") or (data.get("diff_refs") or {}).get("head_sha") or "")
+            rebasing = bool(data.get("rebase_in_progress"))
+            if rebasing:
+                sha_while_rebasing = sha or sha_while_rebasing
+                if time.time() >= deadline:
+                    log_fail(logger, "gitlab GET MR", project=project_id, mr=mr_iid, reason="rebase still running")
+                    break
+                time.sleep(max(0.01, float(REBASE_SETTLE_INTERVAL)))
+                continue
+            if sha_while_rebasing and sha == sha_while_rebasing:
+                if time.time() >= deadline:
+                    log_fail(
+                        logger,
+                        "gitlab GET MR",
+                        project=project_id,
+                        mr=mr_iid,
+                        reason="rebase done but sha unchanged",
+                    )
+                    break
+                time.sleep(max(0.01, float(REBASE_SETTLE_INTERVAL)))
+                continue
+            break
         refs = data.get("diff_refs") or {}
         source = data.get("source") or {}
         last = data.get("sha") or (data.get("diff_refs") or {}).get("head_sha") or ""

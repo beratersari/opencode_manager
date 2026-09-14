@@ -349,6 +349,39 @@ def _scrub_origin(
         )
 
 
+def clone_is_usable(dest: Path) -> bool:
+    """True when dest is a git work tree with an origin remote.
+
+    A killed first clone leaves ``dest/.git`` behind. Later jobs must
+    not treat that as a workspace they can fetch into.
+    """
+    root = Path(dest)
+    try:
+        if not root.exists() or not (root / ".git").exists():
+            return False
+    except OSError:
+        return False
+    env = isolated_git_env()
+    try:
+        inside = _run_git(
+            ["rev-parse", "--is-inside-work-tree"],
+            cwd=root,
+            env=env,
+            timeout=15,
+        )
+        if (inside.stdout or "").strip().lower() != "true":
+            return False
+        origin = _run_git(
+            ["config", "--local", "--get", "remote.origin.url"],
+            cwd=root,
+            env=env,
+            timeout=15,
+        )
+    except GitError:
+        return False
+    return bool((origin.stdout or "").strip())
+
+
 def fetch_and_checkout(
     dest: Path,
     *,

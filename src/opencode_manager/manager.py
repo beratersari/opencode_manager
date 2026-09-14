@@ -330,6 +330,7 @@ class Manager:
             payload = req.model_dump()
             payload["job_id"] = job_id
             payload["accepted_at"] = job.accepted_at
+            payload["repo_url"] = job.repo_url
             if self._running < self.settings.max_concurrent_jobs:
                 self._running += 1
                 job.status = "running"

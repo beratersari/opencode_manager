@@ -193,9 +193,15 @@ class PromptRow(BaseModel):
 
 
 def posted_prompt_rows(job: "JobRecord") -> List["PromptRow"]:
-    """Rows for the Prompts tab. Review jobs used to set ``prompt`` only."""
+    """Rows for the Prompts tab: prompts we actually POSTed.
+
+    Review jobs used to set ``prompt`` only. Ticket jobs that never reached
+    OpenCode must not show ORIGINAL as if it was sent.
+    """
     if job.prompts:
         return list(job.prompts)
+    if (job.job_kind or "ticket") != "review":
+        return []
     text = (job.prompt or "").strip()
     if not text:
         return []

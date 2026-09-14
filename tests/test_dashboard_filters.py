@@ -19,7 +19,12 @@ class FakeRunner:
 def test_posted_prompt_rows_falls_back_to_job_prompt() -> None:
     empty = JobRecord(job_id="j0", prompt="")
     assert posted_prompt_rows(empty) == []
-    job = JobRecord(job_id="j1", prompt="review this MR", started_at="2026-09-14T00:00:00.000Z")
+    job = JobRecord(
+        job_id="j1",
+        job_kind="review",
+        prompt="review this MR",
+        started_at="2026-09-14T00:00:00.000Z",
+    )
     rows = posted_prompt_rows(job)
     assert len(rows) == 1
     assert rows[0].id == "ORIGINAL"

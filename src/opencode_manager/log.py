@@ -13,13 +13,21 @@ from typing import Any, Optional, Sequence
 
 from opencode_manager import log_context
 
-_SECRET_USERINFO = re.compile(r"(://)([^/\s:@]+):([^@/\s]+)@")
-_SECRET_PASS_ONLY = re.compile(r"(://):([^@/\s]+)@")
-_SECRET_USER_ONLY = re.compile(r"(://)([^/\s:@]+)@")
+_SECRET_USERINFO = re.compile(r"(://)([^@\s]+):([^@\s]+)@")
+_SECRET_PASS_ONLY = re.compile(r"(://):([^@\s]+)@")
+_SECRET_USER_ONLY = re.compile(r"(://)([^:@\s]+)@")
+_SECRET_USER_SLASH = re.compile(r"(://)([^@\s]*/[^@\s]*)@")
 _SECRET_AUTH = re.compile(
     r"(?i)(\bAuthorization\s*[:=]\s*(?:Basic|Bearer)\s+)(\S+)"
 )
 _SECRET_PRIVATE_TOKEN = re.compile(r"(?i)(\bPRIVATE-TOKEN\s*[:=]\s*)(\S+)")
+_SECRET_QUERY = re.compile(
+    r"(?i)([?&](?:private_token|access_token|token|api[_-]?key)=)([^&\s\"']+)"
+)
+_SECRET_ENV_KEY = re.compile(
+    r"(?i)(\b(?:OPENAI|ANTHROPIC|OPENROUTER|AZURE|GITLAB)?[_-]?API[_-]?KEY\s*[=:]\s*)(\S+)"
+)
+_SECRET_SK = re.compile(r"(?i)\b(sk-(?:ant-|or-v1-|live-)?[A-Za-z0-9_-]{8,})")
 _LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -36,8 +44,12 @@ def redact(text: str) -> str:
     text = _SECRET_USERINFO.sub(r"\1***:***@", text)
     text = _SECRET_PASS_ONLY.sub(r"\1:***@", text)
     text = _SECRET_USER_ONLY.sub(r"\1***@", text)
+    text = _SECRET_USER_SLASH.sub(r"\1***@", text)
     text = _SECRET_AUTH.sub(r"\1***", text)
-    return _SECRET_PRIVATE_TOKEN.sub(r"\1***", text)
+    text = _SECRET_PRIVATE_TOKEN.sub(r"\1***", text)
+    text = _SECRET_QUERY.sub(r"\1***", text)
+    text = _SECRET_ENV_KEY.sub(r"\1***", text)
+    return _SECRET_SK.sub("sk-***", text)
 
 
 def clip(text: Any, limit: int = 800) -> str:

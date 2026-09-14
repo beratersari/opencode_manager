@@ -8,7 +8,7 @@ from typing import Any, Optional, Sequence
 
 from opencode_manager.log import clip, log_command, log_command_result, redact
 
-_USERINFO_RE = re.compile(r"(https?://)[^/\s\"'<>]+@", re.IGNORECASE)
+_USERINFO_RE = re.compile(r"(https?://)[^@\s\"'<>]+@", re.IGNORECASE)
 
 
 def redact_userinfo(text: str) -> str:

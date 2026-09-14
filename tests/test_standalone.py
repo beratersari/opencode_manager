@@ -352,6 +352,7 @@ def test_ci_uploads_single_exe_artifact() -> None:
     assert "windows-latest" in text
     assert "ubuntu-latest" in text
     assert "linux_exe_in_docker.sh" in text
+    assert "linux-ubuntu-24.04-x64" in text
     assert "linux-ubuntu-" in text
     assert '"18.04"' in text
     assert '"24.04"' in text

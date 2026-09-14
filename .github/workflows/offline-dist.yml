@@ -428,7 +428,23 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "dist_name=amir-mini-$v" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Python (Ubuntu 24.04 host)
+        if: matrix.ubuntu == '24.04'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build exe on Ubuntu 24.04 host
+        if: matrix.ubuntu == '24.04'
+        env:
+          OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m pip install -e ".[exe]"
+          python packaging/build_exe.py --skip-web --suffix linux-ubuntu-24.04-x64 --out-dir dist
+
       - name: Build exe in Ubuntu ${{ matrix.ubuntu }}
+        if: matrix.ubuntu != '24.04'
         env:
           OSM_PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: bash packaging/linux_exe_in_docker.sh ${{ matrix.ubuntu }}

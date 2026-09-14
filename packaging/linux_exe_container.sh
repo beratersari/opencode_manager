@@ -33,7 +33,19 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "uv missing inside the container" >&2
   exit 1
 fi
-uv python install 3.11
+ok=0
+for attempt in 1 2 3 4 5; do
+  if uv python install 3.11; then
+    ok=1
+    break
+  fi
+  echo "uv python install failed (attempt ${attempt}); retrying" >&2
+  sleep $((attempt * 5))
+done
+if [ "$ok" != 1 ]; then
+  echo "uv python install failed after retries" >&2
+  exit 1
+fi
 VENV=/tmp/osm-build-venv
 uv venv --python 3.11 "${VENV}"
 uv pip install --python "${VENV}" -e ".[exe]"

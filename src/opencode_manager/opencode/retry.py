@@ -21,6 +21,7 @@ from opencode_manager.opencode.session import (
     last_assistant_text,
     last_assistant_text_since,
     assistant_turn_is_substantive,
+    messages_after_id,
     model_is_known,
     turn_has_new_assistant,
     session_is_busy,
@@ -549,7 +550,9 @@ def _inner_loop(
             listed_ok = False
         if listed_ok:
             job.chat_snapshot = snapshot_chat(messages, job.session_id)
-        if listed_ok and looks_like_unknown_model_error(str(messages)):
+        if listed_ok and looks_like_unknown_model_error(
+            str(messages_after_id(messages, baseline_assistant_id)), job.model
+        ):
             raise JobFailed(500, unknown_model_message(job.model, []))
         text = last_assistant_text_since(messages, baseline_assistant_id)
         new_assistant = False

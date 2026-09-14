@@ -5,6 +5,8 @@ def test_plain_question_is_not_a_new_review() -> None:
     assert ask_wants_new_review("Does this assume C++17?") is False
     assert ask_wants_new_review("why this lock?") is False
     assert ask_wants_new_review("can you review why dest is 8?") is False
+    assert ask_wants_new_review("do a review of this lock?") is False
+    assert ask_wants_new_review("run a review of the mutex") is False
 
 
 def test_explicit_new_review_request() -> None:

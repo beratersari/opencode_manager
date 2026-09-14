@@ -42,6 +42,11 @@ def test_comment_intent_requires_mention_and_command() -> None:
     assert comment_intent("/review focus", ["creasy"]) is None
     leftover = comment_intent("hey @creasy /review check auth", ["creasy"])
     assert leftover == ("run", "review", "check auth")
+    assert comment_intent("@creasy /yaver", ["creasy"]) is None
+    assert comment_intent("@creasy /yaver look at dest", ["creasy"]) is None
+    assert comment_intent("@creasy/yaver", ["creasy"]) is None
+    follow_up = comment_intent("@creasy /ask do a review of this lock?", ["creasy"])
+    assert follow_up == ("run", "ask", "do a review of this lock?")
     promoted = comment_intent("@creasy /ask please do a new review", ["creasy"])
     assert promoted == ("run", "review", "please do a new review")
     assert comment_intent("/ask why", ["creasy"]) is None
@@ -110,4 +115,5 @@ def test_old_usage_note_marker_is_detected() -> None:
     text = f"{USAGE_MARKER}\n@creasy /ask why is this lock held?"
     assert is_usage_note(text) is True
     assert is_usage_note("prefix\n" + text) is True
+    assert is_usage_note("**MIReviewer — how to run a command**") is True
     assert is_usage_note("@creasy /ask why") is False

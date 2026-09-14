@@ -5,7 +5,12 @@ from __future__ import annotations
 from opencode_manager.review.findings import Finding
 from opencode_manager.review.position import CREASY_FINDING_MARK, format_discussion
 from opencode_manager.review.similarity import should_skip_similar_reply, text_similarity
-from opencode_manager.review.threads import match_creasy_thread, parse_creasy_thread, parse_creasy_threads
+from opencode_manager.review.threads import (
+    is_creasy_finding_body,
+    match_creasy_thread,
+    parse_creasy_thread,
+    parse_creasy_threads,
+)
 
 
 def _finding(**kwargs) -> Finding:
@@ -58,7 +63,8 @@ def _raw(
 def test_format_discussion_marks_creasy_thread() -> None:
     text = format_discussion(_finding())
     assert CREASY_FINDING_MARK in text
-    assert "**Critical**" in text
+    assert "**Kritik**" in text
+    assert "**Critical**" not in text
 
 
 def test_parse_skips_human_and_resolved_and_notes() -> None:
@@ -168,3 +174,15 @@ def test_different_finding_does_not_skip() -> None:
 
 def test_empty_last_body_does_not_skip() -> None:
     assert not should_skip_similar_reply(format_discussion(_finding()), "")
+
+
+def test_finding_body_matches_turkish_and_escaped_mark() -> None:
+    posted = format_discussion(_finding())
+    assert is_creasy_finding_body(posted) is True
+    stripped = posted.replace(CREASY_FINDING_MARK, "").replace("<!-- amir-mini-finding -->", "").strip()
+    assert stripped.startswith("**Kritik**")
+    assert is_creasy_finding_body(stripped) is True
+    assert is_creasy_finding_body("**Önemli** · other") is True
+    assert is_creasy_finding_body("**Critical** overflow") is True
+    escaped = posted.replace("<", "&lt;").replace(">", "&gt;")
+    assert is_creasy_finding_body(escaped) is True

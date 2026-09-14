@@ -289,6 +289,8 @@ def test_mention_without_command_is_usage():
     reset = classify_webhook(note_payload("@creasy /reset"), mention_names=["creasy"])
     assert isinstance(reset, ReviewTrigger)
     assert reset.kind == "usage"
+    yaver = classify_webhook(note_payload("@creasy /yaver"), mention_names=["creasy"])
+    assert isinstance(yaver, Ignore)
 
 
 def test_command_alone_is_ignored():

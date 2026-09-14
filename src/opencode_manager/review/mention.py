@@ -29,6 +29,10 @@ _CMD_RE = re.compile(
     r"(?:^|\s|@[^\s@/]+)/(ask|review)(?=[\s\"'.,!?:;)]|$)",
     re.IGNORECASE,
 )
+_YAVER_RE = re.compile(
+    r"(?:^|\s|@[^\s@/]+)/yaver(?=[\s\"'.,!?:;)]|$)",
+    re.IGNORECASE,
+)
 _CMD_TRAIL = ".,!?:;)"
 _AT_HANDLE = re.compile(
     r"(?<![A-Za-z0-9._-])@("
@@ -103,6 +107,11 @@ def extract_mentioned_names(text: str) -> list[str]:
     for match in _AT_HANDLE.finditer(_plain_comment(raw)):
         add(match.group(1))
     return found
+
+
+def has_yaver_command(body: str) -> bool:
+    """True for `@mention /yaver`. That pattern is ignored (no usage note)."""
+    return bool(_YAVER_RE.search(_plain_comment(body or "")))
 
 
 def first_slash_command(body: str) -> Optional[tuple[str, str]]:
@@ -193,7 +202,8 @@ def comment_intent(
     Returns ``("run", "ask"|"review", remainder)`` when the bot is
     mentioned and ``/ask`` or ``/review`` is present.
     Returns ``("usage", "usage", leftover)`` when the bot is mentioned
-    without those commands. Otherwise ``None``.
+    without those commands. ``@mention /yaver`` is ignored (``None``).
+    Otherwise ``None``.
     """
     mentioned = has_bot_mention(
         body,
@@ -207,6 +217,8 @@ def comment_intent(
     if not mentioned:
         return None
     if not parsed:
+        if has_yaver_command(body):
+            return None
         return "usage", "usage", leftover
     command, remainder = parsed
     remainder = strip_bot_mentions(remainder, names)
@@ -220,7 +232,10 @@ def comment_intent(
 
 USAGE_HEADING = "**aMIR-mini — how to run a command**"
 USAGE_MARKER = "<!-- amir-mini-usage -->"
-_LEGACY_USAGE_HEADING = "**Creasy — how to run a command**"
+_LEGACY_USAGE_HEADINGS = (
+    "**Creasy — how to run a command**",
+    "**MIReviewer — how to run a command**",
+)
 _LEGACY_USAGE_MARKER = "<!-- creasy-usage -->"
 
 
@@ -231,5 +246,5 @@ def is_usage_note(body: str) -> bool:
         USAGE_MARKER in text
         or USAGE_HEADING in text
         or _LEGACY_USAGE_MARKER in text
-        or _LEGACY_USAGE_HEADING in text
+        or any(heading in text for heading in _LEGACY_USAGE_HEADINGS)
     )

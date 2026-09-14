@@ -10,6 +10,12 @@ from opencode_manager.workspace.diffmap import DiffMap, FileDiff
 
 CREASY_FINDING_MARK = "<!-- creasy-finding -->"
 AMIR_FINDING_MARK = "<!-- amir-mini-finding -->"
+_SEVERITY_LABEL = {
+    "critical": "Kritik",
+    "major": "Önemli",
+    "minor": "Küçük",
+    "improvement": "İyileştirme",
+}
 
 
 def line_code(path: str, old_line: Optional[int], new_line: Optional[int]) -> str:
@@ -18,7 +24,7 @@ def line_code(path: str, old_line: Optional[int], new_line: Optional[int]) -> st
 
 
 def format_discussion(finding: Finding) -> str:
-    severity = finding.severity.capitalize()
+    severity = _SEVERITY_LABEL.get((finding.severity or "").lower(), finding.severity.capitalize())
     title = finding.title.strip()
     head = f"**{severity}** · {title}" if title else f"**{severity}**"
     body = finding.body.strip()

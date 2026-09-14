@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
@@ -10,7 +11,10 @@ from opencode_manager.review.findings import Finding
 from opencode_manager.review.position import AMIR_FINDING_MARK, CREASY_FINDING_MARK
 
 _CREASY_HEAD = re.compile(
-    r"^\*\*(Critical|Major|Minor|Improvement)\*\*",
+    r"^\*\*("
+    r"Critical|Major|Minor|Improvement|"
+    r"Kritik|Önemli|Onemli|Küçük|Kucuk|İyileştirme|Iyilestirme"
+    r")\*\*",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -30,9 +34,15 @@ class ExistingThread:
 
 def is_creasy_finding_body(body: str) -> bool:
     text = body or ""
-    if CREASY_FINDING_MARK in text or AMIR_FINDING_MARK in text:
+    plain = html.unescape(text)
+    if (
+        CREASY_FINDING_MARK in text
+        or CREASY_FINDING_MARK in plain
+        or AMIR_FINDING_MARK in text
+        or AMIR_FINDING_MARK in plain
+    ):
         return True
-    return bool(_CREASY_HEAD.search(text.lstrip()))
+    return bool(_CREASY_HEAD.search(text.lstrip()) or _CREASY_HEAD.search(plain.lstrip()))
 
 
 def _norm_path(path: str) -> str:

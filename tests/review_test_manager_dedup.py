@@ -54,6 +54,34 @@ def test_two_mrs_can_run_in_parallel(tmp_config):
     manager.shutdown()
 
 
+def test_assign_while_review_busy_is_ignored(tmp_config):
+    runner = FakeRunner()
+    manager = ReviewManager(tmp_config, runner)
+    manager.ready = True
+    manager.submit(_review("review", comment="first"))
+    assert runner.started.wait(2)
+    ack, job, message = manager.submit(_review("review"))
+    assert ack == "ignored"
+    assert job is None
+    assert "already" in message
+    runner.release.set()
+    manager.shutdown()
+
+
+def test_assign_while_usage_job_is_accepted(tmp_config):
+    runner = FakeRunner()
+    manager = ReviewManager(tmp_config, runner)
+    manager.ready = True
+    ack1, job1, _ = manager.submit(_review("usage", comment="how to"))
+    assert ack1 == "accepted"
+    assert runner.started.wait(2)
+    ack2, job2, _ = manager.submit(_review("review"))
+    assert ack2 == "queued"
+    assert job2 is not None
+    runner.release.set()
+    manager.shutdown()
+
+
 def test_auto_event_skipped_when_busy(tmp_config):
     runner = FakeRunner()
     manager = ReviewManager(tmp_config, runner)

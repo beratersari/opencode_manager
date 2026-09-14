@@ -31,7 +31,13 @@ from opencode_manager.dashboard.runtime_settings import (
 )
 from opencode_manager.log import get_logger, read_job_log_lines, redact
 from opencode_manager.manager import Manager
-from opencode_manager.models import Envelope, LIST_FILTERS, job_matches_list_filter, utc_now
+from opencode_manager.models import (
+    Envelope,
+    LIST_FILTERS,
+    dashboard_visible,
+    job_matches_list_filter,
+    utc_now,
+)
 from opencode_manager.opencode.serve import read_serve_log, serve_log_path
 
 router = APIRouter()
@@ -216,6 +222,7 @@ def api_jobs(
     except Exception:  # noqa: BLE001
         get_logger().exception("GET /api/jobs list failed")
         jobs = []
+    jobs = [j for j in jobs if dashboard_visible(j)]
     if jira_id:
         key = jira_id.strip()
         jobs = [j for j in jobs if j.jira_id == key]
@@ -242,7 +249,7 @@ def api_job(job_id: str, request: Request) -> Dict[str, Any]:
     _require_auth(request)
     manager = _mgr(request)
     job = manager.store.get(job_id)
-    if not job:
+    if not job or not dashboard_visible(job):
         raise HTTPException(status_code=404, detail=f"No job {job_id}")
     logs = read_job_log_lines(
         manager.settings.job_log_dir, job.jira_id, job.job_id, log_file=job.log_file

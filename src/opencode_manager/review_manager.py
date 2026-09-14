@@ -21,6 +21,19 @@ from opencode_manager.workspace.store import WorkspaceStore
 
 logger = get_logger("manager")
 
+_NON_REVIEW_TRIGGERS = frozenset({"usage", "reset"})
+
+
+def _real_review_busy(store: JobStore, running: Optional[JobRecord], queued_ids: list[str]) -> bool:
+    """True when a review/ask/open is already live. Usage notes must not block assign."""
+    if running is not None and (running.trigger or "") not in _NON_REVIEW_TRIGGERS:
+        return True
+    for job_id in queued_ids:
+        job = store.get(job_id)
+        if job is not None and (job.trigger or "") not in _NON_REVIEW_TRIGGERS:
+            return True
+    return False
+
 
 class ReviewManager:
     def __init__(
@@ -127,6 +140,14 @@ class ReviewManager:
             queued_ids = self.queue.queued_ids(key)
             if not trigger.explicit and (running or queued_ids):
                 log_ok(logger, "job submit skipped", reason="already busy", mr=key, kind=trigger.kind)
+                return "ignored", None, "MR already has a running or queued job"
+            assign_only = (
+                trigger.kind == "review"
+                and not (trigger.comment_text or "").strip()
+                and not (getattr(trigger, "discussion_id", "") or "").strip()
+            )
+            if assign_only and _real_review_busy(self.store, running, queued_ids):
+                log_ok(logger, "job submit skipped", reason="review already busy", mr=key, kind=trigger.kind)
                 return "ignored", None, "MR already has a running or queued job"
             source = (getattr(trigger, "source", None) or "").strip() or (
                 f"{trigger.azure_project}/{trigger.azure_repo}".strip("/")

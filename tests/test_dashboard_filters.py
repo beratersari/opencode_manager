@@ -29,8 +29,17 @@ def test_job_matches_list_filter() -> None:
     assert job_matches_list_filter(ok, "completed")
     assert not job_matches_list_filter(ok, "error")
     review = JobRecord(job_id="j6", jira_id="R", job_kind="review", status="success", live=False)
+    usage = JobRecord(
+        job_id="j7",
+        jira_id="R",
+        job_kind="review",
+        trigger="usage",
+        status="success",
+        live=False,
+    )
     assert job_matches_list_filter(review, "review")
     assert not job_matches_list_filter(ok, "review")
+    assert not job_matches_list_filter(usage, "review")
 
 
 def test_jobs_filter_paginates_filtered_set(tmp_settings: Settings) -> None:
@@ -101,6 +110,40 @@ def test_review_filter_via_api(tmp_settings: Settings) -> None:
         assert body["total"] == 1
         assert body["jobs"][0]["job_id"] == "job_review"
         assert body["jobs"][0]["source"] == "group/app"
+
+
+def test_usage_jobs_are_hidden_from_dashboard(tmp_settings: Settings) -> None:
+    store = JobStore(tmp_settings.job_store_dir)
+    store.save(
+        JobRecord(
+            job_id="job_usage",
+            jira_id="42-7",
+            job_kind="review",
+            trigger="usage",
+            status="success",
+            live=False,
+            accepted_at=utc_now(),
+        )
+    )
+    store.save(
+        JobRecord(
+            job_id="job_ask",
+            jira_id="42-7",
+            job_kind="review",
+            trigger="ask",
+            status="success",
+            live=False,
+            accepted_at=utc_now(),
+        )
+    )
+    app = create_app(tmp_settings, runner=FakeRunner())
+    with TestClient(app) as client:
+        listed = client.get("/api/jobs").json()
+        ids = [j["job_id"] for j in listed["jobs"]]
+        assert "job_ask" in ids
+        assert "job_usage" not in ids
+        assert client.get("/api/jobs/job_usage").status_code == 404
+        assert client.get("/api/jobs/job_ask").status_code == 200
 
 
 def test_queue_jira_filter(tmp_settings: Settings) -> None:

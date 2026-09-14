@@ -35,6 +35,12 @@ _JIRA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 LIVE_STATUSES = frozenset({"queued", "running"})
 ERROR_STATUSES = frozenset({"error", "timeout", "not_found"})
 LIST_FILTERS = frozenset({"all", "active", "error", "completed", "review"})
+HIDDEN_DASHBOARD_TRIGGERS = frozenset({"usage"})
+
+
+def dashboard_visible(job: "JobRecord") -> bool:
+    """Usage-note replies stay off the dashboard list (Creasy 0.9.11)."""
+    return (getattr(job, "trigger", "") or "") not in HIDDEN_DASHBOARD_TRIGGERS
 
 
 def utc_now() -> str:
@@ -358,7 +364,7 @@ def job_matches_list_filter(job: "JobRecord", filt: str) -> bool:
     if key == "completed":
         return status == "success"
     if key == "review":
-        return (job.job_kind or "") == "review"
+        return (job.job_kind or "") == "review" and dashboard_visible(job)
     return True
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import threading
 from typing import Optional
@@ -9,14 +10,26 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from opencode_manager.azure.events import classify_azure_webhook
-from opencode_manager.azure.urls import has_collection_root, resolve_collection_url
+from opencode_manager.azure.client import AzureError
+from opencode_manager.azure.events import (
+    apply_live_reviewers,
+    azure_collection_hint,
+    azure_is_reviewer_list_event,
+    azure_message_adds_bot,
+    azure_pr_locator,
+    azure_pr_web_url,
+    azure_reviewers_include_bot,
+    classify_azure_webhook,
+)
 from opencode_manager.gitlab.events import CleanupTrigger, Ignore, ReviewTrigger
 from opencode_manager.review_log import get_logger, log_fail, log_ok
 from opencode_manager.review.mention import collect_names, parse_mention_aliases
 
 router = APIRouter()
 logger = get_logger("webhook.azure")
+
+# After an "added" hook, TFS may not have committed the reviewer yet.
+REVIEWER_GET_RETRY_DELAYS = (0.3, 0.7)
 
 
 def _azure_bot_id(request: Request) -> Optional[str]:
@@ -74,6 +87,49 @@ def _verify_secret(request: Request) -> None:
     log_ok(logger, "azure webhook secret", check="matched")
 
 
+async def _fetch_reviewers(
+    azure: object,
+    locator: tuple[str, str, int],
+    payload: dict,
+    *,
+    bot_id: Optional[str],
+    mention_names: list[str],
+    collection: str,
+    web_url: str,
+) -> list:
+    delays = (0.0,) + tuple(REVIEWER_GET_RETRY_DELAYS)
+    last: list = []
+    last_error: Optional[AzureError] = None
+    for index, delay in enumerate(delays):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            last = azure.list_reviewers(  # type: ignore[attr-defined]
+                *locator,
+                collection=collection,
+                web_url=web_url,
+            )
+        except TypeError:
+            last = azure.list_reviewers(*locator)  # type: ignore[attr-defined]
+        except AzureError as exc:
+            last_error = exc
+            if index == len(delays) - 1:
+                raise
+            log_ok(logger, "azure reviewers GET retry", attempt=index + 1, err=exc)
+            continue
+        last_error = None
+        if azure_reviewers_include_bot(last, bot_id, mention_names):
+            if index:
+                log_ok(logger, "azure reviewers GET listed after retry", attempt=index + 1)
+            return last
+        if not azure_message_adds_bot(payload, bot_id, mention_names):
+            return last
+        log_ok(logger, "azure reviewers GET empty on add, retry", attempt=index + 1)
+    if last_error is not None:
+        raise last_error
+    return last
+
+
 @router.post("/amirmini/webhook/azure")
 async def webhook_azure(request: Request) -> JSONResponse:
     _verify_secret(request)
@@ -100,6 +156,39 @@ async def webhook_azure(request: Request) -> JSONResponse:
         (config.review_mention or "").strip() or "-",
         payload.get("eventType") or payload.get("event_type") or "-",
     )
+    if azure_is_reviewer_list_event(payload):
+        azure = getattr(request.app.state, "azure", None)
+        locator = azure_pr_locator(payload)
+        if azure is None or locator is None or not callable(getattr(azure, "list_reviewers", None)):
+            log_fail(logger, "azure reviewers GET", reason="no client or PR locator")
+            return JSONResponse({"status": "ignored", "reason": "reviewers GET unavailable"})
+        collection = azure_collection_hint(payload)
+        web_url = azure_pr_web_url(payload)
+        apply = getattr(azure, "apply_collection", None)
+        if callable(apply):
+            apply(collection, web_url)
+        try:
+            live = await _fetch_reviewers(
+                azure,
+                locator,
+                payload,
+                bot_id=bot_id,
+                mention_names=mention_names,
+                collection=collection,
+                web_url=web_url,
+            )
+        except AzureError as exc:
+            log_fail(logger, "azure reviewers GET", err=exc, pr=locator[2])
+            return JSONResponse({"status": "ignored", "reason": "reviewers GET failed"})
+        apply_live_reviewers(payload, live)
+        log_ok(
+            logger,
+            "azure reviewers GET",
+            project=locator[0],
+            repo=locator[1],
+            pr=locator[2],
+            count=len(live),
+        )
     classified = classify_azure_webhook(
         payload,
         skip_drafts=config.skip_draft_mrs,
@@ -140,31 +229,6 @@ async def webhook_azure(request: Request) -> JSONResponse:
         )
 
     if isinstance(classified, ReviewTrigger):
-        resolved = resolve_collection_url(
-            configured=config.azure_url,
-            collection=classified.azure_collection,
-            web_url=classified.web_url,
-        )
-        if not has_collection_root(resolved):
-            log_fail(
-                logger,
-                "azure webhook collection missing",
-                pr=classified.mr_iid,
-                configured=config.azure_url or "-",
-                hook=classified.azure_collection or "-",
-                web=classified.web_url or "-",
-            )
-            return JSONResponse(
-                {
-                    "status": "error",
-                    "reason": "azure collection missing",
-                    "detail": (
-                        "Need /tfs/<Collection> on azure_url or on the webhook "
-                        "(resourceContainers.collection.baseUrl or the PR _git URL)."
-                    ),
-                },
-                status_code=400,
-            )
         azure = getattr(request.app.state, "azure", None)
         apply = getattr(azure, "apply_collection", None) if azure is not None else None
         if callable(apply):

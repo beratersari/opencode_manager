@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from opencode_manager.azure.urls import (
-    has_collection_root,
     identity_root,
+    looks_like_azure_resource,
     normalize_collection_url,
     resolve_collection_url,
 )
 
 
-def test_has_collection_root() -> None:
-    assert has_collection_root("https://tfs02.company.com.tr/tfs/ExampleCollection")
-    assert has_collection_root("https://dev.azure.com/contoso")
-    assert not has_collection_root("https://tfs02.company.com.tr")
-    assert not has_collection_root("https://tfs02.company.com.tr/tfs")
+def test_looks_like_collection_root_without_git() -> None:
+    assert looks_like_azure_resource("https://tfs02.company.com.tr/tfs/ExampleCollection/")
+    assert not looks_like_azure_resource("https://tfs02.company.com.tr/tfs")
+    assert not looks_like_azure_resource("https://tfs02.company.com.tr")
 
 
 def test_identity_root_keeps_tfs_app_and_strips_collection() -> None:
@@ -53,6 +52,15 @@ def test_resolve_fills_collection_when_env_is_only_the_host() -> None:
         configured="https://tfs02.company.com.tr",
         collection="",
         web_url=web,
+    )
+    assert got == "https://tfs02.company.com.tr/tfs/ExampleCollection"
+
+
+def test_resolve_from_tfs_collection_url_without_git() -> None:
+    got = resolve_collection_url(
+        configured="https://tfs02.company.com.tr",
+        collection="",
+        web_url="https://tfs02.company.com.tr/tfs/ExampleCollection/",
     )
     assert got == "https://tfs02.company.com.tr/tfs/ExampleCollection"
 

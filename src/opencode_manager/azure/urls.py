@@ -9,7 +9,11 @@ _RESOURCE_MARKERS = ("/_git/", "/_apis/", "/pullrequest/")
 
 def looks_like_azure_resource(url: str) -> bool:
     text = unquote(str(url or "")).lower()
-    return any(marker in text for marker in _RESOURCE_MARKERS)
+    if any(marker in text for marker in _RESOURCE_MARKERS):
+        return True
+    parsed = urlparse(str(url or "").strip())
+    parts = [item for item in unquote(parsed.path or "").split("/") if item]
+    return bool(parts and parts[0].lower() == "tfs" and len(parts) >= 2)
 
 
 def normalize_collection_url(url: str) -> str:
@@ -38,28 +42,6 @@ def normalize_collection_url(url: str) -> str:
         path = path.rsplit("/", 1)[0] if "/" in path.rstrip("/") else path
     path = path.rstrip("/")
     return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
-
-
-def has_collection_root(url: str) -> bool:
-    """True when ``url`` names a collection/org, not only the TFS host.
-
-    ``https://tfs02/tfs/ExampleCollection`` and ``https://dev.azure.com/org``
-    are collections. ``https://tfs02`` and ``https://tfs02/tfs`` are not.
-    ``https://org.visualstudio.com`` is an org in the hostname.
-    """
-    text = normalize_collection_url(url)
-    if not text:
-        return False
-    parsed = urlparse(text)
-    host = (parsed.netloc or "").split("@")[-1].lower()
-    parts = [p for p in unquote(parsed.path or "").strip("/").split("/") if p]
-    if host.endswith(".visualstudio.com") and host.count(".") >= 2:
-        return True
-    if not parts:
-        return False
-    if len(parts) == 1 and parts[0].lower() == "tfs":
-        return False
-    return True
 
 
 def identity_root(url: str) -> str:

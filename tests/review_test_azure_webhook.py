@@ -5,6 +5,7 @@ import base64
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from opencode_manager.azure.events import reset_reviewer_cache
 from opencode_manager.azure.identity import azure_project_num
 from opencode_manager.review_manager import ReviewManager
 from opencode_manager.webhook_azure import router as azure_router
@@ -19,6 +20,17 @@ def _pr_with_bot(**extra):
     return pr
 
 
+class FakeAzure:
+    def list_reviewers(self, project, repo, pr_id, *, collection="", web_url=""):
+        return [{"id": "bot-id", "displayName": "creasy"}]
+
+    def apply_collection(self, collection="", web_url=""):
+        return collection
+
+    def current_user_id(self):
+        return "bot-id"
+
+
 def _app(tmp_config, *, azure=True):
     tmp_config.review_mention = tmp_config.review_mention or "creasy"
     if azure:
@@ -31,7 +43,7 @@ def _app(tmp_config, *, azure=True):
     app = FastAPI()
     app.state.config = tmp_config
     app.state.review_manager = manager
-    app.state.azure = None
+    app.state.azure = FakeAzure() if azure else None
     app.state.azure_bot_user_id = "bot-id"
     app.include_router(gitlab_router)
     app.include_router(azure_router)
@@ -235,7 +247,7 @@ def test_azure_bot_id_is_resolved_before_collection_rebase(tmp_config):
     manager.shutdown()
 
 
-def test_azure_missing_collection_is_400(tmp_config):
+def test_azure_host_only_url_still_accepts_job(tmp_config):
     tmp_config.azure_url = "https://tfs02.company.com.tr"
     tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
@@ -256,11 +268,9 @@ def test_azure_missing_collection_is_400(tmp_config):
         "/amirmini/webhook/azure",
         json={"eventType": "git.pullrequest.created", "resource": pr},
     )
-    assert res.status_code == 400
-    body = res.json()
-    assert body["status"] == "error"
-    assert body["reason"] == "azure collection missing"
-    assert manager.store.list_all() == []
+    assert res.status_code == 200
+    assert res.json()["status"] == "accepted"
+    runner.release.set()
     manager.shutdown()
 
 
@@ -284,6 +294,49 @@ def test_azure_host_only_config_ok_when_pr_has_collection(tmp_config):
     )
     assert res.status_code == 200
     assert res.json()["status"] == "accepted"
+    runner.release.set()
+    manager.shutdown()
+
+
+def test_azure_assign_uses_live_reviewer_get(tmp_config):
+    reset_reviewer_cache()
+    tmp_config.azure_url = "https://ado.example/tfs/DefaultCollection"
+    tmp_config.azure_token = "pat-test"
+    tmp_config.azure_webhook_password = ""
+    tmp_config.review_mention = "creasy"
+    runner = FakeRunner()
+    manager = ReviewManager(tmp_config, runner)
+    manager.ready = True
+
+    class Azure:
+        def list_reviewers(self, project, repo, pr_id, *, collection="", web_url=""):
+            return [{"id": "bot-id", "displayName": "creasy"}]
+
+        def apply_collection(self, collection="", web_url=""):
+            return collection
+
+    app = FastAPI()
+    app.state.config = tmp_config
+    app.state.review_manager = manager
+    app.state.azure = Azure()
+    app.state.azure_bot_user_id = "bot-id"
+    app.include_router(azure_router)
+    client = TestClient(app)
+    pr = _pr(pullRequestId=99)
+    pr["reviewers"] = []
+    res = client.post(
+        "/amirmini/webhook/azure",
+        json={
+            "eventType": "git.pullrequest.updated",
+            "message": {"text": "Alice changed the reviewer list for pull request 99"},
+            "resource": pr,
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "accepted"
+    job = manager.store.get(res.json()["job_id"])
+    assert job is not None
+    assert job.trigger == "review"
     runner.release.set()
     manager.shutdown()
 

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-import pytest
-
-from opencode_manager.azure.client import AzureClient, AzureError
+from opencode_manager.azure.client import AzureClient
 
 
 def _client(handler) -> AzureClient:
@@ -206,10 +204,12 @@ def test_current_user_id_after_apply_collection_still_uses_tfs_app_root() -> Non
         client.close()
 
 
-def test_apply_collection_raises_when_still_host_only() -> None:
+def test_apply_collection_keeps_host_when_unresolved() -> None:
     client = AzureClient("https://tfs02.company.com.tr", "pat")
     try:
-        with pytest.raises(AzureError, match="azure collection missing"):
-            client.apply_collection(collection="", web_url="http://ado/pr/12")
+        assert client.apply_collection(collection="", web_url="http://ado/pr/12") == (
+            "https://tfs02.company.com.tr"
+        )
+        assert client.base_url == "https://tfs02.company.com.tr"
     finally:
         client.close()

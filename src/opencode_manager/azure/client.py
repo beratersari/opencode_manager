@@ -10,7 +10,7 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from opencode_manager.azure.auth import azure_basic_auth
-from opencode_manager.azure.urls import has_collection_root, identity_root, resolve_collection_url
+from opencode_manager.azure.urls import identity_root, resolve_collection_url
 from opencode_manager.gitlab.client import MergeRequest
 from opencode_manager.review_log import get_logger, log_fail, log_ok, redact_userinfo
 
@@ -79,13 +79,6 @@ class AzureClient:
         self._user_id: Optional[str] = None
         self._user: Optional[dict[str, Any]] = None
         self._user_resolved = False
-        if self.base_url and not has_collection_root(self.base_url):
-            log_ok(
-                logger,
-                "azure url is host-only",
-                url=self.base_url,
-                reason="collection must come from the webhook or azure_url /tfs/<Collection>",
-            )
 
     def close(self) -> None:
         self._http.close()
@@ -93,12 +86,8 @@ class AzureClient:
     def apply_collection(self, collection: str = "", web_url: str = "") -> str:
         """Permanently rebase onto /tfs/<Collection> from the webhook or PR URL."""
         url = resolve_collection_url(configured=self.base_url, collection=collection, web_url=web_url)
-        if not has_collection_root(url):
-            raise AzureError(
-                "azure collection missing: set azure_url to "
-                "https://<host>/tfs/<Collection> or send a webhook whose PR URL "
-                "or resourceContainers.collection.baseUrl includes the collection"
-            )
+        if not url:
+            return self.base_url
         url = url.rstrip("/")
         if url == (self.base_url or "").rstrip("/"):
             return self.base_url
@@ -347,6 +336,39 @@ class AzureClient:
             clone=redact_userinfo(mr.http_url) or "-",
         )
         return mr
+
+    def list_reviewers(
+        self,
+        project: str,
+        repo: str,
+        pr_id: int,
+        *,
+        collection: str = "",
+        web_url: str = "",
+    ) -> list[dict[str, Any]]:
+        """Live reviewer list. Used to verify a reviewer-change webhook."""
+        if collection or web_url:
+            self.apply_collection(collection, web_url)
+        try:
+            response = self._send(
+                "GET",
+                self._git_paths(project, repo, f"/pullRequests/{int(pr_id)}/reviewers"),
+                params={"api-version": self.api_version},
+            )
+        except httpx.HTTPError as exc:
+            detail = (getattr(exc, "response", None).text or "")[:400] if getattr(exc, "response", None) else ""
+            log_fail(logger, "azure GET reviewers", project=project, repo=repo, pr=pr_id, err=exc, body=detail)
+            raise AzureError(f"fetch reviewers failed: {exc}") from exc
+        data = response.json() if response.content else {}
+        if isinstance(data, list):
+            rows = data
+        elif isinstance(data, dict):
+            rows = data.get("value") if isinstance(data.get("value"), list) else []
+        else:
+            rows = []
+        out = [row for row in rows if isinstance(row, dict)]
+        log_ok(logger, "azure GET reviewers", project=project, repo=repo, pr=pr_id, count=len(out))
+        return out
 
     def resolve_clone_url(self, project: str, repo: str, fallback: str = "") -> str:
         if _is_git_http(fallback):

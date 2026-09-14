@@ -1,8 +1,17 @@
 from __future__ import annotations
 
-from opencode_manager.azure.events import classify_azure_webhook
+import pytest
+
+from opencode_manager.azure.events import classify_azure_webhook, reset_reviewer_cache
 from opencode_manager.azure.identity import azure_mr_key, azure_project_num
 from opencode_manager.gitlab.events import CleanupTrigger, Ignore, ReviewTrigger
+
+
+@pytest.fixture(autouse=True)
+def _clear_reviewer_cache() -> None:
+    reset_reviewer_cache()
+    yield
+    reset_reviewer_cache()
 
 
 PROJECT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -147,7 +156,7 @@ def test_changed_reviewer_list_self_assign_starts_review():
     assert got.kind == "review"
 
 
-def test_changed_reviewer_list_by_teammate_is_ignored():
+def test_changed_reviewer_list_by_teammate_starts_on_first_sighting():
     pr = _pr()
     pr["reviewers"] = [
         {"id": "bot", "displayName": "Berat ERSARI", "uniqueName": r"company\mberatersari"},
@@ -162,7 +171,8 @@ def test_changed_reviewer_list_by_teammate_is_ignored():
         payload,
         mention_names=["mberatersari", "Berat ERSARI"],
     )
-    assert isinstance(got, Ignore)
+    assert isinstance(got, ReviewTrigger)
+    assert got.kind == "review"
 
 
 def test_self_assign_yourself_message_starts_review():
@@ -219,6 +229,32 @@ def test_adding_required_teammate_while_bot_listed_is_ignored():
         "resource": pr,
     }
     got = classify_azure_webhook(payload, bot_user_id="bot-guid", mention_names=["Creasy"])
+    assert isinstance(got, Ignore)
+
+
+def test_teammate_unassign_after_open_does_not_start_review():
+    pr = _pr()
+    pr["reviewers"] = [
+        {"id": "bot", "displayName": "Creasy"},
+        {"id": "alice", "displayName": "Alice"},
+    ]
+    created = classify_azure_webhook(
+        {"eventType": "git.pullrequest.created", "resource": pr},
+        mention_names=["Creasy"],
+    )
+    assert isinstance(created, ReviewTrigger)
+    later = _pr()
+    later["reviewers"] = [
+        {"id": "bot", "displayName": "Creasy"},
+    ]
+    got = classify_azure_webhook(
+        {
+            "eventType": "git.pullrequest.updated",
+            "message": {"text": "Alice changed the reviewer list for pull request 12"},
+            "resource": later,
+        },
+        mention_names=["Creasy"],
+    )
     assert isinstance(got, Ignore)
 
 

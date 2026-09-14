@@ -575,10 +575,15 @@ def _inner_loop(
             compact_floor = compact_n
             last_compact_n = compact_n
         new_compacts = compact_n - (compact_floor if compact_floor is not None else 0)
-        # INTENTIONAL: a new assistant this turn (id ≠ baseline) is progress
-        # for the rest of the wait. Hang is "never started answering".
+        # A stub assistant id is not progress. Text or a real finish is.
+        progress_assistant = bool(
+            substantive or (new_assistant and (text or "").strip())
+        )
         if listed_ok and (
-            msg_n != last_msg_n or compact_n != last_compact_n or compacting or new_assistant
+            msg_n != last_msg_n
+            or compact_n != last_compact_n
+            or compacting
+            or progress_assistant
         ):
             last_progress = time.time()
             last_msg_n = msg_n
@@ -625,7 +630,7 @@ def _inner_loop(
             awaiting_turn = False
             # Mid-generation (assistant already this turn) is the attempt
             # clock, not hang. Latch survives a later list_messages failure.
-            if answered_this_turn or substantive:
+            if answered_this_turn or substantive or progress_assistant:
                 hang_started = None
                 time.sleep(1.0)
                 continue

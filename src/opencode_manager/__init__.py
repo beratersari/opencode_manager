@@ -1,3 +1,3 @@
 """aMIR-mini."""
 
-__version__ = "0.1.16"
+__version__ = "0.1.15"

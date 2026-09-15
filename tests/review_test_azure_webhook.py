@@ -34,6 +34,8 @@ class FakeAzure:
 def _app(tmp_config, *, azure=True):
     tmp_config.review_mention = tmp_config.review_mention or "creasy"
     if azure:
+        tmp_config.azure_url = "https://ado.example/tfs/DefaultCollection"
+        tmp_config.azure_token = "pat-test"
         tmp_config.azure_webhook_password = "secret"
     runner = FakeRunner()
     manager = ReviewManager(tmp_config, runner)
@@ -158,7 +160,9 @@ def test_azure_update_ignored(tmp_config):
 
 def test_gitlab_secret_does_not_lock_azure_route(tmp_config):
     """Dual install: GitLab WEBHOOK_SECRET must not force Azure Basic auth."""
-    tmp_config.gitlab_webhook_secret = "gitlab-only"
+    tmp_config.webhook_secret = "gitlab-only"
+    tmp_config.azure_url = "https://ado.example/tfs/DefaultCollection"
+    tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
     runner = FakeRunner()
     manager = ReviewManager(tmp_config, runner)
@@ -193,7 +197,8 @@ def test_azure_secret_required_when_set(tmp_config):
 
 def test_azure_bot_id_is_resolved_before_collection_rebase(tmp_config):
     """Comment classify runs before apply_collection. Host-only URL cannot see /tfs."""
-
+    tmp_config.azure_url = "https://tfs02.company.com.tr"
+    tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
     tmp_config.review_mention = "creasy"
     runner = FakeRunner()
@@ -243,7 +248,8 @@ def test_azure_bot_id_is_resolved_before_collection_rebase(tmp_config):
 
 
 def test_azure_host_only_url_still_accepts_job(tmp_config):
-
+    tmp_config.azure_url = "https://tfs02.company.com.tr"
+    tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
     runner = FakeRunner()
     manager = ReviewManager(tmp_config, runner)
@@ -269,7 +275,8 @@ def test_azure_host_only_url_still_accepts_job(tmp_config):
 
 
 def test_azure_host_only_config_ok_when_pr_has_collection(tmp_config):
-
+    tmp_config.azure_url = "https://tfs02.company.com.tr"
+    tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
     runner = FakeRunner()
     manager = ReviewManager(tmp_config, runner)
@@ -293,7 +300,8 @@ def test_azure_host_only_config_ok_when_pr_has_collection(tmp_config):
 
 def test_azure_assign_uses_live_reviewer_get(tmp_config):
     reset_reviewer_cache()
-
+    tmp_config.azure_url = "https://ado.example/tfs/DefaultCollection"
+    tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""
     tmp_config.review_mention = "creasy"
     runner = FakeRunner()
@@ -333,15 +341,10 @@ def test_azure_assign_uses_live_reviewer_get(tmp_config):
     manager.shutdown()
 
 
-def test_azure_webhook_works_without_settings_url(tmp_config):
-    app, manager, runner = _app(tmp_config, azure=True)
+def test_azure_disabled_is_ignored(tmp_config):
+    app, manager, _runner = _app(tmp_config, azure=False)
     client = TestClient(app)
-    res = client.post(
-        "/amirmini/webhook/azure",
-        headers=_auth(),
-        json={"eventType": "git.pullrequest.created", "resource": _pr()},
-    )
+    res = client.post("/amirmini/webhook/azure", json={"eventType": "git.pullrequest.created", "resource": _pr()})
     assert res.status_code == 200
-    assert res.json().get("reason") != "azure not configured"
-    runner.release.set()
+    assert res.json()["reason"] == "azure not configured"
     manager.shutdown()

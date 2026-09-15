@@ -171,7 +171,7 @@ class ReviewManager:
                 target_branch=trigger.target_branch,
                 sha=trigger.sha,
                 web_url=trigger.web_url,
-                repo_url=(getattr(trigger, "http_url", None) or trigger.web_url or "").strip(),
+                repo_url=trigger.web_url or "",
                 mr_title=(trigger.title or "").strip(),
                 provider=getattr(trigger, "provider", None) or "gitlab",
                 azure_project=getattr(trigger, "azure_project", None) or "",

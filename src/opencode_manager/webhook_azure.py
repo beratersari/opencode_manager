@@ -134,6 +134,9 @@ async def _fetch_reviewers(
 async def webhook_azure(request: Request) -> JSONResponse:
     _verify_secret(request)
     config = request.app.state.config
+    if not config.azure_enabled:
+        log_fail(logger, "azure webhook", reason="azure not configured")
+        return JSONResponse({"status": "ignored", "reason": "azure not configured"})
     try:
         payload = await request.json()
     except Exception as exc:
@@ -176,7 +179,7 @@ async def webhook_azure(request: Request) -> JSONResponse:
             )
         except AzureError as exc:
             log_fail(logger, "azure reviewers GET", err=exc, pr=locator[2])
-            live = []
+            return JSONResponse({"status": "ignored", "reason": "reviewers GET failed"})
         apply_live_reviewers(payload, live)
         log_ok(
             logger,

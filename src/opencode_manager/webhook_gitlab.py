@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from opencode_manager.gitlab.events import CleanupTrigger, Ignore, ReviewTrigger, classify_webhook
-from opencode_manager.gitlab.urls import gitlab_http_url
 from opencode_manager.review_log import get_logger, log_fail, log_ok
 from opencode_manager.review.mention import collect_names, parse_mention_aliases
 
@@ -44,7 +43,7 @@ def _mention_names(request: Request) -> list[str]:
 
 
 def _verify_secret(request: Request) -> None:
-    secret = request.app.state.config.gitlab_webhook_secret
+    secret = request.app.state.config.webhook_secret
     if not secret:
         log_ok(logger, "webhook secret", check="skipped", reason="WEBHOOK_SECRET unset")
         return
@@ -79,16 +78,8 @@ async def webhook(request: Request) -> JSONResponse:
             ",".join(mention_names) or "-",
             (config.review_mention or "").strip() or "-",
         )
-    gitlab = getattr(request.app.state, "gitlab", None)
-    apply = getattr(gitlab, "apply_base", None) if gitlab is not None else None
-    if callable(apply):
-        project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
-        apply(
-            gitlab_http_url(payload) or str(project.get("web_url") or ""),
-            str(project.get("path_with_namespace") or project.get("pathWithNamespace") or ""),
-        )
     if kind == "note" and bot_id is None and not mention_names:
-        log_fail(logger, "webhook bot user", reason="review_mention unset and GitLab user unknown")
+        log_fail(logger, "webhook bot user", reason="GITLAB_TOKEN user unknown")
         return JSONResponse({"status": "ignored", "reason": "bot user unknown"})
     classified = classify_webhook(
         payload,

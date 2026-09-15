@@ -81,10 +81,7 @@ These look like bugs. They are not.
   default. Overlay `max_concurrent_n8n_jobs` is the n8n serve cap
   (`max_concurrent_jobs` still works). `max_concurrent_reviews` is
   the review cap. `webhook_gitlab_url` / `webhook_azure_url` are
-  info only (not read). There is no `gitlab_url` / `gitlab_token` /
-  `azure_url` / `azure_token`. Review host and clone URL come from
-  the webhook. GitLab inbound secret is `gitlab_webhook_secret`
-  (leftover `webhook_secret` still loads). n8n `POST /jobs`,
+  info only (not read). n8n `POST /jobs`,
   `GET /jobs/{id}`, and `DELETE /sessions` use the Bearer token. Webhooks keep their own
   secrets. n8n may use `n8n-callback.json` (one
   terminal POST to `callback_url`) or `n8n-poller.json` (omit
@@ -386,21 +383,18 @@ Never POST a user message while the session is `busy` / compacting.
 Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
 
 - Webhooks: `POST /amirmini/webhook/gitlab` (`X-Gitlab-Token` vs
-  `gitlab_webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
+  `webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
   `azure_webhook_user` / `azure_webhook_password`). Ack immediately.
-  Azure is on without a settings URL or PAT. Outbound TLS is `verify=False`.
-  Collection and clone URL come from the hook (`resourceContainers.collection.baseUrl`,
-  `repository.remoteUrl`). GitLab API host and clone URL come from
-  `project.web_url` / `project.http_url_to_repo`. Review git uses the
-  same Windows GCM (then one Get-Credential retry) / Linux helper-off
-  path as n8n ticket clones. No oauth2:token@ and no Azure extraHeader.
-- Full review starts when the `review_mention` alias (or a resolved
-  GitLab/Azure user if the API answers) is assigned or re-requested as reviewer. Open without that reviewer
+  Empty Azure URL/PAT → Azure off. Outbound TLS is `verify=False`.
+  Host-only `azure_url` (`https://tfs02`) is fine: rebase onto
+  `/tfs/<Collection>` from the hook or PR URL. If those also lack a
+  collection, keep the host and still run the job (same as Creasy).
+- Full review starts when the token user (or `review_mention` alias)
+  is assigned or re-requested as reviewer. Open without that reviewer
   is ignored. New commits / reopen do not enqueue.
   Azure reviewer-list hooks GET the live list (retry 0.3s + 0.7s on
-  add) when the API answers, and start only when that GET still lists
-  the bot. A failed GET still classifies from the hook payload.
-  Unassign never starts a review. TFS “changed the reviewer list” starts a
+  add) and start only when that GET still lists the bot. Unassign
+  never starts a review. TFS “changed the reviewer list” starts a
   review when the bot newly appeared (first hook after boot: listed
   is enough). Assign / re-request while a real review or `/ask` is
   live is ignored; a usage-note job does not block assign.
@@ -412,8 +406,7 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   A command alone is ignored. `/ask` text that explicitly asks for
   another review (`do a new/full review`, not `do a review of this
   lock?`) is treated as `/review`. After a successful GitLab review,
-  mark the GitLab user `reviewed` (not approved) so Re-request appears
-  when `/user` is known.
+  mark the token user `reviewed` (not approved) so Re-request appears.
   Jobs never assign the bot as reviewer. GitLab `/user` is resolved
   once per process; a miss is not retried (REVIEW_MENTION still
   matches).
@@ -438,9 +431,9 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   A failed review terminal history write must overlay the finished
   row and still run `_after_job` so the MR FIFO is not frozen.
 - Agent is `code-reviewer` from the `opencoderman` submodule. Install
-  with `install-review-agent.*` (agents + skills only). There is no
-  review PAT in settings. Tokens never appear on `POST /jobs`,
-  in `public_dict`, or in report zips.
+  with `install-review-agent.*` (agents + skills only). Tokens live
+  in `settings.yaml` / `settings.local.yaml`, never on `POST /jobs`,
+  never in `public_dict` or report zips.
 - Dashboard shows review jobs on the **Review** tab and prints
   `source` (GitLab `path_with_namespace` or Azure `project/repo`).
   Usage-note jobs stay off the list and job-detail API. Dashboard

@@ -40,7 +40,6 @@ from opencode_manager.workspace.gitops import (
     clone_is_usable,
     clone_repo,
     delete_clone,
-    public_git_url,
     diff_stat,
     fetch_and_checkout,
     resolve_merge_base,
@@ -108,7 +107,7 @@ class OpenCodeRunner:
     ) -> None:
         self.config = config
         self.workspaces = workspaces
-        self.gitlab = gitlab or GitLabClient()
+        self.gitlab = gitlab or GitLabClient(config.gitlab_url, config.gitlab_token)
         self.azure = azure
         self.store = store
 
@@ -207,6 +206,8 @@ class OpenCodeRunner:
                 azure_repo=job.azure_repo or "",
                 collection=getattr(azure, "base_url", "") or job.azure_collection or "",
                 web_url=job.web_url or "",
+                token_set=bool(self.config.azure_token if self._is_azure(job) else self.config.gitlab_token),
+                token_chars=len((self.config.azure_token if self._is_azure(job) else self.config.gitlab_token) or ""),
             )
             mr = self._load_change(job)
             log_ok(
@@ -496,57 +497,17 @@ class OpenCodeRunner:
             except Exception:  # noqa: BLE001
                 logger.exception("azure unbind failed job=%s", job.job_id)
 
-    def _mr_from_job(self, job: JobRecord) -> MergeRequest:
-        return MergeRequest(
-            project_id=job.project_id,
-            iid=job.mr_iid,
-            title=job.mr_title or "",
-            description="",
-            author="",
-            source_branch=job.source_branch or "",
-            target_branch=job.target_branch or "",
-            sha=job.sha or "",
-            base_sha="",
-            start_sha="",
-            web_url=job.web_url or "",
-            http_url=job.repo_url or "",
-            draft=False,
-            state="opened",
-        )
-
     def _load_change(self, job: JobRecord) -> MergeRequest:
-        fallback = self._mr_from_job(job)
         if self._is_azure(job):
             if self.azure is None:
-                if fallback.http_url or fallback.source_branch:
-                    return fallback
                 raise AzureError("azure not configured")
             if not job.azure_project or not job.azure_repo:
                 raise AzureError("azure job is missing project or repo id")
             apply = getattr(self.azure, "apply_collection", None)
             if callable(apply):
                 apply(getattr(job, "azure_collection", "") or "", job.web_url or "")
-            try:
-                mr = self.azure.get_pull_request(job.azure_project, job.azure_repo, job.mr_iid)
-            except AzureError:
-                if fallback.http_url or fallback.source_branch:
-                    return fallback
-                raise
-            if not mr.http_url:
-                mr.http_url = fallback.http_url
-            return mr
-        apply = getattr(self.gitlab, "apply_base", None)
-        if callable(apply):
-            apply(job.repo_url or job.web_url or "", job.source or "")
-        try:
-            mr = self.gitlab.get_merge_request(job.project_id, job.mr_iid)
-        except GitLabError:
-            if fallback.http_url or fallback.source_branch:
-                return fallback
-            raise
-        if not mr.http_url:
-            mr.http_url = fallback.http_url
-        return mr
+            return self.azure.get_pull_request(job.azure_project, job.azure_repo, job.mr_iid)
+        return self.gitlab.get_merge_request(job.project_id, job.mr_iid)
 
     def _prompt(
         self,
@@ -611,15 +572,22 @@ class OpenCodeRunner:
             mr_iid=job.mr_iid,
         )
         if self._is_azure(job):
-            http_url = mr.http_url or job.repo_url or record.http_url
+            http_url = mr.http_url or record.http_url
             if self.azure is not None and (not http_url or not str(http_url).lower().startswith("http")):
                 http_url = self.azure.resolve_clone_url(job.azure_project, job.azure_repo, http_url)
-            logger.info("azure clone using %s auth=gcm", http_url or "-")
+            token = self.config.azure_token
+            auth_scheme = "azure"
+            logger.info(
+                "azure clone using %s auth=pat token_chars=%s",
+                http_url or "-",
+                len(token or ""),
+            )
         else:
-            http_url = mr.http_url or job.repo_url or self.gitlab.resolve_http_url(job.project_id, record.http_url)
+            http_url = mr.http_url or self.gitlab.resolve_http_url(job.project_id, record.http_url)
+            token = self.config.gitlab_token
+            auth_scheme = "gitlab"
         if not http_url:
             raise GitError("no http repo url for project")
-        http_url = public_git_url(http_url)
         git_kw = self._git_kw(job, should_stop)
         if not clone_is_usable(dest):
             if dest.exists():
@@ -628,8 +596,9 @@ class OpenCodeRunner:
             clone_repo(
                 http_url,
                 dest,
+                token,
                 timeout=self.config.git_timeout,
-                job_id=job.job_id,
+                auth_scheme=auth_scheme,
                 **git_kw,
             )
         try:
@@ -638,9 +607,9 @@ class OpenCodeRunner:
                 source_branch=mr.source_branch,
                 target_branch=mr.target_branch,
                 sha=mr.sha,
+                token=token,
                 timeout=self.config.git_timeout,
-                job_id=job.job_id,
-                repo_url=http_url,
+                auth_scheme=auth_scheme,
                 **git_kw,
             )
         except GitError:
@@ -652,8 +621,9 @@ class OpenCodeRunner:
             clone_repo(
                 http_url,
                 dest,
+                token,
                 timeout=self.config.git_timeout,
-                job_id=job.job_id,
+                auth_scheme=auth_scheme,
                 **git_kw,
             )
             sha = fetch_and_checkout(
@@ -661,9 +631,9 @@ class OpenCodeRunner:
                 source_branch=mr.source_branch,
                 target_branch=mr.target_branch,
                 sha=mr.sha,
+                token=token,
                 timeout=self.config.git_timeout,
-                job_id=job.job_id,
-                repo_url=http_url,
+                auth_scheme=auth_scheme,
                 **git_kw,
             )
         record.clone_path = str(dest)

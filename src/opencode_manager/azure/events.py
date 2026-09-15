@@ -275,15 +275,6 @@ def _web_url(pr: dict[str, Any], payload: dict[str, Any]) -> str:
     return ""
 
 
-def _repo_http_url(pr: dict[str, Any]) -> str:
-    repo = _as_dict(pr.get("repository"))
-    for key in ("remoteUrl", "remoteURL", "webUrl"):
-        text = str(repo.get(key) or "").strip()
-        if text.lower().startswith("http") and "/_apis/" not in text.lower():
-            return text
-    return ""
-
-
 def azure_collection_hint(payload: dict[str, Any]) -> str:
     if not isinstance(payload, dict):
         return ""
@@ -770,7 +761,6 @@ def _review_from_pr(
         sha=_sha(pr),
         comment_text=comment_text,
         web_url=_web_url(pr, payload),
-        http_url=_repo_http_url(pr),
         title=str(pr.get("title") or ""),
         draft=draft,
         explicit=explicit,

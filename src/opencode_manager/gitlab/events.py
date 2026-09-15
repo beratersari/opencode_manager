@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Union
 
-from opencode_manager.gitlab.urls import gitlab_http_url
 from opencode_manager.review_log import get_logger, log_ok
 from opencode_manager.review.comment_range import parse_gitlab_position
 from opencode_manager.review.mention import comment_intent, first_slash_command, is_usage_note, user_comment_text
@@ -23,7 +22,6 @@ class ReviewTrigger:
     sha: str = ""
     comment_text: str = ""
     web_url: str = ""
-    http_url: str = ""
     title: str = ""
     draft: bool = False
     explicit: bool = False
@@ -202,7 +200,6 @@ def _classify_merge_request(
         if isinstance(attrs.get("last_commit"), dict)
         else "",
         web_url=str(attrs.get("url") or ""),
-        http_url=gitlab_http_url(payload),
         title=str(attrs.get("title") or ""),
         draft=draft,
         explicit=False,
@@ -325,7 +322,6 @@ def _classify_reviewer_assigned(
         if isinstance(attrs.get("last_commit"), dict)
         else "",
         web_url=str(attrs.get("url") or ""),
-        http_url=gitlab_http_url(payload),
         title=str(attrs.get("title") or ""),
         draft=draft,
         explicit=True,
@@ -382,7 +378,6 @@ def _classify_note(
         else "",
         comment_text=user_text or remainder,
         web_url=str(mr.get("url") or ""),
-        http_url=gitlab_http_url(payload),
         title=str(mr.get("title") or ""),
         draft=_is_draft(payload, attrs),
         explicit=True,

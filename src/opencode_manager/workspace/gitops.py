@@ -1,26 +1,35 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
-from opencode_manager.git.auth import (
-    argv_helper_off,
-    creds_for_job,
-    forget_job_creds,
-    host_from_repo_url,
-    isolated_git_env as ticket_git_env,
-    is_git_auth_error,
-    prompt_windows_credentials,
-    remember_job_creds,
-    uses_windows_stored_creds,
-)
+from opencode_manager.azure.auth import azure_basic_auth, azure_basic_user
 from opencode_manager.review_log import get_logger, log_command, log_command_result, log_fail, log_ok, redact_userinfo
 
 logger = get_logger("gitops")
+
+_ASKPASS_CMD = """@echo off
+setlocal EnableExtensions
+set "Q=%~1"
+echo(%Q% | findstr /i /c:"Username" /c:"User name" /c:"Username for" >nul
+if %errorlevel%==0 (
+  echo(%CREASY_GIT_ASKUSER%
+  exit /b 0
+)
+echo(%CREASY_GIT_TOKEN%
+"""
+
+_ASKPASS_SH = """#!/bin/sh
+case \"$1\" in
+  *[Uu]ser*) printf '%s\\n' \"${CREASY_GIT_ASKUSER:-pat}\" ;;
+  *) printf '%s\\n' \"$CREASY_GIT_TOKEN\" ;;
+esac
+"""
 
 
 class GitError(RuntimeError):
@@ -35,17 +44,67 @@ class DiffIndex:
     statuses: dict[str, str]
 
 
-def isolated_git_env(token: str = "", *, auth_scheme: str = "gitlab") -> dict[str, str]:
-    """Same Windows GCM / Linux helper-off env as n8n ticket clones.
+def askpass_path() -> Path:
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or ".")
+        path = root / "creasy" / "git-askpass.cmd"
+        body = _ASKPASS_CMD
+    else:
+        root = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache"))
+        path = root / "creasy" / "git-askpass.sh"
+        body = _ASKPASS_SH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if current != body:
+        path.write_text(body, encoding="utf-8", newline="\n")
+        if os.name != "nt":
+            path.chmod(0o755)
+    return path
 
-    ``token`` / ``auth_scheme`` are ignored leftovers. Review git never
-    injects a PAT into the URL or extraHeader.
-    """
-    del token, auth_scheme
-    env = ticket_git_env()
+
+def isolated_git_env(token: str = "", *, auth_scheme: str = "gitlab") -> dict[str, str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "never"
+    env["GCM_MODAL_PROMPT"] = "false"
+    env["GCM_GUI_PROMPT"] = "false"
     # INTENTIONAL: on-prem / TLS intercept. Same policy as httpx verify=False.
     env["GIT_SSL_NO_VERIFY"] = "1"
+    if token:
+        env["CREASY_GIT_TOKEN"] = token
+    if token and auth_scheme == "azure":
+        helper = askpass_path()
+        env["CREASY_AZURE_GIT"] = "1"
+        env["CREASY_GIT_ASKUSER"] = azure_basic_user()
+        env["GIT_ASKPASS"] = str(helper)
+        env["SSH_ASKPASS"] = str(helper)
+        # TFS IIS advertises Negotiate. URL userinfo is ignored; send Basic
+        # the same way the REST client does, plus ASKPASS if git prompts.
+        env["GIT_CONFIG_COUNT"] = "2"
+        env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
+        env["GIT_CONFIG_VALUE_0"] = f"Authorization: {azure_basic_auth(token)}"
+        env["GIT_CONFIG_KEY_1"] = "core.askPass"
+        env["GIT_CONFIG_VALUE_1"] = str(helper)
+    else:
+        env["GIT_ASKPASS"] = "echo"
     return env
+
+
+def inject_token(url: str, token: str, *, scheme: str = "gitlab") -> str:
+    if not token:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise GitError("repo_url must be http(s)")
+    host = parsed.hostname or ""
+    if not host:
+        raise GitError("repo_url has no host")
+    user = quote("pat" if scheme == "azure" else "oauth2", safe="")
+    password = quote(token, safe="")
+    netloc = f"{user}:{password}@{host}"
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return urlunparse(parsed._replace(netloc=netloc))
 
 
 def public_git_url(url: str) -> str:
@@ -81,13 +140,33 @@ def _run_git(
     timeout: float = 120,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
-    repo_url: str = "",
-    job_id: str = "",
 ) -> subprocess.CompletedProcess[str]:
     env = env or isolated_git_env()
-    cmd = ["git", *argv_helper_off(), "-c", "http.sslVerify=false", "-c", "core.longpaths=true"]
+    cmd = [
+        "git",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "http.sslVerify=false",
+        "-c",
+        "core.longpaths=true",
+    ]
+    # Azure Basic lives in GIT_CONFIG_VALUE_0 (isolated_git_env). Never
+    # put http.extraHeader / the PAT on argv — leftover reap logs argv.
     cmd.extend(args)
     log_command(logger, args, cwd=cwd or ".", timeout=timeout)
+    if env.get("CREASY_AZURE_GIT") == "1":
+        log_ok(
+            logger,
+            "azure git auth",
+            extraHeader="yes",
+            askpass=env.get("GIT_ASKPASS") or "-",
+            askuser=env.get("CREASY_GIT_ASKUSER") or "-",
+            token_chars=len(env.get("CREASY_GIT_TOKEN") or ""),
+            helper="disabled",
+        )
     if should_stop is None and on_pid is None:
         try:
             result = subprocess.run(
@@ -132,32 +211,15 @@ def _run_git(
     )
     if result.returncode != 0:
         err = redact_userinfo((result.stderr or result.stdout or "").strip())
-        if (
-            uses_windows_stored_creds()
-            and is_git_auth_error(err)
-            and repo_url
-            and not creds_for_job(job_id)
-        ):
-            host = host_from_repo_url(repo_url)
-            log_ok(logger, "git needs credentials; prompting Windows dialog", host=host)
-            pair = prompt_windows_credentials(host)
-            if pair:
-                remember_job_creds(job_id, pair[0], pair[1])
-                retry_env = ticket_git_env(username=pair[0], password=pair[1])
-                retry_env["GIT_SSL_NO_VERIFY"] = "1"
-                return _run_git(
-                    args,
-                    cwd=cwd,
-                    env=retry_env,
-                    timeout=timeout,
-                    should_stop=should_stop,
-                    on_pid=on_pid,
-                    repo_url=repo_url,
-                    job_id=job_id,
-                )
-            forget_job_creds(job_id)
-            raise GitError(
-                "git authentication required; Windows credential dialog was cancelled or empty"
+        if env.get("CREASY_AZURE_GIT") == "1":
+            log_fail(
+                logger,
+                "azure git failed",
+                extraHeader="yes",
+                askpass=env.get("GIT_ASKPASS") or "-",
+                token_chars=len(env.get("CREASY_GIT_TOKEN") or ""),
+                hint="REST PAT worked if threads posted; git HTTPS may still be Windows-auth only on the TFS _git site",
+                err=err[-400:],
             )
         raise GitError(f"git failed ({result.returncode}): {err[-800:]}")
     return result
@@ -218,26 +280,36 @@ def _run_git_killable(
 def clone_repo(
     repo_url: str,
     dest: Path,
-    token: str = "",
+    token: str,
     *,
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
     auth_scheme: str = "gitlab",
-    job_id: str = "",
 ) -> None:
-    del token, auth_scheme
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         raise GitError(f"clone dest already exists: {dest}")
-    env = isolated_git_env()
-    auth_url = public_git_url(repo_url)
-    git_kw = {
-        "should_stop": should_stop,
-        "on_pid": on_pid,
-        "repo_url": auth_url,
-        "job_id": job_id,
-    }
+    env = isolated_git_env(token, auth_scheme=auth_scheme)
+    # Azure PAT stays in GIT_CONFIG_VALUE_* / askpass, never on argv.
+    auth_url = (
+        public_git_url(repo_url)
+        if auth_scheme == "azure"
+        else inject_token(repo_url, token, scheme=auth_scheme)
+    )
+    if auth_scheme == "azure":
+        parsed = urlparse(repo_url)
+        log_ok(
+            logger,
+            "azure clone start",
+            host=parsed.netloc or "-",
+            path=parsed.path or "-",
+            user="pat",
+            token_chars=len(token or ""),
+            askpass=env.get("GIT_ASKPASS") or "-",
+            extraHeader="yes" if token else "no",
+        )
+    git_kw = {"should_stop": should_stop, "on_pid": on_pid}
     try:
         _run_git(
             ["clone", "--no-single-branch", auth_url, str(dest)],
@@ -247,11 +319,11 @@ def clone_repo(
         )
         _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
     except Exception as exc:
-        log_fail(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), err=exc)
+        log_fail(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth=auth_scheme, err=exc)
         if dest.exists():
             delete_clone(dest)
         raise
-    log_ok(logger, "git clone", dest=dest, url=redact_userinfo(repo_url))
+    log_ok(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth=auth_scheme)
 
 
 def _scrub_origin(
@@ -260,7 +332,6 @@ def _scrub_origin(
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
-    **_ignored: object,
 ) -> None:
     result = _run_git(
         ["config", "--local", "--get", "remote.origin.url"],
@@ -322,25 +393,20 @@ def fetch_and_checkout(
     source_branch: str,
     target_branch: str,
     sha: str,
-    token: str = "",
+    token: str,
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
     auth_scheme: str = "gitlab",
-    job_id: str = "",
-    repo_url: str = "",
 ) -> str:
-    del token, auth_scheme
-    env = isolated_git_env()
-    origin = _origin_url(dest, env, timeout=min(30.0, timeout), should_stop=should_stop, on_pid=on_pid)
-    auth = public_git_url(origin) if origin else public_git_url(repo_url) if repo_url else origin
-    git_kw = {
-        "should_stop": should_stop,
-        "on_pid": on_pid,
-        "repo_url": auth or repo_url,
-        "job_id": job_id,
-    }
-    if auth and auth != origin:
+    env = isolated_git_env(token, auth_scheme=auth_scheme)
+    git_kw = {"should_stop": should_stop, "on_pid": on_pid}
+    origin = _origin_url(dest, env, timeout=min(30.0, timeout), **git_kw)
+    if token and auth_scheme == "azure":
+        auth = public_git_url(origin)
+    else:
+        auth = inject_token(origin, token, scheme=auth_scheme) if token else origin
+    if token and auth != origin:
         _run_git(
             ["remote", "set-url", "origin", auth],
             cwd=dest,
@@ -371,6 +437,7 @@ def fetch_and_checkout(
             sha=sha_out or "-",
             source=source_branch or "-",
             target=target_branch or "-",
+            auth=auth_scheme,
         )
         return sha_out
     except Exception as exc:
@@ -384,10 +451,11 @@ def fetch_and_checkout(
         )
         raise
     finally:
-        try:
-            _scrub_origin(dest, env, timeout=min(30.0, timeout), should_stop=should_stop, on_pid=on_pid)
-        except Exception as exc:
-            log_fail(logger, "git scrub origin", dest=dest, err=exc)
+        if token:
+            try:
+                _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
+            except Exception as exc:
+                log_fail(logger, "git scrub origin", dest=dest, err=exc)
 
 
 def _origin_url(
@@ -396,7 +464,6 @@ def _origin_url(
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
-    **_ignored: object,
 ) -> str:
     result = _run_git(
         ["config", "--local", "--get", "remote.origin.url"],

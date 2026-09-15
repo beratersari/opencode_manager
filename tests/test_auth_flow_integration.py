@@ -121,7 +121,7 @@ def test_dashboard_token_does_not_replace_webhook_secret(tmp_settings: Settings)
     with _app(
         tmp_settings,
         dashboard_token="n8n-secret",
-        gitlab_webhook_secret="hook-secret",
+        webhook_secret="hook-secret",
     ) as client:
         assert client.post(
             "/amirmini/webhook/gitlab",

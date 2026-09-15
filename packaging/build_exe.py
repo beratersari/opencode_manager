@@ -355,7 +355,7 @@ def exe_kit_readme(*, windows: bool) -> str:
             "\n"
             "Review webhooks: POST /amirmini/webhook/gitlab and\n"
             "POST /amirmini/webhook/azure. Host and clone URL come from\n"
-            "the hook. Optional gitlab_webhook_secret in settings.local.yaml.\n"
+            "the hook. Shipped gitlab_webhook_secret is tank.\n"
             "Run install-review-agent.bat once to\n"
             "copy opencoderman agents and skills into %USERPROFILE%\\.opencode.\n"
         )
@@ -376,7 +376,7 @@ def exe_kit_readme(*, windows: bool) -> str:
         "\n"
         "Review webhooks: POST /amirmini/webhook/gitlab and\n"
         "POST /amirmini/webhook/azure. Host and clone URL come from\n"
-        "the hook. Optional gitlab_webhook_secret in settings.local.yaml.\n"
+        "the hook. Shipped gitlab_webhook_secret is tank.\n"
         "Run ./install-review-agent.sh once to\n"
         "copy opencoderman agents and skills into ~/.opencode.\n"
     )

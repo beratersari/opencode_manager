@@ -78,10 +78,12 @@ These look like bugs. They are not.
   and token = no login. Shipped `settings.local.yaml` sets
   `dashboard_user: admin`, `dashboard_password: admin`, and
   `dashboard_token: change_me` so the dashboard and n8n share a
-  default. Overlay `max_concurrent_n8n_jobs` is the n8n serve cap
+  default. Shipped overlay also sets `gitlab_webhook_secret: tank`.
+  Overlay `max_concurrent_n8n_jobs` is the n8n serve cap
   (`max_concurrent_jobs` still works). `max_concurrent_reviews` is
   the review cap. `webhook_gitlab_url` / `webhook_azure_url` are
-  info only (not read). There is no `gitlab_url` / `gitlab_token` /
+  Settings-page info only (not read, not in the shipped overlay).
+  There is no `gitlab_url` / `gitlab_token` /
   `azure_url` / `azure_token`. Review host and clone URL come from
   the webhook. GitLab inbound secret is `gitlab_webhook_secret`
   (leftover `webhook_secret` still loads). n8n `POST /jobs`,

@@ -106,16 +106,16 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
             "dashboard_password",
             "max_concurrent_n8n_jobs",
             "max_concurrent_reviews",
-            "webhook_gitlab_url",
-            "webhook_azure_url",
         ):
             assert key in text, f"{name} missing {key}"
             assert f"\n{key}:" in text or text.startswith(f"{key}:"), f"{name} comments out {key}"
+        assert "gitlab_webhook_secret: tank" in text
         assert "dashboard_user: admin" in text
         assert "dashboard_password: admin" in text
         assert "dashboard_token: change_me" in text
-        assert "/amirmini/webhook/gitlab" in text
-        assert "/amirmini/webhook/azure" in text
+        assert "webhook_gitlab_url" not in text
+        assert "webhook_azure_url" not in text
+        assert "skip_draft_mrs" not in text
         assert "\ngitlab_url:" not in text and not text.startswith("gitlab_url:")
         assert "\ngitlab_token:" not in text
         assert "\nazure_url:" not in text

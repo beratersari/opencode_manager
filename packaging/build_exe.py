@@ -59,7 +59,9 @@ def exe_kit_filename(version: str, suffix: str) -> str:
         sys.path.insert(0, str(src))
     from opencode_manager.brand import APP_SLUG
 
-    return f"{APP_SLUG}-{version}-{suffix}-exe.zip"
+    if suffix.startswith("windows"):
+        return f"{APP_SLUG}-{version}-{suffix}-exe.zip"
+    return f"{APP_SLUG}-{version}-{suffix}.zip"
 
 
 def artifact_filename(version: str, suffix: str) -> str:

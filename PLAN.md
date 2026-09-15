@@ -1084,7 +1084,8 @@ Clone the repo for reference only. Do not import it as a dependency.
   bundled interpreter (`--no-index`).
 - additive single-file exe (Windows + Linux only): PyInstaller
   onefile from `packaging/build_exe.py`. Same workflow, native
-  runners. The GitHub Release attaches `*-exe.zip` (binary +
+  runners. The GitHub Release attaches Windows `*-exe.zip` and
+  Linux `*-x64.zip` / `*-ubuntu-*-x64.zip` (binary +
   `settings.local.yaml`) and `*-service.zip` (binary + config +
   `install-service.*`; Windows also has WinSW) plus GitHub’s
   source archive. Do not attach offline installer zips or

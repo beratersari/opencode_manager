@@ -455,7 +455,7 @@ jobs:
         run: |
           set -euo pipefail
           prefix="${{ steps.ver.outputs.dist_name }}"
-          cp "dist/${prefix}-linux-ubuntu-22.04-x64-exe.zip" "dist/${prefix}-linux-x64-exe.zip"
+          cp "dist/${prefix}-linux-ubuntu-22.04-x64.zip" "dist/${prefix}-linux-x64.zip"
           cp "dist/${prefix}-linux-ubuntu-22.04-x64-service.zip" "dist/${prefix}-linux-x64-service.zip"
 
       - name: Assert Ubuntu exe and service zips
@@ -464,12 +464,12 @@ jobs:
           set -euo pipefail
           prefix="${{ steps.ver.outputs.dist_name }}"
           suffix="linux-ubuntu-${{ matrix.ubuntu }}-x64"
-          exe_zip="dist/${prefix}-${suffix}-exe.zip"
+          exe_zip="dist/${prefix}-${suffix}.zip"
           kit="dist/${prefix}-${suffix}-service.zip"
           test -f "$exe_zip"
           test -f "$kit"
           if [ "${{ matrix.ubuntu }}" = "22.04" ]; then
-            test -f "dist/${prefix}-linux-x64-exe.zip"
+            test -f "dist/${prefix}-linux-x64.zip"
             test -f "dist/${prefix}-linux-x64-service.zip"
           fi
 
@@ -478,7 +478,7 @@ jobs:
         with:
           name: ${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-exe
           path: |
-            dist/${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-exe.zip
+            dist/${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64.zip
             dist/${{ steps.ver.outputs.dist_name }}-linux-ubuntu-${{ matrix.ubuntu }}-x64-service.zip
           if-no-files-found: error
           retention-days: 30
@@ -489,7 +489,7 @@ jobs:
         with:
           name: ${{ steps.ver.outputs.dist_name }}-linux-x64-exe
           path: |
-            dist/${{ steps.ver.outputs.dist_name }}-linux-x64-exe.zip
+            dist/${{ steps.ver.outputs.dist_name }}-linux-x64.zip
             dist/${{ steps.ver.outputs.dist_name }}-linux-x64-service.zip
           if-no-files-found: error
           retention-days: 30
@@ -515,7 +515,7 @@ jobs:
           mkdir -p release-exes
           for dir in dist-exes/*; do
             [ -d "$dir" ] || continue
-            find "$dir" -maxdepth 1 -type f \( -name '*-exe.zip' -o -name '*-service.zip' \) -exec cp {} release-exes/ \;
+            find "$dir" -maxdepth 1 -type f \( -name '*-exe.zip' -o -name '*-service.zip' -o -name '*-linux-x64.zip' -o -name '*-linux-ubuntu-*-x64.zip' \) -exec cp {} release-exes/ \;
           done
           ls -la release-exes
           test -n "$(ls -A release-exes/*.zip 2>/dev/null)"

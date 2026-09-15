@@ -66,9 +66,7 @@ def test_azure_clone_argv_has_no_pat(tmp_path: Path, monkeypatch: pytest.MonkeyP
     gitops_mod.clone_repo(
         "https://ado.example/tfs/DefaultCollection/App/_git/app",
         dest,
-        "secret-pat-DAILY",
         timeout=5,
-        auth_scheme="azure",
     )
     blob = " ".join(" ".join(row) for row in captured)
     assert "secret-pat-DAILY" not in blob

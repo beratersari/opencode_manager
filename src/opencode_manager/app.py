@@ -50,16 +50,8 @@ def create_app(
     from opencode_manager.dashboard.runtime_settings import apply_runtime_settings
 
     apply_runtime_settings(review_cfg)
-    gitlab = GitLabClient(review_cfg.gitlab_url, review_cfg.gitlab_token)
-    azure = (
-        AzureClient(
-            review_cfg.azure_url,
-            review_cfg.azure_token,
-            api_version=review_cfg.azure_api_version,
-        )
-        if review_cfg.azure_enabled
-        else None
-    )
+    gitlab = GitLabClient()
+    azure = AzureClient("", "", api_version=review_cfg.azure_api_version)
     workspaces = WorkspaceStore(review_cfg.data_dir / "workspace_meta")
     review_runner = review_runner or ReviewRunner(
         review_cfg,

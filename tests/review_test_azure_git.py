@@ -1,22 +1,23 @@
 import base64
 import os
-import subprocess
 from pathlib import Path
 
 from opencode_manager.azure.auth import azure_basic_auth
 from opencode_manager.azure.client import _is_git_http, _is_http, _ssh_to_https
 from opencode_manager.review_worker import RunResult, discussion_sha_attempts
-from opencode_manager.workspace.gitops import clone_is_usable, inject_token, isolated_git_env
+from opencode_manager.workspace.gitops import clone_is_usable, isolated_git_env, public_git_url
 
 
-def test_azure_token_uses_pat_user_not_oauth2():
-    url = "https://ado.example/tfs/DefaultCollection/App/_git/app"
-    got = inject_token(url, "secret-pat", scheme="azure")
-    assert "pat:secret-pat@" in got
-    assert "oauth2:" not in got
-    gitlab = inject_token(url, "secret-pat")
-    assert "oauth2:secret-pat@" in gitlab
-    assert inject_token(url, "") == url
+def test_review_git_env_matches_ticket_clone(monkeypatch):
+    env = isolated_git_env("ignored-pat", auth_scheme="azure")
+    assert env.get("CREASY_AZURE_GIT") is None
+    assert env.get("GIT_CONFIG_KEY_0") != "http.extraHeader"
+    assert "ignored-pat" not in str(env)
+    assert env.get("GIT_SSL_NO_VERIFY") == "1"
+    if os.name == "nt":
+        assert env.get("GCM_INTERACTIVE") == "auto"
+    else:
+        assert env.get("GIT_ASKPASS") == ""
 
 
 def test_azure_basic_auth_is_not_empty_username():
@@ -26,18 +27,32 @@ def test_azure_basic_auth_is_not_empty_username():
     assert not decoded.startswith(":")
 
 
-def test_inject_token_encodes_pat_special_chars():
-    url = "https://tfs02.company.com.tr/tfs/ExampleCollection/Example%20Projeleri/_git/ProjectX"
-    got = inject_token(url, "ab+c/d=", scheme="azure")
-    assert "pat:ab%2Bc%2Fd%3D@" in got
-
-
-def test_azure_git_run_does_not_put_basic_on_argv(tmp_path, monkeypatch):
+def test_review_clone_uses_public_url(tmp_path, monkeypatch):
     from opencode_manager.workspace import gitops as gitops_mod
 
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    env = isolated_git_env("secret-pat", auth_scheme="azure")
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        captured.append(list(cmd))
+        if "clone" in cmd:
+            dest.mkdir(parents=True)
+            (dest / ".git").mkdir()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(gitops_mod.subprocess, "run", fake_run)
+    dest = tmp_path / "ws"
+    dirty = "https://oauth2:secret-pat@ado.example/tfs/DefaultCollection/App/_git/app"
+    gitops_mod.clone_repo(dirty, dest, timeout=5)
+    joined = " ".join(" ".join(row) for row in captured)
+    assert "secret-pat" not in joined
+    assert "oauth2:" not in joined
+    assert public_git_url(dirty) in joined
+
+
+def test_review_git_run_has_no_extraheader(tmp_path, monkeypatch):
+    from opencode_manager.workspace import gitops as gitops_mod
+
+    env = isolated_git_env()
     captured: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
@@ -50,42 +65,6 @@ def test_azure_git_run_does_not_put_basic_on_argv(tmp_path, monkeypatch):
     joined = " ".join(captured[0])
     assert "extraHeader" not in joined
     assert "Authorization" not in joined
-    assert "secret-pat" not in joined
-    blob = azure_basic_auth("secret-pat").split()[-1]
-    assert blob not in joined
-
-
-def test_azure_git_env_sends_basic_header_and_askpass(tmp_path, monkeypatch):
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    env = isolated_git_env("secret-pat", auth_scheme="azure")
-    assert env["CREASY_AZURE_GIT"] == "1"
-    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
-    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
-    decoded = base64.b64decode(env["GIT_CONFIG_VALUE_0"].split(" ", 2)[2]).decode("ascii")
-    assert decoded == "pat:secret-pat"
-    assert env["GIT_ASKPASS"] != "echo"
-    assert Path(env["GIT_ASKPASS"]).is_file()
-    gitlab = isolated_git_env("secret-pat")
-    assert gitlab["GIT_ASKPASS"] == "echo"
-    assert "GIT_CONFIG_KEY_0" not in gitlab
-
-
-def test_azure_askpass_prints_pat_user_then_token(tmp_path, monkeypatch):
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    env = isolated_git_env("secret-pat", auth_scheme="azure")
-    path = Path(env["GIT_ASKPASS"])
-    if os.name == "nt":
-        user = subprocess.run(["cmd", "/c", str(path), "Username for 'https://tfs'"], capture_output=True, text=True, env=env)
-        password = subprocess.run(["cmd", "/c", str(path), "Password for 'https://tfs'"], capture_output=True, text=True, env=env)
-    else:
-        user = subprocess.run(["sh", str(path), "Username for 'https://tfs'"], capture_output=True, text=True, env=env)
-        password = subprocess.run(["sh", str(path), "Password for 'https://tfs'"], capture_output=True, text=True, env=env)
-    assert user.returncode == 0
-    assert password.returncode == 0
-    assert user.stdout.strip() == "pat"
-    assert password.stdout.strip() == "secret-pat"
 
 
 def test_api_url_is_not_a_git_clone_url():

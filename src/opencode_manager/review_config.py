@@ -1,4 +1,4 @@
-"""Review-path settings. Tokens live here, never on POST /jobs."""
+"""Review-path settings. Host and clone URL come from the webhook."""
 
 from __future__ import annotations
 
@@ -10,9 +10,7 @@ from opencode_manager.settings import Settings
 
 @dataclass
 class ReviewConfig:
-    gitlab_url: str = "https://gitlab.com"
-    gitlab_token: str = ""
-    webhook_secret: str = ""
+    gitlab_webhook_secret: str = ""
     opencode_model: str = "opencode/big-pickle"
     opencode_timeout: int = 1800
     opencode_retry_count: int = 2
@@ -25,8 +23,6 @@ class ReviewConfig:
     git_timeout: int = 600
     serve_health_timeout: int = 60
     hang_timeout: int = 300
-    azure_url: str = ""
-    azure_token: str = ""
     azure_api_version: str = "7.1"
     azure_webhook_user: str = ""
     azure_webhook_password: str = ""
@@ -38,10 +34,6 @@ class ReviewConfig:
     opencode_model_env: str = ""
     opencode_timeout_env: int = 0
     opencode_agent_env: str = ""
-
-    @property
-    def azure_enabled(self) -> bool:
-        return bool(self.azure_url and self.azure_token)
 
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.work_dir, self.job_dir, self.log_dir, self.serve_dir):
@@ -55,9 +47,7 @@ Config = ReviewConfig
 def review_config_from_settings(settings: Settings) -> ReviewConfig:
     data_dir = Path(settings.data_dir)
     cfg = ReviewConfig(
-        gitlab_url=(settings.gitlab_url or "https://gitlab.com").rstrip("/"),
-        gitlab_token=(settings.gitlab_token or "").strip(),
-        webhook_secret=(settings.webhook_secret or "").strip(),
+        gitlab_webhook_secret=(settings.gitlab_webhook_secret or "").strip(),
         opencode_model=(settings.review_model or "opencode/big-pickle").strip() or "opencode/big-pickle",
         opencode_timeout=max(1, int(settings.review_timeout_seconds)),
         opencode_retry_count=max(1, int(settings.review_retry_count)),
@@ -70,8 +60,6 @@ def review_config_from_settings(settings: Settings) -> ReviewConfig:
         git_timeout=max(30, int(settings.git_clone_timeout_seconds)),
         serve_health_timeout=max(5, int(settings.review_serve_health_timeout)),
         hang_timeout=max(30, int(settings.hang_timeout_seconds)),
-        azure_url=(settings.azure_url or "").strip().rstrip("/"),
-        azure_token=(settings.azure_token or "").strip(),
         azure_api_version=(settings.azure_api_version or "7.1").strip() or "7.1",
         azure_webhook_user=(settings.azure_webhook_user or "").strip(),
         azure_webhook_password=(settings.azure_webhook_password or "").strip(),

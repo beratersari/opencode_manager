@@ -110,8 +110,7 @@ def test_n8n_post_jobs_unchanged_with_review_wired(tmp_settings: Settings) -> No
 
 
 def test_review_webhooks_and_source_on_list(tmp_settings: Settings) -> None:
-    tmp_settings.gitlab_token = "token"
-    tmp_settings.webhook_secret = "secret"
+    tmp_settings.gitlab_webhook_secret = "secret"
     tmp_settings.review_mention = "amir"
     app = create_app(tmp_settings, runner=N8nRunner(), review_runner=FakeReview)
     with TestClient(app) as client:

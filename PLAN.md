@@ -1542,15 +1542,17 @@ Comment policy: `@mention /ask` (thread reply only),
 command posts a usage note, `@mention /yaver` is silent.
 `/ask do a review of this lock?` stays a follow-up. Azure assign
 GETs the live reviewer list; unassign never starts a review.
-Host-only `azure_url` rebases from the hook/PR collection; a missing
-collection does not 400.
+Azure collection and clone URL come from the webhook; a missing
+collection does not 400. GitLab host and `http_url_to_repo` come
+from the hook. Review clone uses the same Windows GCM path as
+n8n ticket jobs (no settings PAT).
 Finding threads use Turkish `**Kritik**` / `**Önemli**`. Usage-note
 jobs stay off the dashboard. n8n `POST /jobs` is unchanged
 (`planner` / `orchestrator` only). Review clones live in
 `{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
 A leftover partial clone is deleted and recloned. Review FIFO is
-`{data_dir}/review_queue.json`. Tokens are settings fields, never
-inbound job JSON. Boot does not resume leftover queued or running
+`{data_dir}/review_queue.json`. Review host/clone URL are webhook
+fields, never inbound job JSON. Boot does not resume leftover queued or running
 reviews (ERROR + drain the FIFO). A failed review terminal save
 overlays the finished row and still frees the MR slot. Dashboard
 stays GET-only. `attach_spa` must not serve a file outside

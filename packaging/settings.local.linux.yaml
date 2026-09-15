@@ -9,11 +9,7 @@ max_concurrent_n8n_jobs: 2
 # GitLab/Azure review cap. Extra reviews wait in review_queue.json.
 max_concurrent_reviews: 2
 
-gitlab_url: https://gitlab.com
-gitlab_token: ""
-webhook_secret: ""
-azure_url: ""
-azure_token: ""
+gitlab_webhook_secret: ""
 skip_draft_mrs: true
 review_mention: ""
 review_model: opencode/big-pickle

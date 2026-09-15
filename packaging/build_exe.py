@@ -354,8 +354,9 @@ def exe_kit_readme(*, windows: bool) -> str:
             "Git and OpenCode stay on PATH.\n"
             "\n"
             "Review webhooks: POST /amirmini/webhook/gitlab and\n"
-            "POST /amirmini/webhook/azure. Set gitlab_token / azure_token\n"
-            "in settings.local.yaml. Run install-review-agent.bat once to\n"
+            "POST /amirmini/webhook/azure. Host and clone URL come from\n"
+            "the hook. Optional gitlab_webhook_secret in settings.local.yaml.\n"
+            "Run install-review-agent.bat once to\n"
             "copy opencoderman agents and skills into %USERPROFILE%\\.opencode.\n"
         )
     return (
@@ -374,8 +375,9 @@ def exe_kit_readme(*, windows: bool) -> str:
         "$XDG_DATA_HOME/osm or ~/.local/share/osm.\n"
         "\n"
         "Review webhooks: POST /amirmini/webhook/gitlab and\n"
-        "POST /amirmini/webhook/azure. Set gitlab_token / azure_token\n"
-        "in settings.local.yaml. Run ./install-review-agent.sh once to\n"
+        "POST /amirmini/webhook/azure. Host and clone URL come from\n"
+        "the hook. Optional gitlab_webhook_secret in settings.local.yaml.\n"
+        "Run ./install-review-agent.sh once to\n"
         "copy opencoderman agents and skills into ~/.opencode.\n"
     )
 

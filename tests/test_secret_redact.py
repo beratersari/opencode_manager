@@ -65,17 +65,8 @@ def test_azure_git_argv_has_no_extraheader(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     env = isolated_git_env(_PROBE_PAT, auth_scheme="azure")
-    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
-    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
-    assert _PROBE_PAT not in " ".join(
-        [
-            "git",
-            "-c",
-            "credential.helper=",
-            "-c",
-            "http.sslVerify=false",
-        ]
-    )
+    assert env.get("GIT_CONFIG_KEY_0") != "http.extraHeader"
+    assert _PROBE_PAT not in str(env)
     from opencode_manager.workspace import gitops as gitops_mod
 
     captured: dict = {}

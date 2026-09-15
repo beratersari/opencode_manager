@@ -101,8 +101,7 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
         for key in (
             "review_agent",
             "review_model",
-            "gitlab_token",
-            "azure_url",
+            "gitlab_webhook_secret",
             "dashboard_token",
             "dashboard_password",
             "max_concurrent_n8n_jobs",
@@ -117,5 +116,9 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
         assert "dashboard_token: change_me" in text
         assert "/amirmini/webhook/gitlab" in text
         assert "/amirmini/webhook/azure" in text
+        assert "\ngitlab_url:" not in text and not text.startswith("gitlab_url:")
+        assert "\ngitlab_token:" not in text
+        assert "\nazure_url:" not in text
+        assert "\nazure_token:" not in text
         assert "azure_webhook_user" not in text
         assert "azure_webhook_password" not in text

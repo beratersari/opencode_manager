@@ -33,12 +33,8 @@ retry_backoff_seconds: 2
 # Cap on exponential backoff between OpenCode attempts, seconds.
 retry_backoff_cap_seconds: 30
 # Optional overlay (gitignored): settings.local.yaml
-# --- Review (GitLab / Azure). Empty tokens leave webhooks ignored/unauthed. ---
-# gitlab_url: https://gitlab.com
-# gitlab_token: ""
-# webhook_secret: ""
-# azure_url: ""
-# azure_token: ""
+# --- Review (GitLab / Azure). Host and clone URL come from the webhook. ---
+# gitlab_webhook_secret: ""
 # skip_draft_mrs: true
 # review_mention: ""
 # review_model: opencode/big-pickle

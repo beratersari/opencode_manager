@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
+from opencode_manager.gitlab.urls import gitlab_api_root
 from opencode_manager.review_log import get_logger, log_fail, log_ok
 
 logger = get_logger("gitlab")
@@ -76,9 +77,9 @@ class GitLabError(RuntimeError):
 
 
 class GitLabClient:
-    def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.token = token
+    def __init__(self, base_url: str = "", token: str = "", timeout: float = 30.0) -> None:
+        self.base_url = (base_url or "").rstrip("/")
+        self.token = (token or "").strip()
         self.timeout = timeout
         try:
             import urllib3
@@ -87,15 +88,34 @@ class GitLabClient:
         except Exception:
             pass
         # INTENTIONAL: verify=False (on-prem / TLS intercept; no custom-CA path yet).
-        self._http = httpx.Client(
-            base_url=f"{self.base_url}/api/v4",
-            headers={"PRIVATE-TOKEN": token} if token else {},
-            timeout=timeout,
-            verify=False,
-        )
+        self._http = self._make_http()
         self._user_id: Optional[int] = None
         self._user: Optional[dict[str, Any]] = None
         self._user_resolved = False
+
+    def _make_http(self) -> httpx.Client:
+        root = self.base_url or "https://invalid.invalid"
+        headers = {"PRIVATE-TOKEN": self.token} if self.token else {}
+        return httpx.Client(
+            base_url=f"{root}/api/v4",
+            headers=headers,
+            timeout=self.timeout,
+            verify=False,
+        )
+
+    def apply_base(self, url: str, path_with_namespace: str = "") -> str:
+        """Rebase onto the GitLab host from the webhook project or MR URL."""
+        root = gitlab_api_root(url, path_with_namespace)
+        if not root:
+            return self.base_url
+        if root == (self.base_url or "").rstrip("/"):
+            return self.base_url
+        old = self.base_url
+        self.base_url = root
+        self._http.close()
+        self._http = self._make_http()
+        log_ok(logger, "gitlab rebase host", previous=old or "-", base=root)
+        return self.base_url
 
     def close(self) -> None:
         self._http.close()

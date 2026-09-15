@@ -296,8 +296,8 @@ also serves the same SPA at http://127.0.0.1:4096/jobs.
 The GitHub Release is these zips plus source:
 
 - `amir-mini-<version>-windows-x64-exe.zip` — exe + `settings.local.yaml` (`C:\osm`)
-- `amir-mini-<version>-linux-x64.zip` — Ubuntu 22.04 alias; binary + `settings.local.yaml` (`/var/lib/osm`)
-- `amir-mini-<version>-linux-ubuntu-18.04-x64.zip` / `20.04` / `22.04` / `24.04` — pick the Ubuntu you run
+- `amir-mini-<version>-linux-x64-exe.zip` — Ubuntu 22.04 alias; binary + `settings.local.yaml` (`/var/lib/osm`)
+- `amir-mini-<version>-linux-ubuntu-18.04-x64-exe.zip` / `20.04` / `22.04` / `24.04` — pick the Ubuntu you run
 - `amir-mini-<version>-windows-x64-service.zip` — exe + `settings.local.yaml` + `install-service.bat` + `WinSW.exe`. Extract to a permanent folder, then `install-service.bat` (Administrator).
 - `amir-mini-<version>-linux-x64-service.zip` — Ubuntu 22.04 alias
 - `amir-mini-<version>-linux-ubuntu-<ver>-x64-service.zip` — matching service kit per Ubuntu

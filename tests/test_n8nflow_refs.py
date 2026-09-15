@@ -70,6 +70,10 @@ def test_callback_flow_uses_wait_webhook() -> None:
     assert "callback_url" in str(build["parameters"].get("jsCode") or "")
     wait = next(n for n in data["nodes"] if n["name"] == "waitForOsmCallback")
     assert wait["parameters"].get("resume") == "webhook"
+    amount = str(wait["parameters"].get("resumeAmount") or "")
+    assert "timeout" in amount
+    assert "retry_count" in amount
+    assert "+ 1800" in amount
 
 
 def test_poller_flow_polls_osm_jobs_not_callback() -> None:
@@ -92,7 +96,10 @@ def test_poller_flow_polls_osm_jobs_not_callback() -> None:
     assert loop[1][0]["node"] == "isCallback200"
     still = next(n for n in data["nodes"] if n["name"] == "stillInProgress")
     expr = str(still["parameters"]["conditions"]["conditions"][0]["leftValue"])
-    assert "poll_max_seconds" in expr
+    assert "poll_max_seconds" not in expr
+    assert "timeout" in expr
+    assert "retry_count" in expr
+    assert "+ 1800" in expr
     assert "live" in expr
     assert "job_" in expr
     assert "retry_blip" in expr
@@ -132,6 +139,8 @@ def test_build_osm_request_maps_plan_and_build_case_insensitively(path: Path) ->
     stringify = next(n for n in data["nodes"] if n["name"] == "strginfyInputText1")
     sjs = str(stringify["parameters"].get("jsCode") or "")
     assert 'toLowerCase() === "plan"' in sjs
+    assert "sid === '-1'" in sjs
+    assert "session_id === -1" not in sjs
     assert 'json["agent"]' not in sjs
     assert 'json.agent' not in sjs
 

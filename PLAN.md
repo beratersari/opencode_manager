@@ -405,7 +405,7 @@ When `callback_url` is omitted, n8n (or curl) reads the same terminal
 envelope by polling this path until the job is **not live**. n8n must
 not stop at `timeout * retry_count` (clone/queue sit outside that).
 `n8n-poller.json` loops while `live` / `202` (and retries GET 5xx
-blips) until `poll_max_seconds`. Dashboard `GET /api/jobs/{id}` stays
+blips) until `timeout * retry_count + 1800`. Dashboard `GET /api/jobs/{id}` stays
 the jobs-tab payload.
 
 | Job state | HTTP | Envelope `status_code` |
@@ -1546,7 +1546,9 @@ Host-only `azure_url` rebases from the hook/PR collection; a missing
 collection does not 400.
 Finding threads use Turkish `**Kritik**` / `**Önemli**`. Usage-note
 jobs stay off the dashboard. n8n `POST /jobs` is unchanged
-(`planner` / `orchestrator` only). Review clones live in
+(`planner` / `orchestrator` only). Review clone tries the settings PAT, then machine
+credentials (Windows GCM / Linux helper), then fails.
+Review clones live in
 `{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
 A leftover partial clone is deleted and recloned. Review FIFO is
 `{data_dir}/review_queue.json`. Tokens are settings fields, never

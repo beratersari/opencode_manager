@@ -67,7 +67,7 @@
       ],
       "id": "3afdae00-4442-46a6-9318-5952590acb23",
       "name": "remoteComputerInfo1",
-      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait uses timeout * retry_count. Edit only these two to change how long a job may run. token = dashboard_token (Authorization Bearer)."
+      "notes": "OSM listen host/port (4096), not a per-job opencode serve port. timeout = one OSM attempt (seconds). retry_count = OSM attempts, first included. Wait = timeout * retry_count + 1800. token = dashboard_token (Authorization Bearer)."
     },
     {
       "parameters": {
@@ -585,7 +585,7 @@
     },
     {
       "parameters": {
-        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif (String($input.first().json.working_mode || \"\").trim().toLowerCase() === \"plan\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nif(anotherWorkFlow.session_id === -1){\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n}else{\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\n\n\n\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
+        "jsCode": "let prompt = $input.first().json[\"text\"];\n\nconst anotherWorkFlow = $('When Executed by Another Workflow').first().json;\n\nif (String($input.first().json.working_mode || \"\").trim().toLowerCase() === \"plan\") {\n    prompt += \" işi için plan oluştur.\";\n}\n\nprompt += `\\nissue_id: ${anotherWorkFlow.issue_id} \\n`;\n\nprompt += `repo_url: ${anotherWorkFlow.repo_url}`;\n\nconst sid = String(anotherWorkFlow.session_id == null ? '' : anotherWorkFlow.session_id).trim();\nconst newSession = !sid || sid === '-1';\nif (newSession) {\n  prompt += ` sourceBranch: ${anotherWorkFlow.source_branch_name}`;\n} else {\n  prompt += ` targetBranch: ${anotherWorkFlow.source_branch_name}`;\n}\n\nlet issueText = JSON.stringify(prompt);\nreturn [{issueText}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -636,7 +636,7 @@
         "resume": "webhook",
         "httpMethod": "POST",
         "limitWaitTime": true,
-        "resumeAmount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) }}",
+        "resumeAmount": "={{ Math.max(1, Number($('remoteComputerInfo1').item.json.timeout) * Math.max(1, Number($('remoteComputerInfo1').item.json.retry_count))) + 1800 }}",
         "resumeUnit": "seconds",
         "options": {}
       },
@@ -649,7 +649,7 @@
       "id": "d77b433a-cb0b-4139-b486-53babf6b45d3",
       "name": "waitForOsmCallback",
       "webhookId": "65a1bc19-ed88-4b03-9297-2bbddc83919b",
-      "notes": "Wait timeout = remoteComputerInfo1.timeout * retry_count (seconds). OSM POSTs one terminal envelope here. Clone/cleanup sit outside that clock. httpMethod must be POST."
+      "notes": "Wait timeout = timeout * retry_count + 1800 (clone/cleanup). OSM POSTs one terminal envelope here. httpMethod must be POST."
     },
     {
       "parameters": {

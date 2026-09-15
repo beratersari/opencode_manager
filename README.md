@@ -35,7 +35,8 @@ Both keep **strginfyInputText1**, **isTextExist1**, **Basic LLM Chain1**,
 **OpenAI Chat Model1**, and **returnSuccess1** / **returnFail1**. Import
 and set `remoteIP` / `remotePort` (4096) on **remoteComputerInfo1**.
 That node also has `timeout`, `retry_count`, and (poller only)
-`poll_interval` / `poll_max_seconds`. **buildOsmRequest** hardcodes
+`poll_interval`. Poll budget is `timeout * retry_count + 1800`.
+**buildOsmRequest** hardcodes
 `model`.
 
 **n8n-callback** has **no hardcoded webhook URL**. n8n creates a new
@@ -52,7 +53,7 @@ callback_url: $execution.resumeUrl,
 | POST **202** + `job_*` | Sleep `poll_interval`, then `GET /jobs/{id}` |
 | POST **400** / **409** / **503** | **returnAckFail** immediately (no poll) |
 | GET **202** / `live: true` | Keep polling |
-| GET HTTP **5xx** with no terminal body | `retry_blip` — poll again until `poll_max_seconds` |
+| GET HTTP **5xx** with no terminal body | `retry_blip` — poll again until `timeout * retry_count + 1800` |
 | GET envelope **200** | Success path (`isTextExist1` → LLM) |
 | GET envelope **404** / **500** / **504** | **returnAckFail** (missing branch / error / timeout). Does **not** keep polling. |
 | GET **404** unknown id | **returnAckFail** |

@@ -202,7 +202,8 @@ export function SettingsPage() {
           <div>
             <h2 className="text-sm font-semibold text-text">Webhook URLs</h2>
             <p className="mt-1 text-[11px] text-text-muted">
-              Copy these into GitLab and Azure service hooks. They are not saved from this page.
+              Copy these into GitLab and Azure service hooks. Replace {'<ip>'} with this
+              machine's address those servers can reach. They are not saved from this page.
             </p>
           </div>
           <WebhookUrlField label="GitLab" value={loaded.webhook_gitlab_url || ''} />

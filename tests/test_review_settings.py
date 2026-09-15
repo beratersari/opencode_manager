@@ -12,8 +12,13 @@ from opencode_manager.worker import Terminal
 
 def test_webhook_info_urls_use_loopback_when_bound_all() -> None:
     got = webhook_info_urls(listen_host="0.0.0.0", listen_port=4096)
-    assert got["webhook_gitlab_url"] == "http://127.0.0.1:4096/amirmini/webhook/gitlab"
-    assert got["webhook_azure_url"] == "http://127.0.0.1:4096/amirmini/webhook/azure"
+    assert got["webhook_gitlab_url"] == "http://<ip>:4096/amirmini/webhook/gitlab"
+    assert got["webhook_azure_url"] == "http://<ip>:4096/amirmini/webhook/azure"
+
+
+def test_webhook_info_urls_always_use_ip_placeholder() -> None:
+    got = webhook_info_urls(listen_host="10.1.2.3", listen_port=4096)
+    assert got["webhook_gitlab_url"] == "http://<ip>:4096/amirmini/webhook/gitlab"
 
 
 class N8nRunner:

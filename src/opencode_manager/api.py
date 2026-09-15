@@ -345,10 +345,8 @@ def api_report_context(request: Request) -> Dict[str, Any]:
 
 
 def _public_listen_host(host: str) -> str:
-    text = (host or "").strip() or "127.0.0.1"
-    if text in {"0.0.0.0", "::", "[::]"}:
-        return "127.0.0.1"
-    return text.strip("[]")
+    del host
+    return "<ip>"
 
 
 def webhook_info_urls(*, listen_host: str, listen_port: int) -> Dict[str, str]:

@@ -151,8 +151,7 @@ def test_post_jobs_real_git_and_opencode(tmp_path: Path) -> None:
             assert job["session_id"].startswith("ses_")
             prompts = client.get("/api/jobs/{0}/prompts".format(job_id)).json()["prompts"]
             assert any(p["id"] == "ORIGINAL" for p in prompts)
-            # Clone must be gone after job-end delete.
-            leftover = list((tmp_path / "work").glob("*"))
-            assert leftover == [], leftover
+            # Clone must be gone after job-end delete. .serve logs stay.
+            assert not (tmp_path / "work" / "LIVE-1").exists()
     finally:
         server.shutdown()

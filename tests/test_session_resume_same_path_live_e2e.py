@@ -184,23 +184,36 @@ def _stop_serve(proc: Optional[subprocess.Popen]) -> None:
         return
     pid = getattr(proc, "pid", None)
     if pid:
-        try:
-            os.killpg(int(pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(int(pid))],
+                capture_output=True,
+                check=False,
+            )
+        else:
             try:
-                proc.terminate()
-            except Exception:
-                pass
+                os.killpg(int(pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError, AttributeError):
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
         try:
             proc.wait(timeout=8)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(int(pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
+            if os.name == "nt":
                 try:
                     proc.kill()
                 except Exception:
                     pass
+            else:
+                try:
+                    os.killpg(int(pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError, AttributeError):
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
             try:
                 proc.wait(timeout=5)
             except Exception:

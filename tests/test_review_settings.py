@@ -92,6 +92,15 @@ def test_review_timeout_does_not_change_n8n_job_timeout(tmp_settings: Settings) 
         assert job.job_kind != "review"
 
 
+def test_leftover_webhook_secret_loads_as_gitlab_webhook_secret(tmp_path) -> None:
+    from opencode_manager.settings import load_settings
+
+    path = tmp_path / "settings.yaml"
+    path.write_text("webhook_secret: leftover-hook\n", encoding="utf-8")
+    got = load_settings(path)
+    assert got.gitlab_webhook_secret == "leftover-hook"
+
+
 def test_packaging_local_templates_list_review_and_auth_fields() -> None:
     from pathlib import Path
 
@@ -103,19 +112,20 @@ def test_packaging_local_templates_list_review_and_auth_fields() -> None:
             "review_model",
             "gitlab_token",
             "azure_url",
+            "gitlab_webhook_secret",
             "dashboard_token",
             "dashboard_password",
             "max_concurrent_n8n_jobs",
             "max_concurrent_reviews",
-            "webhook_gitlab_url",
-            "webhook_azure_url",
         ):
             assert key in text, f"{name} missing {key}"
             assert f"\n{key}:" in text or text.startswith(f"{key}:"), f"{name} comments out {key}"
+        assert "gitlab_webhook_secret: tank" in text
         assert "dashboard_user: admin" in text
         assert "dashboard_password: admin" in text
         assert "dashboard_token: change_me" in text
-        assert "/amirmini/webhook/gitlab" in text
-        assert "/amirmini/webhook/azure" in text
+        assert "webhook_gitlab_url" not in text
+        assert "webhook_azure_url" not in text
+        assert "skip_draft_mrs" not in text
         assert "azure_webhook_user" not in text
         assert "azure_webhook_password" not in text

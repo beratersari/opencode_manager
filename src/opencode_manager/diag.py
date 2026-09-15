@@ -21,6 +21,7 @@ _DROP_KEYS = frozenset(
         "gitlab_token",
         "azure_token",
         "webhook_secret",
+        "gitlab_webhook_secret",
         "dashboard_token",
         "dashboard_password",
         "azure_webhook_password",

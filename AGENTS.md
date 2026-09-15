@@ -78,10 +78,12 @@ These look like bugs. They are not.
   and token = no login. Shipped `settings.local.yaml` sets
   `dashboard_user: admin`, `dashboard_password: admin`, and
   `dashboard_token: change_me` so the dashboard and n8n share a
-  default. Overlay `max_concurrent_n8n_jobs` is the n8n serve cap
+  default. Shipped overlay also sets `gitlab_webhook_secret: tank`.
+  Overlay `max_concurrent_n8n_jobs` is the n8n serve cap
   (`max_concurrent_jobs` still works). `max_concurrent_reviews` is
   the review cap. `webhook_gitlab_url` / `webhook_azure_url` are
-  info only (not read). n8n `POST /jobs`,
+  Settings-page info only (not read, not in the shipped overlay).
+  n8n `POST /jobs`,
   `GET /jobs/{id}`, and `DELETE /sessions` use the Bearer token. Webhooks keep their own
   secrets. n8n may use `n8n-callback.json` (one
   terminal POST to `callback_url`) or `n8n-poller.json` (omit
@@ -383,7 +385,7 @@ Never POST a user message while the session is `busy` / compacting.
 Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
 
 - Webhooks: `POST /amirmini/webhook/gitlab` (`X-Gitlab-Token` vs
-  `webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
+  `gitlab_webhook_secret`) and `POST /amirmini/webhook/azure` (HTTP Basic vs
   `azure_webhook_user` / `azure_webhook_password`). Ack immediately.
   Empty Azure URL/PAT → Azure off. Outbound TLS is `verify=False`.
   Host-only `azure_url` (`https://tfs02`) is fine: rebase onto

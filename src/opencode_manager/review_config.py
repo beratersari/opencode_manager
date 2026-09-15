@@ -12,7 +12,7 @@ from opencode_manager.settings import Settings
 class ReviewConfig:
     gitlab_url: str = "https://gitlab.com"
     gitlab_token: str = ""
-    webhook_secret: str = ""
+    gitlab_webhook_secret: str = ""
     opencode_model: str = "opencode/big-pickle"
     opencode_timeout: int = 1800
     opencode_retry_count: int = 2
@@ -57,7 +57,7 @@ def review_config_from_settings(settings: Settings) -> ReviewConfig:
     cfg = ReviewConfig(
         gitlab_url=(settings.gitlab_url or "https://gitlab.com").rstrip("/"),
         gitlab_token=(settings.gitlab_token or "").strip(),
-        webhook_secret=(settings.webhook_secret or "").strip(),
+        gitlab_webhook_secret=(settings.gitlab_webhook_secret or "").strip(),
         opencode_model=(settings.review_model or "opencode/big-pickle").strip() or "opencode/big-pickle",
         opencode_timeout=max(1, int(settings.review_timeout_seconds)),
         opencode_retry_count=max(1, int(settings.review_retry_count)),

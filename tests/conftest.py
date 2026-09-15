@@ -56,7 +56,7 @@ def tmp_settings(tmp_path: Path) -> Settings:
 def tmp_config(tmp_path: Path) -> ReviewConfig:
     cfg = ReviewConfig(
         data_dir=tmp_path / "data",
-        webhook_secret="secret",
+        gitlab_webhook_secret="secret",
         gitlab_token="token",
         max_concurrent_jobs=2,
         skip_draft_mrs=True,

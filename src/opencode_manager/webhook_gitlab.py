@@ -43,7 +43,7 @@ def _mention_names(request: Request) -> list[str]:
 
 
 def _verify_secret(request: Request) -> None:
-    secret = request.app.state.config.webhook_secret
+    secret = request.app.state.config.gitlab_webhook_secret
     if not secret:
         log_ok(logger, "webhook secret", check="skipped", reason="WEBHOOK_SECRET unset")
         return

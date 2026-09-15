@@ -72,7 +72,7 @@ class Settings:
     project_root: Path = field(default_factory=resource_root)
     gitlab_url: str = "https://gitlab.com"
     gitlab_token: str = ""
-    webhook_secret: str = ""
+    gitlab_webhook_secret: str = ""
     azure_url: str = ""
     azure_token: str = ""
     azure_api_version: str = "7.1"
@@ -196,7 +196,9 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     )
     s.gitlab_url = str(data.get("gitlab_url", s.gitlab_url) or s.gitlab_url).rstrip("/")
     s.gitlab_token = str(data.get("gitlab_token", s.gitlab_token) or "").strip()
-    s.webhook_secret = str(data.get("webhook_secret", s.webhook_secret) or "").strip()
+    s.gitlab_webhook_secret = str(
+        data.get("gitlab_webhook_secret") or data.get("webhook_secret") or s.gitlab_webhook_secret or ""
+    ).strip()
     s.azure_url = str(data.get("azure_url", s.azure_url) or "").strip().rstrip("/")
     s.azure_token = str(
         data.get("azure_token") or data.get("azure_devops_pat") or s.azure_token or ""

@@ -108,7 +108,7 @@ def test_n8n_bearer_token_unlocks_jobs_and_poller(tmp_settings: Settings) -> Non
 
 def test_webhook_does_not_use_dashboard_token(tmp_settings: Settings) -> None:
     tmp_settings.dashboard_token = "n8n-secret"
-    tmp_settings.webhook_secret = "hook-secret"
+    tmp_settings.gitlab_webhook_secret = "hook-secret"
     app = create_app(tmp_settings, runner=N8nRunner())
     with TestClient(app) as client:
         denied = client.post("/amirmini/webhook/gitlab", json={"object_kind": "note"})

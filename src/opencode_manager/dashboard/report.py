@@ -121,7 +121,7 @@ def public_settings(settings: Settings) -> Dict[str, Any]:
         "review_serve_health_timeout": settings.review_serve_health_timeout,
         "gitlab_url": settings.gitlab_url,
         "gitlab_token_set": bool(settings.gitlab_token),
-        "webhook_secret_set": bool(settings.webhook_secret),
+        "gitlab_webhook_secret_set": bool(settings.gitlab_webhook_secret),
         "azure_url": settings.azure_url,
         "azure_token_set": bool(settings.azure_token),
         "azure_webhook_user": settings.azure_webhook_user,

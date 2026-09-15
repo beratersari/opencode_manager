@@ -160,7 +160,7 @@ def test_azure_update_ignored(tmp_config):
 
 def test_gitlab_secret_does_not_lock_azure_route(tmp_config):
     """Dual install: GitLab WEBHOOK_SECRET must not force Azure Basic auth."""
-    tmp_config.webhook_secret = "gitlab-only"
+    tmp_config.gitlab_webhook_secret = "gitlab-only"
     tmp_config.azure_url = "https://ado.example/tfs/DefaultCollection"
     tmp_config.azure_token = "pat-test"
     tmp_config.azure_webhook_password = ""

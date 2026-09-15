@@ -9,6 +9,16 @@ from typing import Callable, Optional
 from urllib.parse import quote, urlparse, urlunparse
 
 from opencode_manager.azure.auth import azure_basic_auth, azure_basic_user
+from opencode_manager.git.auth import (
+    creds_for_job,
+    forget_job_creds,
+    host_from_repo_url,
+    isolated_git_env as ticket_git_env,
+    is_git_auth_error,
+    prompt_windows_credentials,
+    remember_job_creds,
+    uses_windows_stored_creds,
+)
 from opencode_manager.review_log import get_logger, log_command, log_command_result, log_fail, log_ok, redact_userinfo
 
 logger = get_logger("gitops")
@@ -90,6 +100,28 @@ def isolated_git_env(token: str = "", *, auth_scheme: str = "gitlab") -> dict[st
     return env
 
 
+def system_git_env(*, username: str = "", password: str = "") -> dict[str, str]:
+    """Machine credentials. Windows GCM; Linux keeps the user's helper."""
+    user = (username or "").strip()
+    secret = password or ""
+    if user and secret:
+        env = ticket_git_env(username=user, password=secret)
+        env["GIT_SSL_NO_VERIFY"] = "1"
+        return env
+    if uses_windows_stored_creds():
+        env = ticket_git_env()
+        env["GIT_SSL_NO_VERIFY"] = "1"
+        return env
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_LFS_SKIP_SMUDGE"] = "1"
+    env["GIT_SSL_NO_VERIFY"] = "1"
+    env.pop("DISPLAY", None)
+    env.pop("SSH_ASKPASS", None)
+    env["GIT_ASKPASS"] = ""
+    return env
+
+
 def inject_token(url: str, token: str, *, scheme: str = "gitlab") -> str:
     if not token:
         return url
@@ -140,19 +172,13 @@ def _run_git(
     timeout: float = 120,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
+    helper_off: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     env = env or isolated_git_env()
-    cmd = [
-        "git",
-        "-c",
-        "credential.helper=",
-        "-c",
-        "credential.helper=",
-        "-c",
-        "http.sslVerify=false",
-        "-c",
-        "core.longpaths=true",
-    ]
+    cmd = ["git"]
+    if helper_off:
+        cmd.extend(["-c", "credential.helper=", "-c", "credential.helper="])
+    cmd.extend(["-c", "http.sslVerify=false", "-c", "core.longpaths=true"])
     # Azure Basic lives in GIT_CONFIG_VALUE_0 (isolated_git_env). Never
     # put http.extraHeader / the PAT on argv — leftover reap logs argv.
     cmd.extend(args)
@@ -277,53 +303,155 @@ def _run_git_killable(
     return subprocess.CompletedProcess(cmd, proc.returncode or 0, stdout or "", stderr or "")
 
 
+def _pat_clone_url(repo_url: str, token: str, auth_scheme: str) -> str:
+    if auth_scheme == "azure":
+        return public_git_url(repo_url)
+    return inject_token(repo_url, token, scheme=auth_scheme)
+
+
+def _clone_once(
+    repo_url: str,
+    dest: Path,
+    *,
+    env: dict[str, str],
+    auth_url: str,
+    helper_off: bool,
+    timeout: float,
+    should_stop: Optional[Callable[[], bool]] = None,
+    on_pid: Optional[Callable[[int], None]] = None,
+) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        raise GitError(f"clone dest already exists: {dest}")
+    git_kw = {"should_stop": should_stop, "on_pid": on_pid, "helper_off": helper_off}
+    _run_git(
+        ["clone", "--no-single-branch", auth_url, str(dest)],
+        env=env,
+        timeout=timeout,
+        **git_kw,
+    )
+    _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
+
+
+def _retry_system_clone(
+    repo_url: str,
+    dest: Path,
+    *,
+    timeout: float,
+    job_id: str = "",
+    should_stop: Optional[Callable[[], bool]] = None,
+    on_pid: Optional[Callable[[int], None]] = None,
+) -> None:
+    public = public_git_url(repo_url)
+    env = system_git_env()
+    try:
+        _clone_once(
+            repo_url,
+            dest,
+            env=env,
+            auth_url=public,
+            helper_off=False,
+            timeout=timeout,
+            should_stop=should_stop,
+            on_pid=on_pid,
+        )
+        return
+    except GitError as exc:
+        if dest.exists():
+            delete_clone(dest)
+        if not uses_windows_stored_creds() or not is_git_auth_error(str(exc)) or creds_for_job(job_id):
+            raise
+    host = host_from_repo_url(public)
+    log_ok(logger, "git clone system creds need dialog", host=host)
+    pair = prompt_windows_credentials(host)
+    if not pair:
+        forget_job_creds(job_id)
+        raise GitError("git authentication required; Windows credential dialog was cancelled or empty")
+    remember_job_creds(job_id, pair[0], pair[1])
+    _clone_once(
+        repo_url,
+        dest,
+        env=system_git_env(username=pair[0], password=pair[1]),
+        auth_url=public,
+        helper_off=False,
+        timeout=timeout,
+        should_stop=should_stop,
+        on_pid=on_pid,
+    )
+
+
 def clone_repo(
     repo_url: str,
     dest: Path,
-    token: str,
+    token: str = "",
     *,
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
     auth_scheme: str = "gitlab",
+    job_id: str = "",
 ) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         raise GitError(f"clone dest already exists: {dest}")
-    env = isolated_git_env(token, auth_scheme=auth_scheme)
-    # Azure PAT stays in GIT_CONFIG_VALUE_* / askpass, never on argv.
-    auth_url = (
-        public_git_url(repo_url)
-        if auth_scheme == "azure"
-        else inject_token(repo_url, token, scheme=auth_scheme)
-    )
-    if auth_scheme == "azure":
-        parsed = urlparse(repo_url)
-        log_ok(
-            logger,
-            "azure clone start",
-            host=parsed.netloc or "-",
-            path=parsed.path or "-",
-            user="pat",
-            token_chars=len(token or ""),
-            askpass=env.get("GIT_ASKPASS") or "-",
-            extraHeader="yes" if token else "no",
-        )
-    git_kw = {"should_stop": should_stop, "on_pid": on_pid}
+    public = public_git_url(repo_url)
+    if token:
+        env = isolated_git_env(token, auth_scheme=auth_scheme)
+        auth_url = _pat_clone_url(repo_url, token, auth_scheme)
+        if auth_scheme == "azure":
+            parsed = urlparse(repo_url)
+            log_ok(
+                logger,
+                "azure clone start",
+                host=parsed.netloc or "-",
+                path=parsed.path or "-",
+                user="pat",
+                token_chars=len(token or ""),
+                askpass=env.get("GIT_ASKPASS") or "-",
+                extraHeader="yes",
+            )
+        try:
+            _clone_once(
+                repo_url,
+                dest,
+                env=env,
+                auth_url=auth_url,
+                helper_off=True,
+                timeout=timeout,
+                should_stop=should_stop,
+                on_pid=on_pid,
+            )
+            log_ok(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth="pat")
+            return
+        except Exception as exc:
+            log_fail(logger, "git clone PAT", dest=dest, url=redact_userinfo(repo_url), auth=auth_scheme, err=exc)
+            if dest.exists():
+                delete_clone(dest)
+            if not is_git_auth_error(str(exc)):
+                raise
+            log_ok(logger, "git clone PAT failed; retrying with system credentials")
     try:
-        _run_git(
-            ["clone", "--no-single-branch", auth_url, str(dest)],
-            env=env,
+        _retry_system_clone(
+            public,
+            dest,
             timeout=timeout,
-            **git_kw,
+            job_id=job_id,
+            should_stop=should_stop,
+            on_pid=on_pid,
         )
-        _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
     except Exception as exc:
-        log_fail(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth=auth_scheme, err=exc)
+        log_fail(
+            logger,
+            "git clone",
+            dest=dest,
+            url=redact_userinfo(repo_url),
+            auth="system",
+            err=exc,
+        )
         if dest.exists():
             delete_clone(dest)
-        raise
-    log_ok(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth=auth_scheme)
+        raise GitError(f"git clone failed with PAT and system credentials: {exc}") from exc
+    log_ok(logger, "git clone", dest=dest, url=redact_userinfo(repo_url), auth="system")
 
 
 def _scrub_origin(
@@ -332,6 +460,7 @@ def _scrub_origin(
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
+    helper_off: bool = True,
 ) -> None:
     result = _run_git(
         ["config", "--local", "--get", "remote.origin.url"],
@@ -340,6 +469,7 @@ def _scrub_origin(
         timeout=timeout,
         should_stop=should_stop,
         on_pid=on_pid,
+        helper_off=helper_off,
     )
     url = (result.stdout or "").strip()
     if urlparse(url).username or urlparse(url).password:
@@ -351,6 +481,7 @@ def _scrub_origin(
             timeout=timeout,
             should_stop=should_stop,
             on_pid=on_pid,
+            helper_off=helper_off,
         )
 
 
@@ -387,75 +518,141 @@ def clone_is_usable(dest: Path) -> bool:
     return bool((origin.stdout or "").strip())
 
 
+def _fetch_once(
+    dest: Path,
+    *,
+    env: dict[str, str],
+    helper_off: bool,
+    source_branch: str,
+    target_branch: str,
+    sha: str,
+    timeout: float,
+    should_stop: Optional[Callable[[], bool]] = None,
+    on_pid: Optional[Callable[[int], None]] = None,
+) -> str:
+    git_kw = {"should_stop": should_stop, "on_pid": on_pid, "helper_off": helper_off}
+    refs = [b for b in (source_branch, target_branch) if b]
+    _run_git(["fetch", "--force", "origin", *refs], cwd=dest, env=env, timeout=timeout, **git_kw)
+    target = sha or f"origin/{source_branch}"
+    _run_git(
+        ["checkout", "--force", "--detach", target],
+        cwd=dest,
+        env=env,
+        timeout=min(60.0, timeout),
+        **git_kw,
+    )
+    _run_git(["reset", "--hard", "HEAD"], cwd=dest, env=env, timeout=min(60.0, timeout), **git_kw)
+    _run_git(["clean", "-fd"], cwd=dest, env=env, timeout=min(60.0, timeout), **git_kw)
+    head = _run_git(["rev-parse", "HEAD"], cwd=dest, env=env, timeout=30, **git_kw)
+    return (head.stdout or "").strip()
+
+
 def fetch_and_checkout(
     dest: Path,
     *,
     source_branch: str,
     target_branch: str,
     sha: str,
-    token: str,
+    token: str = "",
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
     auth_scheme: str = "gitlab",
+    job_id: str = "",
 ) -> str:
-    env = isolated_git_env(token, auth_scheme=auth_scheme)
-    git_kw = {"should_stop": should_stop, "on_pid": on_pid}
+    common = {
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "sha": sha,
+        "timeout": timeout,
+        "should_stop": should_stop,
+        "on_pid": on_pid,
+    }
+    if token:
+        env = isolated_git_env(token, auth_scheme=auth_scheme)
+        git_kw = {"should_stop": should_stop, "on_pid": on_pid, "helper_off": True}
+        origin = _origin_url(dest, env, timeout=min(30.0, timeout), **git_kw)
+        if auth_scheme == "azure":
+            auth = public_git_url(origin)
+        else:
+            auth = inject_token(origin, token, scheme=auth_scheme)
+        if auth != origin:
+            _run_git(
+                ["remote", "set-url", "origin", auth],
+                cwd=dest,
+                env=env,
+                timeout=min(30.0, timeout),
+                **git_kw,
+            )
+        try:
+            sha_out = _fetch_once(dest, env=env, helper_off=True, **common)
+            log_ok(
+                logger,
+                "git checkout",
+                dest=dest,
+                sha=sha_out or "-",
+                source=source_branch or "-",
+                target=target_branch or "-",
+                auth="pat",
+            )
+            return sha_out
+        except Exception as exc:
+            log_fail(logger, "git checkout PAT", dest=dest, err=exc)
+            try:
+                _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
+            except Exception as scrub_exc:
+                log_fail(logger, "git scrub origin", dest=dest, err=scrub_exc)
+            if not is_git_auth_error(str(exc)):
+                raise
+            log_ok(logger, "git fetch PAT failed; retrying with system credentials")
+    env = system_git_env()
+    git_kw = {"should_stop": should_stop, "on_pid": on_pid, "helper_off": False}
     origin = _origin_url(dest, env, timeout=min(30.0, timeout), **git_kw)
-    if token and auth_scheme == "azure":
-        auth = public_git_url(origin)
-    else:
-        auth = inject_token(origin, token, scheme=auth_scheme) if token else origin
-    if token and auth != origin:
+    public = public_git_url(origin) if origin else ""
+    if public and public != origin:
         _run_git(
-            ["remote", "set-url", "origin", auth],
+            ["remote", "set-url", "origin", public],
             cwd=dest,
             env=env,
             timeout=min(30.0, timeout),
             **git_kw,
         )
     try:
-        refs = [b for b in (source_branch, target_branch) if b]
-        fetch_args = ["fetch", "--force", "origin", *refs]
-        _run_git(fetch_args, cwd=dest, env=env, timeout=timeout, **git_kw)
-        target = sha or f"origin/{source_branch}"
-        _run_git(
-            ["checkout", "--force", "--detach", target],
-            cwd=dest,
-            env=env,
-            timeout=min(60.0, timeout),
-            **git_kw,
-        )
-        _run_git(["reset", "--hard", "HEAD"], cwd=dest, env=env, timeout=min(60.0, timeout), **git_kw)
-        _run_git(["clean", "-fd"], cwd=dest, env=env, timeout=min(60.0, timeout), **git_kw)
-        head = _run_git(["rev-parse", "HEAD"], cwd=dest, env=env, timeout=30, **git_kw)
-        sha_out = (head.stdout or "").strip()
-        log_ok(
-            logger,
-            "git checkout",
-            dest=dest,
-            sha=sha_out or "-",
-            source=source_branch or "-",
-            target=target_branch or "-",
-            auth=auth_scheme,
-        )
-        return sha_out
+        sha_out = _fetch_once(dest, env=env, helper_off=False, **common)
+    except GitError as exc:
+        if uses_windows_stored_creds() and is_git_auth_error(str(exc)) and not creds_for_job(job_id):
+            host = host_from_repo_url(public or origin)
+            pair = prompt_windows_credentials(host)
+            if pair:
+                remember_job_creds(job_id, pair[0], pair[1])
+                sha_out = _fetch_once(
+                    dest,
+                    env=system_git_env(username=pair[0], password=pair[1]),
+                    helper_off=False,
+                    **common,
+                )
+            else:
+                forget_job_creds(job_id)
+                raise GitError(
+                    "git authentication required; Windows credential dialog was cancelled or empty"
+                ) from exc
+        else:
+            log_fail(logger, "git checkout", dest=dest, err=exc)
+            raise GitError(f"git fetch failed with PAT and system credentials: {exc}") from exc
+    try:
+        _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
     except Exception as exc:
-        log_fail(
-            logger,
-            "git checkout",
-            dest=dest,
-            source=source_branch or "-",
-            target=target_branch or "-",
-            err=exc,
-        )
-        raise
-    finally:
-        if token:
-            try:
-                _scrub_origin(dest, env, timeout=min(30.0, timeout), **git_kw)
-            except Exception as exc:
-                log_fail(logger, "git scrub origin", dest=dest, err=exc)
+        log_fail(logger, "git scrub origin", dest=dest, err=exc)
+    log_ok(
+        logger,
+        "git checkout",
+        dest=dest,
+        sha=sha_out or "-",
+        source=source_branch or "-",
+        target=target_branch or "-",
+        auth="system",
+    )
+    return sha_out
 
 
 def _origin_url(
@@ -464,6 +661,7 @@ def _origin_url(
     timeout: float,
     should_stop: Optional[Callable[[], bool]] = None,
     on_pid: Optional[Callable[[int], None]] = None,
+    helper_off: bool = True,
 ) -> str:
     result = _run_git(
         ["config", "--local", "--get", "remote.origin.url"],
@@ -472,6 +670,7 @@ def _origin_url(
         timeout=timeout,
         should_stop=should_stop,
         on_pid=on_pid,
+        helper_off=helper_off,
     )
     return (result.stdout or "").strip()
 

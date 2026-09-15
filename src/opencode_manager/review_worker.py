@@ -599,6 +599,7 @@ class OpenCodeRunner:
                 token,
                 timeout=self.config.git_timeout,
                 auth_scheme=auth_scheme,
+                job_id=job.job_id,
                 **git_kw,
             )
         try:
@@ -610,6 +611,7 @@ class OpenCodeRunner:
                 token=token,
                 timeout=self.config.git_timeout,
                 auth_scheme=auth_scheme,
+                job_id=job.job_id,
                 **git_kw,
             )
         except GitError:
@@ -624,6 +626,7 @@ class OpenCodeRunner:
                 token,
                 timeout=self.config.git_timeout,
                 auth_scheme=auth_scheme,
+                job_id=job.job_id,
                 **git_kw,
             )
             sha = fetch_and_checkout(
@@ -634,6 +637,7 @@ class OpenCodeRunner:
                 token=token,
                 timeout=self.config.git_timeout,
                 auth_scheme=auth_scheme,
+                job_id=job.job_id,
                 **git_kw,
             )
         record.clone_path = str(dest)

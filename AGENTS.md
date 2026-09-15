@@ -391,6 +391,11 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   Host-only `azure_url` (`https://tfs02`) is fine: rebase onto
   `/tfs/<Collection>` from the hook or PR URL. If those also lack a
   collection, keep the host and still run the job (same as Creasy).
+  Review clone/fetch tries the settings PAT first (helper off). An
+  auth failure retries with machine credentials: Windows GCM then one
+  Get-Credential dialog; Linux keeps the user's credential.helper.
+  If both fail the job is `500`. Ticket `POST /jobs` clones are
+  unchanged.
 - Full review starts when the token user (or `review_mention` alias)
   is assigned or re-requested as reviewer. Open without that reviewer
   is ignored. New commits / reopen do not enqueue.

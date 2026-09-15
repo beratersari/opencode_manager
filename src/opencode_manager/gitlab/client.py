@@ -249,21 +249,6 @@ class GitLabClient:
         mr.pipeline_url = str(batch[0].get("web_url") or "").strip()
         log_ok(logger, "gitlab GET pipelines", project=mr.project_id, mr=mr.iid, status=mr.pipeline_status or "-")
 
-    def list_reviewers(self, project_id: int, mr_iid: int) -> list[dict[str, Any]]:
-        path = f"/projects/{project_id}/merge_requests/{mr_iid}"
-        try:
-            response = self._http.get(path)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            status, detail = _http_detail(exc)
-            log_fail(logger, "gitlab GET reviewers", project=project_id, mr=mr_iid, http=status, err=exc, body=detail)
-            return []
-        data = response.json() if response.content else {}
-        rows = data.get("reviewers") if isinstance(data, dict) else None
-        if not isinstance(rows, list):
-            return []
-        return [row for row in rows if isinstance(row, dict)]
-
     def post_note(self, project_id: int, mr_iid: int, body: str) -> dict[str, Any]:
         path = f"/projects/{project_id}/merge_requests/{mr_iid}/notes"
         try:

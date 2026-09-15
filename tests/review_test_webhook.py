@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -71,37 +69,6 @@ def test_note_ignored_when_bot_and_mention_unknown(tmp_config):
     assert res.json()["status"] == "ignored"
     assert res.json()["reason"] == "bot user unknown"
     assert manager.store.list_all() == []
-    manager.shutdown()
-
-
-def test_gitlab_webhook_logs_incoming_body(tmp_config, caplog):
-    app, manager, runner = _app(tmp_config)
-    client = TestClient(app)
-    payload = {
-        "object_kind": "merge_request",
-        "object_attributes": {
-            "action": "update",
-            "iid": 8,
-            "target_project_id": 5,
-            "source_branch": "f",
-            "target_branch": "main",
-            "url": "https://oauth2:secret-pat@gitlab.example/g/r/-/merge_requests/8",
-            "description": "huge " * 200,
-        },
-        "changes": {},
-        "reviewers": [{"id": 99, "username": "creasy"}],
-    }
-    caplog.set_level(logging.INFO)
-    res = client.post("/amirmini/webhook/gitlab", json=payload, headers={"X-Gitlab-Token": "secret"})
-    assert res.status_code == 200
-    joined = " ".join(r.message for r in caplog.records)
-    assert "webhook gitlab incoming" in joined
-    assert "action=update" in joined
-    assert "change_keys=-" in joined
-    assert "reviewers=creasy" in joined
-    assert "webhook gitlab body" in joined
-    assert "secret-pat" not in joined
-    assert "oauth2:" not in joined
     manager.shutdown()
 
 

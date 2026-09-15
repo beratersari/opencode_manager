@@ -11,8 +11,6 @@ logger = get_logger("gitlab.events")
 
 TriggerKind = Literal["open", "update", "reopen", "review", "ask", "reset", "usage"]
 
-_REVIEWER_CACHE: dict[str, frozenset[str]] = {}
-
 
 @dataclass(frozen=True)
 class ReviewTrigger:
@@ -279,58 +277,41 @@ def _bot_rerequested(
     return False
 
 
-def reset_reviewer_cache() -> None:
-    _REVIEWER_CACHE.clear()
-
-
-def _reviewer_cache_key(payload: dict[str, Any]) -> str:
-    ids = _project_and_mr(payload)
-    if ids is None:
-        return ""
-    return f"{ids[0]}-{ids[1]}"
-
-
-def _cache_has_bot(idents: frozenset[str], bot_user_id: Optional[int], names: list[str]) -> bool:
-    if bot_user_id is not None and f"id:{bot_user_id}" in idents:
-        return True
-    for alias in _name_aliases(names):
-        if f"username:{alias}" in idents or f"name:{alias}" in idents:
-            return True
-    return False
-
-
-def _reviewer_idents(rows: list[Any]) -> frozenset[str]:
-    idents: set[str] = set()
-    for row in rows:
-        if isinstance(row, dict):
-            for key in ("id", "username", "name"):
-                value = str(row.get(key) or "").strip().lower()
-                if value:
-                    idents.add(f"{key}:{value}")
-        elif row is not None and str(row).strip() != "":
-            idents.add(f"id:{str(row).strip().lower()}")
-    return frozenset(idents)
-
-
-def apply_live_reviewers(payload: dict[str, Any], reviewers: list[dict[str, Any]]) -> None:
-    payload["reviewers"] = list(reviewers)
-
-
-def _start_reviewer_review(
+def _classify_reviewer_assigned(
     payload: dict[str, Any],
     attrs: dict[str, Any],
     *,
     skip_drafts: bool,
-    reason: str,
+    bot_user_id: Optional[int],
+    mention_names: list[str],
 ) -> Classified:
+    if bot_user_id is None and not mention_names:
+        return Ignore("action=update")
+    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+    blob = changes.get("reviewers") if "reviewers" in changes else changes.get("reviewer_ids")
+    previous_raw: Any = None
+    current_raw: Any = None
+    current_rows: list[dict[str, Any]] = []
+    if isinstance(blob, dict):
+        if "previous" not in blob or "current" not in blob:
+            return Ignore("action=update")
+        previous_raw, current_raw = blob.get("previous"), blob.get("current")
+        current_rows = [r for r in (current_raw or []) if isinstance(r, dict)]
+    elif isinstance(blob, list) and len(blob) >= 2:
+        previous_raw, current_raw = blob[0], blob[1]
+        current_rows = [r for r in (current_raw or []) if isinstance(r, dict)]
+    previous = _matching_reviewer_ids(previous_raw, bot_user_id, mention_names)
+    current = _matching_reviewer_ids(current_raw, bot_user_id, mention_names)
+    added = bool(current - previous)
+    rerequested = _bot_rerequested(current_rows, bot_user_id, mention_names)
+    if not added and not rerequested:
+        return Ignore("action=update")
     ids = _project_and_mr(payload)
     if ids is None:
         return Ignore("missing project_id or mr_iid")
     project_id, mr_iid = ids
     draft = _is_draft(payload, attrs)
-    if skip_drafts and draft:
-        return Ignore("draft MR")
-    log_ok(logger, "gitlab classify reviewer assigned", project=project_id, mr=mr_iid, reason=reason)
+    log_ok(logger, "gitlab classify reviewer assigned", project=project_id, mr=mr_iid, bot=bot_user_id)
     return ReviewTrigger(
         kind="review",
         project_id=project_id,
@@ -346,59 +327,6 @@ def _start_reviewer_review(
         explicit=True,
         source=_project_source(payload),
     )
-
-
-def _classify_reviewer_assigned(
-    payload: dict[str, Any],
-    attrs: dict[str, Any],
-    *,
-    skip_drafts: bool,
-    bot_user_id: Optional[int],
-    mention_names: list[str],
-) -> Classified:
-    if bot_user_id is None and not mention_names:
-        return Ignore("action=update")
-    rows = _gitlab_reviewer_rows(payload, attrs)
-    key = _reviewer_cache_key(payload)
-    previous_snap = _REVIEWER_CACHE.get(key)
-    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
-    blob = changes.get("reviewers") if "reviewers" in changes else changes.get("reviewer_ids")
-    previous_raw: Any = None
-    current_raw: Any = None
-    current_rows: list[dict[str, Any]] = []
-    if isinstance(blob, dict):
-        if "previous" in blob and "current" in blob:
-            previous_raw, current_raw = blob.get("previous"), blob.get("current")
-            current_rows = [r for r in (current_raw or []) if isinstance(r, dict)]
-    elif isinstance(blob, list) and len(blob) >= 2:
-        previous_raw, current_raw = blob[0], blob[1]
-        current_rows = [r for r in (current_raw or []) if isinstance(r, dict)]
-    if current_raw is not None:
-        previous = _matching_reviewer_ids(previous_raw, bot_user_id, mention_names)
-        current = _matching_reviewer_ids(current_raw, bot_user_id, mention_names)
-        added = bool(current - previous)
-        rerequested = _bot_rerequested(current_rows, bot_user_id, mention_names)
-        _REVIEWER_CACHE[key] = _reviewer_idents(current_rows or rows)
-        if added or rerequested:
-            return _start_reviewer_review(payload, attrs, skip_drafts=skip_drafts, reason="changes.reviewers")
-        return Ignore("action=update")
-
-    # GitLab often sends action=update with empty changes when a reviewer is
-    # assigned. Same as Azure: current reviewer list + cache.
-    if str(attrs.get("oldrev") or "").strip():
-        if key:
-            _REVIEWER_CACHE[key] = _reviewer_idents(rows)
-        return Ignore("action=update")
-    listed = bool(_matching_reviewer_ids(rows, bot_user_id, mention_names))
-    appeared = listed and (previous_snap is None or not _cache_has_bot(previous_snap, bot_user_id, mention_names))
-    if key:
-        _REVIEWER_CACHE[key] = _reviewer_idents(rows)
-    if not listed:
-        return Ignore("action=update")
-    if previous_snap is None or appeared:
-        reason = "listed-boot" if previous_snap is None else "listed-added"
-        return _start_reviewer_review(payload, attrs, skip_drafts=skip_drafts, reason=reason)
-    return Ignore("action=update")
 
 
 def _classify_note(

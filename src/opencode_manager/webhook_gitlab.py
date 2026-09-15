@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-import json
 import threading
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from opencode_manager.gitlab.events import (
-    CleanupTrigger,
-    Ignore,
-    ReviewTrigger,
-    apply_live_reviewers,
-    classify_webhook,
-    _project_and_mr,
-)
-from opencode_manager.review_log import get_logger, log_fail, log_ok, redact_userinfo
+from opencode_manager.gitlab.events import CleanupTrigger, Ignore, ReviewTrigger, classify_webhook
+from opencode_manager.review_log import get_logger, log_fail, log_ok
 from opencode_manager.review.mention import collect_names, parse_mention_aliases
 
 router = APIRouter()
@@ -50,68 +42,6 @@ def _mention_names(request: Request) -> list[str]:
     return collect_names(parse_mention_aliases(getattr(cfg, "review_mention", "")), cached, live)
 
 
-_DROP_KEYS = frozenset(
-    {
-        "description",
-        "last_commit",
-        "work_in_progress",
-        "st_commits",
-        "st_diffs",
-        "total_time_spent",
-        "time_change",
-        "human_total_time_spent",
-        "human_time_change",
-    }
-)
-_BODY_LIMIT = 8000
-
-
-def _slim(value: Any, *, depth: int = 0) -> Any:
-    if depth > 8:
-        return "..."
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for key, item in value.items():
-            if key in _DROP_KEYS:
-                continue
-            out[str(key)] = _slim(item, depth=depth + 1)
-        return out
-    if isinstance(value, list):
-        return [_slim(item, depth=depth + 1) for item in value[:40]]
-    if isinstance(value, str):
-        text = redact_userinfo(value)
-        if len(text) > 400:
-            return text[:400] + "..."
-        return text
-    return value
-
-
-def _log_incoming_gitlab(payload: dict[str, Any], *, bot_id: Optional[int], mention_names: list[str]) -> None:
-    attrs = payload.get("object_attributes") if isinstance(payload.get("object_attributes"), dict) else {}
-    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
-    reviewers = payload.get("reviewers") if isinstance(payload.get("reviewers"), list) else []
-    names = []
-    for row in reviewers:
-        if isinstance(row, dict):
-            names.append(str(row.get("username") or row.get("id") or "-"))
-    log_ok(
-        logger,
-        "webhook gitlab incoming",
-        object_kind=str(payload.get("object_kind") or "-"),
-        action=str((attrs or {}).get("action") or "-"),
-        project=(attrs or {}).get("target_project_id") or payload.get("project_id") or "-",
-        mr=(attrs or {}).get("iid") or "-",
-        change_keys=",".join(sorted(str(k) for k in changes.keys())) or "-",
-        reviewers=",".join(names) or "-",
-        bot_id=bot_id if bot_id is not None else "-",
-        mention_names=",".join(mention_names) or "-",
-    )
-    blob = redact_userinfo(json.dumps(_slim(payload), ensure_ascii=False, default=str))
-    if len(blob) > _BODY_LIMIT:
-        blob = blob[:_BODY_LIMIT] + f"...(+{len(blob) - _BODY_LIMIT} chars)"
-    logger.info("webhook gitlab body %s", blob)
-
-
 def _verify_secret(request: Request) -> None:
     secret = request.app.state.config.gitlab_webhook_secret
     if not secret:
@@ -141,21 +71,13 @@ async def webhook(request: Request) -> JSONResponse:
     bot_id = _bot_user_id(request)
     mention_names = _mention_names(request)
     kind = str(payload.get("object_kind") or "").strip().lower()
-    _log_incoming_gitlab(payload, bot_id=bot_id, mention_names=mention_names)
-    if kind == "merge_request":
-        attrs = payload.get("object_attributes") if isinstance(payload.get("object_attributes"), dict) else {}
-        action = str((attrs or {}).get("action") or "").strip().lower()
-        changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
-        have_change = "reviewers" in changes or "reviewer_ids" in changes
-        have_rows = isinstance(payload.get("reviewers"), list) and bool(payload.get("reviewers"))
-        gitlab = getattr(request.app.state, "gitlab", None)
-        if action == "update" and not have_change and not have_rows and gitlab is not None:
-            ids = _project_and_mr(payload)
-            fetch = getattr(gitlab, "list_reviewers", None)
-            if ids and callable(fetch):
-                live = fetch(ids[0], ids[1])
-                if live:
-                    apply_live_reviewers(payload, live)
+    if kind == "note":
+        logger.info(
+            "webhook identity bot_id=%s mention_names=%s review_mention=%s",
+            bot_id if bot_id is not None else "-",
+            ",".join(mention_names) or "-",
+            (config.review_mention or "").strip() or "-",
+        )
     if kind == "note" and bot_id is None and not mention_names:
         log_fail(logger, "webhook bot user", reason="GITLAB_TOKEN user unknown")
         return JSONResponse({"status": "ignored", "reason": "bot user unknown"})

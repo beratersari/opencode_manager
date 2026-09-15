@@ -20,6 +20,7 @@ def test_system_git_env_linux_keeps_helper(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_system_git_env_windows_uses_gcm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gitops_mod, "uses_windows_stored_creds", lambda: True)
+    monkeypatch.setattr("opencode_manager.git.auth.uses_windows_stored_creds", lambda: True)
     env = system_git_env()
     assert env.get("GCM_INTERACTIVE") == "auto"
     values = [env[k] for k in env if k.startswith("GIT_CONFIG_VALUE_")]

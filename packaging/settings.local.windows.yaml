@@ -7,12 +7,17 @@ max_concurrent_n8n_jobs: 2
 # GitLab/Azure review cap. Extra reviews wait in review_queue.json.
 max_concurrent_reviews: 2
 
-gitlab_webhook_secret: tank
+gitlab_webhook_secret: ""
+skip_draft_mrs: true
 review_mention: ""
 review_model: opencode/big-pickle
 review_timeout_seconds: 1800
 review_retry_count: 2
 review_agent: code-reviewer
+
+# Info only — OSM does not read these. Point GitLab / Azure hooks here.
+webhook_gitlab_url: http://127.0.0.1:4096/amirmini/webhook/gitlab
+webhook_azure_url: http://127.0.0.1:4096/amirmini/webhook/azure
 
 dashboard_user: admin
 dashboard_password: admin

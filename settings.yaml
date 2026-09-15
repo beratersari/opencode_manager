@@ -34,7 +34,8 @@ retry_backoff_seconds: 2
 retry_backoff_cap_seconds: 30
 # Optional overlay (gitignored): settings.local.yaml
 # --- Review (GitLab / Azure). Host and clone URL come from the webhook. ---
-# gitlab_webhook_secret: tank
+# gitlab_webhook_secret: ""
+# skip_draft_mrs: true
 # review_mention: ""
 # review_model: opencode/big-pickle
 # review_timeout_seconds: 1800
@@ -42,6 +43,8 @@ retry_backoff_cap_seconds: 30
 # review_agent: code-reviewer
 # max_concurrent_n8n_jobs: 2
 # max_concurrent_reviews: 2
+# webhook_gitlab_url: http://127.0.0.1:4096/amirmini/webhook/gitlab
+# webhook_azure_url: http://127.0.0.1:4096/amirmini/webhook/azure
 # --- Dashboard / n8n auth (Creasy-style). Empty password and token = no login. ---
 # Shipped settings.local.yaml sets these so :5173 and n8n work together.
 # dashboard_user: admin

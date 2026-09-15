@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from opencode_manager.gitlab.events import CleanupTrigger, Ignore, ReviewTrigger, classify_webhook, first_command
+from opencode_manager.gitlab.events import (
+    CleanupTrigger,
+    Ignore,
+    ReviewTrigger,
+    classify_webhook,
+    first_command,
+    reset_reviewer_cache,
+)
 from opencode_manager.review.mention import USAGE_MARKER
 
 
@@ -76,6 +83,31 @@ def test_mr_title_comes_from_webhook():
     ask = classify_webhook(titled, mention_names=["creasy"])
     assert isinstance(ask, ReviewTrigger)
     assert ask.title == "Fix login timeout"
+
+
+def test_assign_with_empty_changes_and_reviewers_starts_review():
+    reset_reviewer_cache()
+    payload = mr_payload("update", title="Fix login timeout")
+    payload["reviewers"] = [{"id": 99, "username": "creasy"}]
+    got = classify_webhook(payload, bot_user_id=99)
+    assert isinstance(got, ReviewTrigger)
+    assert got.kind == "review"
+    again = classify_webhook(payload, bot_user_id=99)
+    assert isinstance(again, Ignore)
+
+
+def test_assign_empty_changes_then_bot_added_starts_review():
+    reset_reviewer_cache()
+    first = mr_payload("update")
+    first["reviewers"] = [{"id": 4, "username": "alice"}]
+    assert isinstance(classify_webhook(first, bot_user_id=99, mention_names=["creasy"]), Ignore)
+    second = mr_payload("update")
+    second["reviewers"] = [
+        {"id": 4, "username": "alice"},
+        {"id": 99, "username": "creasy"},
+    ]
+    got = classify_webhook(second, bot_user_id=99, mention_names=["creasy"])
+    assert isinstance(got, ReviewTrigger)
 
 
 def test_assigning_bot_as_reviewer_starts_review():

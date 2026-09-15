@@ -397,8 +397,10 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   If both fail the job is `500`. Ticket `POST /jobs` clones are
   unchanged.
 - Full review starts when the token user (or `review_mention` alias)
-  is assigned or re-requested as reviewer. Open without that reviewer
-  is ignored. New commits / reopen do not enqueue.
+  is assigned or re-requested as reviewer. GitLab assign often arrives
+  as `action=update` with empty `changes`; then the current `reviewers`
+  list plus a per-MR cache is used (same as Azure). Open without that
+  reviewer is ignored. New commits / reopen do not enqueue.
   Azure reviewer-list hooks GET the live list (retry 0.3s + 0.7s on
   add) and start only when that GET still lists the bot. Unassign
   never starts a review. TFS “changed the reviewer list” starts a
@@ -574,11 +576,11 @@ On an **incomplete** outer retry, do not enter this kill path at all.
 - Additive single-file exe (`packaging/build_exe.py`, same workflow,
   native Windows + per-Ubuntu Linux jobs). The GitHub Release ships
   `amir-mini-<ver>-windows-x64-exe.zip` /
-  `amir-mini-<ver>-linux-x64-exe.zip` (Ubuntu 22.04 alias; binary +
+  `amir-mini-<ver>-linux-x64.zip` (Ubuntu 22.04 alias; binary +
   `settings.local.yaml`),
   `amir-mini-<ver>-windows-x64-service.zip` /
   `amir-mini-<ver>-linux-x64-service.zip` (Ubuntu 22.04 alias),
-  plus `amir-mini-<ver>-linux-ubuntu-{18.04,20.04,22.04,24.04}-x64-exe.zip`
+  plus `amir-mini-<ver>-linux-ubuntu-{18.04,20.04,22.04,24.04}-x64.zip`
   and matching `*-service.zip`. Linux onefile zips are built in
   `ubuntu:<ver>` (18.04 via portable glibc 2.17). Do not bundle
   `libz.so.1`. Windows also has `install-service.bat`,
@@ -694,18 +696,18 @@ change.
 
 - A GitHub Release is not done until these files are on the page:
   `amir-mini-<ver>-windows-x64-exe.zip`,
-  `amir-mini-<ver>-linux-x64-exe.zip` (Ubuntu 22.04),
+  `amir-mini-<ver>-linux-x64.zip` (Ubuntu 22.04),
   `amir-mini-<ver>-windows-x64-service.zip`,
   `amir-mini-<ver>-linux-x64-service.zip` (Ubuntu 22.04),
-  `amir-mini-<ver>-linux-ubuntu-18.04-x64-exe.zip`,
-  `amir-mini-<ver>-linux-ubuntu-20.04-x64-exe.zip`,
-  `amir-mini-<ver>-linux-ubuntu-22.04-x64-exe.zip`,
-  `amir-mini-<ver>-linux-ubuntu-24.04-x64-exe.zip`,
+  `amir-mini-<ver>-linux-ubuntu-18.04-x64.zip`,
+  `amir-mini-<ver>-linux-ubuntu-20.04-x64.zip`,
+  `amir-mini-<ver>-linux-ubuntu-22.04-x64.zip`,
+  `amir-mini-<ver>-linux-ubuntu-24.04-x64.zip`,
   matching `*-service.zip` for each Ubuntu, and GitHub’s source
   archive. Do **not** attach offline installer zips, OpenCode-only
   zips, a bare exe, or `settings.local.yaml` as its own download.
   Do not tell the user the release is ready while the Windows pair,
-  the `linux-x64` pair, and the four Ubuntu exe zips are missing.
+  the `linux-x64` pair, and the four Ubuntu binary zips are missing.
 - Do not publish “CI will attach later” and walk away. If the tag
   workflow does not start or fails, fix it, re-run or move the tag
   onto a commit whose workflow parses, and confirm the files are

@@ -595,6 +595,9 @@ def fetch_and_checkout(
                 target=target_branch or "-",
                 auth="pat",
             )
+            # INTENTIONAL (GitLab): leave oauth2:<token>@ on the kept
+            # origin so later /ask fetch can reuse it. Azure never
+            # injects userinfo. Fail path still scrubs before retry.
             return sha_out
         except Exception as exc:
             log_fail(logger, "git checkout PAT", dest=dest, err=exc)

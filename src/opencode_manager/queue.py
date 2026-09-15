@@ -22,6 +22,8 @@ class JobQueue:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            # INTENTIONAL: bad read is an empty FIFO. Do not crash.
+            # Persist-fail (ERROR + 503) is only `_save` raising.
             return []
         return data if isinstance(data, list) else []
 

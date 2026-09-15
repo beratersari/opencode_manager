@@ -260,9 +260,11 @@ a **separate POST** to the `callback_url` that arrived on that same job.
 Different cases:
 
 - Capacity full, **other** tickets → queue (inbound **202**; one terminal callback later).
-  If `queue.json` cannot be written, finish that half-created row
-  ERROR (no callback) and return inbound **503** so the ticket is
-  not stuck `409`.
+  If `queue.json` cannot be written (`_save` raises), finish that
+  half-created row ERROR (no callback) and return inbound **503** so
+  the ticket is not stuck `409`. A failed or corrupt **read** is an
+  empty FIFO (do not crash). That is not a persist-fail. Boot leftover
+  ERROR still clears a stranded ticket after restart.
 - Same `jira_id` already running or already queued → **reject now**.
   Do not enqueue a second job for the same ticket.
 
@@ -468,8 +470,9 @@ n8n  --POST /jobs-->  manager
   not** auto-run leftover queued or running work.
 - When a running job hits a terminal state, dequeue the next FIFO item
   and run the same pipeline. Do **not** send an `in_progress` callback.
-  If that dequeue persist fails, finish the queued head **ERROR**
-  (callback if it had `callback_url`) so the ticket is not `409`.
+  If that dequeue persist fails (`_save` raises), finish the queued
+  head **ERROR** (callback if it had `callback_url`) so the ticket
+  is not `409`. A failed `_load` is empty, not a persist-fail.
   Never start a dequeued row whose store status is not `queued`.
 - Same `jira_id` already running **or** queued → 409. Do not stack.
 
@@ -805,7 +808,9 @@ For every git child of a job:
   services.msc. The service is backend-only and does not change the
   two-window exe.
 - **Linux:** `credential.helper=` (empty). No OS store.
-- after clone, origin URL scrubbed of any userinfo. The source of
+- after clone, origin URL scrubbed of any userinfo (ticket jobs).
+  GitLab review PAT fetch leaves `oauth2:<token>@` on the kept
+  origin. The source of
   truth is stored `remote.origin.url`, not `git remote get-url`
 - userinfo redacted from every log and every callback
   (`user:pass@`, `user@`, `:pass@`). Also `Authorization:
@@ -948,7 +953,11 @@ to be running” and Windows `nul` / AV locks):
    set ctypes `argtypes` / `restype`. The RmStartSession session-key
    buffer is `CCH_RM_SESSION_KEY+1` WCHARs (33); 32 overflows and can
    AV later (`0xC0000005`). Run that query in a child process so a
-   `rstrtmgr` AV cannot take down OSM. Job-end tries `rd` first. RM
+   `rstrtmgr` AV cannot take down OSM. The child is
+   `sys.executable -c` (import `_rm_query_pids`). Frozen
+   `amir-mini.exe` does not implement `-c`; the helper dies and
+   holders are not listed. That is accepted — do not add a second
+   exe helper. Job-end tries `rd` first. RM
    runs only if the clone remains. If the child dies and the folder is
    still there, one more child (max two). No retry when the helper
    exits 0. Dashboard `/ws` must not parse the job-history store every tick.
@@ -1549,13 +1558,20 @@ Finding threads use Turkish `**Kritik**` / `**Önemli**`. Usage-note
 jobs stay off the dashboard. n8n `POST /jobs` is unchanged
 (`planner` / `orchestrator` only). Review clone tries the settings PAT, then machine
 credentials (Windows GCM / Linux helper), then fails.
+A successful GitLab PAT `fetch_and_checkout` leaves
+`oauth2:<token>@` on the kept origin so later `/ask` can fetch the
+same tree. Azure keeps a public origin (Basic in
+`GIT_CONFIG_VALUE_*`). Ticket clones still scrub after clone.
 Review clones live in
 `{data_dir}/workspaces/{mr_key}` until MR/PR close/merge/abandon.
 A leftover partial clone is deleted and recloned. Review FIFO is
 `{data_dir}/review_queue.json`. Tokens are settings fields, never
 inbound job JSON. Boot does not resume leftover queued or running
-reviews (ERROR + drain the FIFO). A failed review terminal save
-overlays the finished row and still frees the MR slot. Dashboard
+reviews (ERROR + drain the FIFO). A failed review **terminal** save
+overlays the finished row and still frees the MR slot. If the
+**enqueue** write raises after `store.save`, `submit` raises
+(webhook 500) and the live `queued` row stays — not n8n 503.
+GitLab/Azure retry; explicit assign may create a second job. Dashboard
 stays GET-only. `attach_spa` must not serve a file outside
 `web/dist`. Exe zips ship `install-review-agent.*` plus
 `opencoderman/agents` and `opencoderman/skills` (no `.git`).

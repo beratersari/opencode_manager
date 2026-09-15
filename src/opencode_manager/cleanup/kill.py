@@ -778,6 +778,7 @@ def query_windows_restart_manager(path: Path) -> RmHelperResult:
         return RmHelperResult()
     if os.environ.get("OSM_RM_INPROCESS") == "1":
         return RmHelperResult(pids=_rm_query_pids(path), died=False)
+    # INTENTIONAL: python -c child. Frozen exe has no -c; helper dies.
     cmd = [
         sys.executable,
         "-c",

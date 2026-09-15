@@ -195,6 +195,8 @@ class ReviewManager:
             # fix log file to use job id
             job.log_file = f"{key}-{job.job_id}.log"
             self.store.save(job)
+            # INTENTIONAL: persist fail raises (webhook 500). Leave the
+            # live queued row. Do not ERROR it like n8n queue persist.
             self.queue.enqueue(key, job.job_id)
             started = self._try_start_locked(key)
         ack = "accepted" if started else "queued"

@@ -48,7 +48,8 @@ These look like bugs. They are not.
    public URL. Inbound `user:pass@` / Azure `user@` is not kept on
    the job for `git clone`. Windows uses GCM / the username-password
    dialog. Linux keeps `credential.helper` empty. After clone, origin
-   is scrubbed the same way. Logs never show userinfo.
+   is scrubbed the same way (ticket jobs). GitLab review fetch is
+   choice 13. Logs never show userinfo.
 9. **Windows auth retry uses the same dest.** The first `git clone`
    may create `{work_dir}/{jira_id}` before it fails auth. The
    dialog retry does **not** delete that folder first. Job-end still
@@ -63,6 +64,35 @@ These look like bugs. They are not.
     (`/jobs/:jobId`) plus `GET /api/jobs/{id}` for data. Backend
     `listen_port` `/jobs/{id}` staying JSON is required so the
     poller does not receive `index.html`.
+12. **A bad `queue.json` read is an empty FIFO.** `OSError` or
+    corrupt JSON must not crash the process. `_load` returns `[]`
+    and enqueue/dequeue continue. That is not a persist-fail: only
+    `_save` raising ERRORs the half-created row and returns inbound
+    **503**. A stranded store row is leftover hygiene — boot marks
+    it ERROR so the `jira_id` is not `409` after restart.
+13. **GitLab review PAT stays on the kept origin after a successful
+    fetch.** Review workspaces live until the MR closes so `/ask`
+    can fetch on the same tree. `fetch_and_checkout` leaves
+    `oauth2:<token>@` on `remote.origin.url` when the PAT fetch
+    works. Ticket clones still scrub. Azure review keeps a public
+    origin and puts Basic in `GIT_CONFIG_VALUE_*`. A failed GitLab
+    PAT fetch still scrubs before the system-cred retry.
+14. **Windows RM helper is `sys.executable -c`.** Query Restart
+    Manager in a child so a `rstrtmgr` AV cannot kill OSM. That
+    child is `[sys.executable, "-c", …_rm_query_pids…]`. Frozen
+    `amir-mini.exe` does not implement `-c`; the helper dies and
+    holders are not listed. Job-end still `rd`s. A leftover clone
+    may remain; the next ticket job may **500** if it cannot delete
+    it. Do not add a second frozen-exe helper. `python -m` still
+    runs `-c`.
+15. **Review enqueue persist fail is not n8n 503.** `store.save`
+    then `review_queue.json` write. If that write raises, `submit`
+    raises and the webhook is **500**. Leave the live `queued` row.
+    Do not ERROR it or start a worker. GitLab/Azure retry. Explicit
+    assign / `/ask` / `/review` may save a second job. Auto-open
+    (`explicit=False`) sees the in-memory FIFO and is ignored.
+    Overlay + `_after_job` is only a failed **terminal** history
+    write.
 
 ## Hard rules
 
@@ -141,11 +171,13 @@ These look like bugs. They are not.
   done.
 - Capacity full + **other** tickets → queue. Persist the queue
   (including `callback_url`) so a **running** process can dequeue
-  after a slot frees. If that persist fails, do not leave a live
-  `queued` row: finish it **ERROR**, return inbound **503**, no
-  callback. If **dequeue** persist fails, finish that queued head
-  **ERROR** (one terminal callback if it had `callback_url`) so the
-  `jira_id` is not `409`, then drop it and start the next row.
+  after a slot frees. If that persist fails (`_save` raises), do
+  not leave a live `queued` row: finish it **ERROR**, return inbound
+  **503**, no callback. A failed or corrupt **read** of `queue.json`
+  is empty (choice 12), not a persist-fail. If **dequeue** persist
+  fails, finish that queued head **ERROR** (one terminal callback if
+  it had `callback_url`) so the `jira_id` is not `409`, then drop it
+  and start the next row.
   `_on_done` must skip a dequeued id whose store status is not
   `queued` or that is already finished — never rewrite a boot-ERROR
   leftover back to `running`. A process restart does **not**
@@ -192,7 +224,8 @@ These are process-lifecycle rules. Do not mix them with hang retry.
 - **Direct clone** of the request `repo_url`. There is no `PAT` field
   and no oauth2 / extraHeader rewrite. `git clone <url> dest` only —
   no `--branch`, no `--single-branch`, no `git checkout`. The
-  OpenCode agent checks out `source_branch`. Then scrub origin.
+  OpenCode agent checks out `source_branch`. Then scrub origin
+  (ticket jobs; GitLab review fetch is choice 13).
   Do **not** init or
   update git submodules. Do **not** download Git LFS blobs
   (`GIT_LFS_SKIP_SMUDGE=1`); leave pointer files on disk.
@@ -430,13 +463,16 @@ Copied from Creasy. Parallel to n8n. Does not change `POST /jobs`.
   positions, not a stale GitLab `base_sha`. After a GitLab rebase,
   wait until the MR `sha` moves before checkout.
 - Clone lives with the MR under `{data_dir}/workspaces/{mr_key}`.
-  Job-end kills **this** serve and **keeps** the clone. A leftover
+  Job-end kills **this** serve and **keeps** the clone. After a
+  successful GitLab PAT fetch, origin keeps `oauth2:<token>@`
+  (choice 13). A leftover
   partial clone (`.git` present but unusable) is deleted and cloned
   again. Close / merge / abandon cancels jobs and deletes the clone.
   Review queue is `{data_dir}/review_queue.json` — never n8n
   `queue.json`. Process restart does not resume leftover review work.
-  A failed review terminal history write must overlay the finished
+  A failed review **terminal** history write must overlay the finished
   row and still run `_after_job` so the MR FIFO is not frozen.
+  A failed **enqueue** persist is choice 15 (raise, leave queued).
 - Agent is `code-reviewer` from the `opencoderman` submodule. Install
   with `install-review-agent.*` (agents + skills only). Tokens live
   in `settings.yaml` / `settings.local.yaml`, never on `POST /jobs`,
@@ -470,7 +506,8 @@ Order, always, on the **job-end** path:
    PEB-walk python/cmd/powershell or every PID. Restart Manager
    calls must set ctypes argtypes. The RmStartSession key buffer is
    `CCH_RM_SESSION_KEY+1` WCHARs (33), not 32. Query RM in a **child
-   process** so a `rstrtmgr` access violation cannot kill OSM. Job-end
+   process** so a `rstrtmgr` access violation cannot kill OSM. The
+   child is `sys.executable -c` (choice 14). Job-end
    kills the recorded tree, then `rd`. RM runs only if the clone is
    still there. If that child dies (nonzero / timeout) and the folder
    remains, spawn **one** more child (max two). Do not retry when the

@@ -39,6 +39,8 @@ class JobQueue:
             bucket = self._rows.setdefault(mr_key, [])
             if job_id not in bucket:
                 bucket.append(job_id)
+            # INTENTIONAL: raise to the webhook. Memory already has
+            # the id. Caller must not ERROR the store row.
             self._persist()
 
     def peek(self, mr_key: str) -> str | None:

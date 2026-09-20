@@ -182,6 +182,10 @@ def test_install_sh_picks_os_specific_python() -> None:
     assert "osm_chmod_launchers" in lib
     assert "osm_ensure_linux_data_dir" in text
     assert "osm_chmod_launchers" in text
+    assert "dashboard_token: change_me" in lib
+    assert "gitlab_webhook_secret: tank" in lib
+    assert "dashboard_password: admin" in lib
+    assert "awk -v d=" in lib
 
 
 def test_settings_local_templates_set_os_defaults() -> None:

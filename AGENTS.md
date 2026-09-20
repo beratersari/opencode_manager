@@ -574,9 +574,9 @@ On an **incomplete** outer retry, do not enter this kill path at all.
     templates; `install.bat` / `install.sh` copy the matching one if
     `settings.local.yaml` is missing. On Linux, if `/var/lib/osm` is not
     writable and the overlay is absent **or still names** `/var/lib/osm`,
-    `install.sh` rewrites it to `$XDG_DATA_HOME/osm` or
-    `~/.local/share/osm`. A custom `data_dir` in the overlay is left
-    alone. The code default stays `/var/lib/osm` on Linux and `C:\osm`
+    `install.sh` rewrites **`data_dir` only** to `$XDG_DATA_HOME/osm` or
+    `~/.local/share/osm` and keeps dashboard / n8n / webhook keys. A
+    custom `data_dir` in the overlay is left alone. The code default stays `/var/lib/osm` on Linux and `C:\osm`
     on Windows. Do not require root for `./install.sh` then `./start.sh`.
     Restore `+x` on the zip-root launchers (some extractors drop Unix
     modes).

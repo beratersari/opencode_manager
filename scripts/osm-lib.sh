@@ -107,13 +107,30 @@ osm_ensure_linux_data_dir() {
 
   local fallback="${XDG_DATA_HOME:-$HOME/.local/share}/osm"
   mkdir -p "$fallback"
-  cat > "$local_yaml" <<EOF
+  # Rewrite data_dir only. Keep dashboard / n8n / webhook keys from the shipped overlay.
+  if [[ -f "$local_yaml" ]]; then
+    local tmp="${local_yaml}.tmp"
+    awk -v d="$fallback" '
+      BEGIN { done = 0 }
+      /^[[:space:]]*data_dir:[[:space:]]*/ { print "data_dir: " d; done = 1; next }
+      { print }
+      END { if (!done) print "data_dir: " d }
+    ' "$local_yaml" > "$tmp" && mv "$tmp" "$local_yaml"
+  else
+    cat > "$local_yaml" <<EOF
 # /var/lib/osm is not writable without root.
 # To use the default instead:
 #   sudo mkdir -p /var/lib/osm && sudo chown \$USER /var/lib/osm
 #   rm settings.local.yaml
 data_dir: $fallback
+max_concurrent_n8n_jobs: 2
+max_concurrent_reviews: 2
+gitlab_webhook_secret: tank
+dashboard_user: admin
+dashboard_password: admin
+dashboard_token: change_me
 EOF
+  fi
   echo "[WARNING] Cannot write $default_dir (need root once)."
   echo "          Wrote settings.local.yaml -> $fallback"
 }

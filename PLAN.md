@@ -1017,9 +1017,10 @@ also ships `settings.local.yaml`: Windows `C:\osm`, Linux
 `/var/lib/osm`. The combined zip ships both templates; install
 copies the matching one. On Linux, `install.sh` tries `/var/lib/osm`.
 If that path is not writable and the overlay is missing or still
-names `/var/lib/osm`, it writes
-`data_dir: $XDG_DATA_HOME/osm` (or `~/.local/share/osm`) so a
-non-root `./install.sh` / `./start.sh` still works. Passwordless
+names `/var/lib/osm`, it rewrites **`data_dir` only** to
+`$XDG_DATA_HOME/osm` (or `~/.local/share/osm`) and keeps dashboard /
+n8n / webhook keys so a non-root `./install.sh` / `./start.sh` still
+works with the shipped auth. Passwordless
 `sudo` may create `/var/lib/osm` and chown it instead. The code
 default stays `/var/lib/osm` on Linux and `C:\osm` on Windows.
 

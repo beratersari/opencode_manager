@@ -40,7 +40,7 @@ echo "=== [1/2] Backend ==="
 "$LAUNCH/start-backend.sh" &
 BACKEND_PID=$!
 
-echo "Waiting for API http://127.0.0.1:${DASH_PORT}/api/meta ..."
+echo "Waiting for API http://127.0.0.1:${DASH_PORT}/api/auth ..."
 ready=0
 for _ in $(seq 1 45); do
   if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
@@ -50,11 +50,11 @@ for _ in $(seq 1 45); do
     exit 1
   fi
   if command -v curl >/dev/null 2>&1; then
-    if curl -sf --max-time 2 "http://127.0.0.1:${DASH_PORT}/api/meta" >/dev/null; then
+    if curl -sf --max-time 2 "http://127.0.0.1:${DASH_PORT}/api/auth" >/dev/null; then
       ready=1
       break
     fi
-  elif python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${DASH_PORT}/api/meta', timeout=2)" >/dev/null 2>&1; then
+  elif python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${DASH_PORT}/api/auth', timeout=2)" >/dev/null 2>&1; then
     ready=1
     break
   fi

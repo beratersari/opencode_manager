@@ -61,8 +61,8 @@ if not exist "%WEB_DIST%\index.html" (
     exit /b 1
 )
 
-echo Checking backend at %BACKEND_URL%/api/meta ...
-powershell -NoProfile -Command "try { Invoke-WebRequest -Uri '%BACKEND_URL%/api/meta' -UseBasicParsing -TimeoutSec 5 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+echo Checking backend at %BACKEND_URL%/api/auth ...
+powershell -NoProfile -Command "try { Invoke-WebRequest -Uri '%BACKEND_URL%/api/auth' -UseBasicParsing -TimeoutSec 5 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Backend is not reachable at %BACKEND_URL%
     echo Start it first:  scripts\start-backend.bat

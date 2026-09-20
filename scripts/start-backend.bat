@@ -72,7 +72,7 @@ if not exist "%ROOT%\web\dist\index.html" (
 echo Starting manager in window "aMIR-mini Backend"...
 start "aMIR-mini Backend" /D "%ROOT%" "%ROOT%\scripts\run-backend.bat"
 
-echo Waiting for API http://127.0.0.1:%DASH_PORT%/api/meta ...
+echo Waiting for API http://127.0.0.1:%DASH_PORT%/api/auth ...
 set /a TRIES=0
 :wait_backend
 set /a TRIES+=1
@@ -83,7 +83,7 @@ if %TRIES% GTR 45 (
     call :maybe_pause
     exit /b 1
 )
-powershell -NoProfile -Command "try { Invoke-WebRequest -Uri 'http://127.0.0.1:%DASH_PORT%/api/meta' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -Command "try { Invoke-WebRequest -Uri 'http://127.0.0.1:%DASH_PORT%/api/auth' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
     timeout /t 2 /nobreak >nul
     goto wait_backend

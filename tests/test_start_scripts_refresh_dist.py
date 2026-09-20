@@ -27,3 +27,26 @@ def test_start_scripts_refresh_web_dist_before_serve() -> None:
     assert "opencode_manager.app" in runner
     assert "wrapper-exit.log" in runner
     assert r"C:\osm\logs\wrapper-exit.log" in runner
+
+
+def test_start_scripts_probe_unauthenticated_auth_not_meta() -> None:
+    """Shipped overlay makes GET /api/meta 401. Wait loops must use /api/auth."""
+    files = [
+        ROOT / "scripts" / "start.sh",
+        ROOT / "scripts" / "start-backend.bat",
+        ROOT / "scripts" / "start-frontend.sh",
+        ROOT / "scripts" / "start-frontend.bat",
+    ]
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        assert "/api/auth" in text, path.name
+        assert "urlopen" not in text or "/api/auth" in text
+        if "Invoke-WebRequest" in text or "curl -sf" in text:
+            assert "/api/auth" in text
+            # Health wait must not require 2xx from /api/meta.
+            wait = text
+            if "Waiting" in text:
+                wait = text.split("Waiting", 1)[-1]
+            elif "Checking backend" in text:
+                wait = text.split("Checking backend", 1)[-1]
+            assert "/api/meta" not in wait.split("echo", 1)[0]

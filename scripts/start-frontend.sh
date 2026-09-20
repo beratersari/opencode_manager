@@ -51,15 +51,15 @@ if [[ ! -f "$WEB_DIST/index.html" ]]; then
   exit 1
 fi
 
-echo "Checking backend at ${BACKEND_URL}/api/meta ..."
+echo "Checking backend at ${BACKEND_URL}/api/auth ..."
 if command -v curl >/dev/null 2>&1; then
-  if ! curl -sf --max-time 5 "${BACKEND_URL}/api/meta" >/dev/null; then
+  if ! curl -sf --max-time 5 "${BACKEND_URL}/api/auth" >/dev/null; then
     echo "[ERROR] Backend is not reachable at ${BACKEND_URL}"
     echo "Start it first:  scripts/start-backend.sh"
     exit 1
   fi
 else
-  if ! "$OSM_PY" -c "import urllib.request; urllib.request.urlopen('${BACKEND_URL}/api/meta', timeout=5)" >/dev/null 2>&1; then
+  if ! "$OSM_PY" -c "import urllib.request; urllib.request.urlopen('${BACKEND_URL}/api/auth', timeout=5)" >/dev/null 2>&1; then
     echo "[ERROR] Backend is not reachable at ${BACKEND_URL}"
     echo "Start it first:  scripts/start-backend.sh"
     exit 1

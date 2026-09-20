@@ -52,8 +52,11 @@ These look like bugs. They are not.
    choice 13. Logs never show userinfo.
 9. **Windows auth retry uses the same dest.** The first `git clone`
    may create `{work_dir}/{jira_id}` before it fails auth. The
-   dialog retry does **not** delete that folder first. Job-end still
-   hard-deletes the clone.
+   dialog retry does **not** delete that folder first. If dest
+   already exists, do not `git clone` again (`git clone` refuses a
+   non-empty dest). Set origin + fetch, then checkout origin's
+   default HEAD — not `source_branch`. Job-end still hard-deletes
+   the clone.
 10. **Unknown-model detect is a transcript scan.** Each poll runs
     `looks_like_unknown_model_error` on the message list blob. That
     is how wrapped `ProviderModelNotFoundError` is caught. A prompt
@@ -234,7 +237,9 @@ These are process-lifecycle rules. Do not mix them with hang retry.
   `GCM_INTERACTIVE=auto`) for a stored cred or GCM popup. If git still
   fails with an auth error (`terminal prompts disabled`, 401, …), OSM
   opens a **Windows username/password dialog** (`Get-Credential`) and
-  retries once with Basic (not on argv, not logged). On Linux, keep
+  retries once with Basic (not on argv, not logged). If dest already
+  exists, that retry is origin `set-url` + `fetch` + checkout of
+  `origin/HEAD` (or `FETCH_HEAD`), not a second `git clone`. On Linux, keep
   `credential.helper` empty (no dialog). Cancel / empty dialog → job
   **500**. A leftover inbound `PAT` key is ignored.
   Clone / `ls-remote` wall clock is `git_clone_timeout_seconds`

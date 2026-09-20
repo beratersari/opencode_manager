@@ -56,7 +56,7 @@ are wrong.
 | 3 | Cleanup vs resume | **Always delete the clone, then re-clone to the same stable path.** Identity is the **ticket id** (`jira_id`, Windows-safe folder). Dedup is one live job per ticket, so repo and branch are not in the path. Same ticket later ⇒ same folder. OpenCode sessions live in the global `opencode.db` keyed by `directory`. Same path ⇒ old `session_id` should resolve. **No live `ses_*` yet** (inbound unusable, or first serve died before create) → create a new session (do not fail). **Mid-job hang retry** (we already had a live id, clone still on disk): same `ses_*` or that attempt fails — never invent a blank session. `ORIGINAL` only chooses the prompt: first user message until that POST succeeds; hang restart after that POST is `HANG_RESUME`. Workspace vs chat drift after delete is **intentional** (§3.3). Live e2e: `tests/test_session_resume_same_path_live_e2e.py`. |
 | 4 | Sync vs async | Incoming HTTP is only an ack. The **per-request `callback_url`** gets **one terminal POST** (success or fail). Never `queued` / `in_progress`. No global target in settings. |
 | 5 | Dedup key | **`jira_id`**. One live job (running or queued) per ticket. `session_id` is only for OpenCode resume. |
-| 6 | Git auth | **Direct clone of the stored public `repo_url`.** Inbound userinfo is not kept on the job. No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Dialog retry uses the same dest (do not delete the partial clone first). Never `-c credential.helper=`. **Linux:** helper off. |
+| 6 | Git auth | **Direct clone of the stored public `repo_url`.** Inbound userinfo is not kept on the job. No request `PAT`, no oauth2/extraHeader rewrite, no settings PAT, no SSH. `GIT_TERMINAL_PROMPT=0`. **Windows:** GCM (`manager`); stored Windows cred if present, otherwise a GCM login popup (`GCM_INTERACTIVE=auto`). Dialog retry uses the same dest (do not delete the partial clone first; if dest exists, fetch in place, do not `git clone` again). Never `-c credential.helper=`. **Linux:** helper off. |
 | 7 | Source branch | Optional. OSM never `ls-remote`s or checks it out. Omit / `-1` / any name: clone default HEAD. Do not invent a branch from `main`. Job-end must not crash the manager. |
 | 8 | Codex | Never. OpenCode only. |
 
@@ -788,7 +788,9 @@ Clone the stored public `repo_url` (no userinfo). Inbound
 `user:pass@` is not kept on the job for `git clone`. There is no
 `PAT` field and no oauth2 / `http.extraHeader` rewrite. Windows
 auth-dialog retry uses the same dest (the first failed clone may
-already have created the folder).
+already have created the folder). Do not `git clone` into that dest
+again; set origin, fetch, and checkout origin's default HEAD (not
+`source_branch`).
 
 For every git child of a job:
 

@@ -231,6 +231,19 @@ def _run_git_maybe_prompt(
             ) from exc
         remember_job_creds(job_id, pair[0], pair[1])
         retry_env = isolated_git_env(username=pair[0], password=pair[1])
+        dest = _clone_dest_from_args(args)
+        if dest is not None and dest.exists():
+            # Choice 9: do not delete dest. `git clone` cannot reuse it.
+            logger.info("git clone dest exists after auth fail; fetch in place dest=%s", dest)
+            return _fetch_into_existing_dest(
+                dest,
+                origin_url=repo_url,
+                env=retry_env,
+                timeout=timeout,
+                job=job,
+                store=store,
+                should_stop=should_stop,
+            )
         return _run_git(
             args,
             env=retry_env,
@@ -240,6 +253,36 @@ def _run_git_maybe_prompt(
             store=store,
             should_stop=should_stop,
         )
+
+
+def _clone_dest_from_args(args: List[str]) -> Optional[Path]:
+    if len(args) >= 3 and args[0] == "clone":
+        return Path(args[-1])
+    return None
+
+
+def _fetch_into_existing_dest(
+    dest: Path,
+    *,
+    origin_url: str,
+    env: dict,
+    timeout: float,
+    job: Optional["JobRecord"] = None,
+    store: Optional["JobStore"] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess:
+    """Finish a partial clone after Windows dialog creds. Same dest. Not source_branch."""
+    git_kw = dict(env=env, timeout=timeout, job=job, store=store, should_stop=should_stop)
+    _run_git(["-C", str(dest), "remote", "set-url", "origin", origin_url], **git_kw)
+    _run_git(["-C", str(dest), "fetch", "--prune", "origin"], **git_kw)
+    try:
+        _run_git(["-C", str(dest), "remote", "set-head", "origin", "-a"], **git_kw)
+    except GitError:
+        logger.info("origin default HEAD unset after fetch dest=%s", dest)
+    try:
+        return _run_git(["-C", str(dest), "checkout", "--force", "origin/HEAD"], **git_kw)
+    except GitError:
+        return _run_git(["-C", str(dest), "checkout", "--force", "FETCH_HEAD"], **git_kw)
 
 
 def ls_remote_has_branch(

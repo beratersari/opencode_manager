@@ -96,6 +96,11 @@ These look like bugs. They are not.
     (`explicit=False`) sees the in-memory FIFO and is ignored.
     Overlay + `_after_job` is only a failed **terminal** history
     write.
+16. **Chromium is not a use case.** `attach_spa` on `listen_port`
+    may serve `/assets/*.js` as Windows `text/plain`. The :5173
+    proxy already forces SPA MIME types; the manager SPA does not.
+    Do not report that as a dashboard bug. If it is filed later,
+    this choice is the answer — not a MIME patch on `attach_spa`.
 
 ## Hard rules
 
@@ -656,7 +661,8 @@ On an **incomplete** outer retry, do not enter this kill path at all.
   as virtual_developer `web/` (React + Vite + Tailwind + Geist).
   `attach_spa` on `listen_port` must not serve a file outside
   `web/dist` (`resolve` + `relative_to`; escape → `index.html`).
-  The :5173 proxy already has that guard.
+  The :5173 proxy already has that guard. Chromium is not a use
+  case: `attach_spa` does not force JS MIME types (choice 16).
 - Visualization only. The UI and `/api/*` never POST / PATCH / DELETE.
   No cancel, delete, settings, schedules, or storage actions.
   **Report issue** is in the sidebar (pick one or more jobs, or

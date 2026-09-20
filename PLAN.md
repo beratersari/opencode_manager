@@ -1511,8 +1511,9 @@ tokens, `PageHeader`, `StatusBadge`, `Tabs`, `MetaCard`, `PromptBlock`,
 Yaver to this service. Do not add a second UI kit.
 
 Dev: Vite `:5173`, proxy `/api` and `/ws` to `listen_port`. Prod:
-serve `web/dist` from the manager (same MIME workaround as VD on
-Windows).
+serve `web/dist` from the manager. Chromium is not a use case;
+`attach_spa` does not force JS MIME types (Windows may serve
+`.js` as `text/plain`). Do not treat that as a bug.
 
 ### 17.3 What the UI shows (and what it must not)
 
